@@ -41,14 +41,17 @@ contract FacilityAllocationTest {
         claims.setFinanceableCapacity(claimId, 80, keccak256("finance-policy"), keccak256("decision"));
 
         facilityId = facilities.createFacility(
-            keccak256("USD"), 80, uint64(block.timestamp), uint64(block.timestamp + 14 days), keccak256("facility-policy")
+            keccak256("USD"),
+            80,
+            uint64(block.timestamp),
+            uint64(block.timestamp + 14 days),
+            keccak256("facility-policy")
         );
         facilities.verifyFacility(facilityId);
         facilities.openFacility(facilityId);
 
-        encumbranceId = encumbrances.createEncumbrance(
-            claimId, facilityId, address(0xF1), 60, uint64(block.timestamp + 7 days)
-        );
+        encumbranceId =
+            encumbrances.createEncumbrance(claimId, facilityId, address(0xF1), 60, uint64(block.timestamp + 7 days));
         facilities.bindEncumbrance(facilityId, encumbranceId);
         facilities.beginAllocating(facilityId);
     }
@@ -65,9 +68,8 @@ contract FacilityAllocationTest {
     }
 
     function testAllocationIsNotCapitalCommitment() public {
-        bytes32 allocationId = allocations.proposeAllocation(
-            facilityId, address(0xBEEF), 40, uint64(block.timestamp + 3 days)
-        );
+        bytes32 allocationId =
+            allocations.proposeAllocation(facilityId, address(0xBEEF), 40, uint64(block.timestamp + 3 days));
         allocations.activateAllocation(allocationId);
 
         AllocationManager.Allocation memory allocation = allocations.getAllocation(allocationId);
@@ -80,14 +82,12 @@ contract FacilityAllocationTest {
     }
 
     function testAllocationCannotExceedBoundEncumbrance() public {
-        bytes32 allocationA = allocations.proposeAllocation(
-            facilityId, address(0xA1), 50, uint64(block.timestamp + 3 days)
-        );
+        bytes32 allocationA =
+            allocations.proposeAllocation(facilityId, address(0xA1), 50, uint64(block.timestamp + 3 days));
         allocations.activateAllocation(allocationA);
 
-        bytes32 allocationB = allocations.proposeAllocation(
-            facilityId, address(0xA2), 20, uint64(block.timestamp + 3 days)
-        );
+        bytes32 allocationB =
+            allocations.proposeAllocation(facilityId, address(0xA2), 20, uint64(block.timestamp + 3 days));
         (bool ok,) = address(allocations).call(abi.encodeCall(allocations.activateAllocation, (allocationB)));
         require(!ok, "over-allocation accepted");
 
@@ -98,9 +98,8 @@ contract FacilityAllocationTest {
     }
 
     function testCancelActiveAllocationRestoresFacilityAvailabilityExactlyOnce() public {
-        bytes32 allocationId = allocations.proposeAllocation(
-            facilityId, address(0xBEEF), 40, uint64(block.timestamp + 3 days)
-        );
+        bytes32 allocationId =
+            allocations.proposeAllocation(facilityId, address(0xBEEF), 40, uint64(block.timestamp + 3 days));
         allocations.activateAllocation(allocationId);
         allocations.cancelAllocation(allocationId);
 
@@ -119,11 +118,11 @@ contract FacilityAllocationTest {
         facilities.verifyFacility(otherFacility);
         facilities.openFacility(otherFacility);
 
-        bytes32 otherEncumbrance = encumbrances.createEncumbrance(
-            claimId, otherFacility, address(0xF2), 10, uint64(block.timestamp + 7 days)
-        );
+        bytes32 otherEncumbrance =
+            encumbrances.createEncumbrance(claimId, otherFacility, address(0xF2), 10, uint64(block.timestamp + 7 days));
 
-        (bool ok,) = address(facilities).call(abi.encodeCall(facilities.bindEncumbrance, (facilityId, otherEncumbrance)));
+        (bool ok,) =
+            address(facilities).call(abi.encodeCall(facilities.bindEncumbrance, (facilityId, otherEncumbrance)));
         require(!ok, "cross-facility encumbrance accepted");
         require(
             encumbrances.getEncumbrance(otherEncumbrance).status == EncumbranceRegistry.EncumbranceStatus.ACTIVE,
