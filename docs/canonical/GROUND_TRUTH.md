@@ -1,7 +1,7 @@
 # Cleara Ground Truth
 
 **Snapshot:** 29 August 2026  
-**Status:** M1 verification substrate VERIFIED; M2/M3 TESTED_TESTNET; M4 not started
+**Status:** M1 verification substrate VERIFIED; M2/M3/M4 TESTED_TESTNET; M5 not started
 
 ## Repository
 
@@ -404,9 +404,149 @@ A Creditcoin verification transaction may execute within its own block once proo
 
 ---
 
+# M4 — Financeability and Encumbrance
+
+Current status:
+
+```text
+Claim financeable-capacity controls TESTED_TESTNET
+EncumbranceRegistry              TESTED_TESTNET
+```
+
+M4 preserves the distinction:
+
+```text
+VERIFIED != FINANCEABLE
+```
+
+A newly verified claim begins with:
+
+```text
+financeableCapacity = 0
+activeEncumbrance   = 0
+```
+
+An explicit financeability decision, bound to `policyId` and `decisionHash`, may move a claim from `VERIFIED` to `ACTIVE` and set bounded capacity.
+
+The implemented accounting invariant is:
+
+```text
+activeEncumbrance <= financeableCapacity <= faceValue
+availableCapacity = financeableCapacity - activeEncumbrance
+```
+
+Only `EncumbranceRegistry` is intended to receive `ENCUMBRANCE_ROLE` and mutate the aggregate active-encumbrance field.
+
+Encumbrance identity is:
+
+```text
+keccak256("CLEARA_ENCUMBRANCE_V1", claimId, facilityId, encumbranceNonce)
+```
+
+Implemented M4 transitions:
+
+```text
+PROPOSED -> ACTIVE
+ACTIVE -> RELEASED
+ACTIVE -> CANCELLED
+ACTIVE -> EXPIRED
+```
+
+`CONSUMED` remains represented in the canonical enum but is deliberately not executable yet. Its semantics require the Facility/Allocation authority introduced in M5.
+
+## M4 Local Property Evidence
+
+GitHub Actions run:
+
+```text
+33254476294
+```
+
+Passed:
+
+```text
+forge fmt --check
+forge build --sizes
+forge test -vvv
+```
+
+The later live workflow reran the complete suite with:
+
+```text
+22 tests passed
+0 failed
+0 skipped
+```
+
+M4 fuzz properties each passed 1,000 generated cases:
+
+```text
+capacity never exceeds face value
+accepted reservations conserve capacity
+over-reservations always revert without mutating accounting
+```
+
+## M4 CC3 Live Evidence
+
+GitHub Actions run:
+
+```text
+33254529904
+```
+
+Artifact:
+
+```text
+Artifact ID: 9715412301
+Artifact SHA256: cb0d42256da26ba6f769b9d377dfebf830b0d44a5efafa8b8d36b345537fc940
+Repository evidence: evidence/runtime/M4_FINANCEABILITY_2026-08-29.md
+```
+
+Evidence deployments on CC3:
+
+```text
+ClaimRegistry:       0x3b12A365e9beA21035Ab811DA42F04dAfF89e1DC
+EncumbranceRegistry: 0x6B1C82122165ec351407ABa272d19daEDE9f7a44
+```
+
+Live accounting vector:
+
+```text
+faceValue             = 100,000,000
+financeableCapacity   =  80,000,000
+first reservation     =  50,000,000
+available after A     =  30,000,000
+second request        =  40,000,000 -> REJECTED
+release A             =  50,000,000
+final active          =           0
+final available       =  80,000,000
+```
+
+The same live run rejected:
+
+```text
+over-reservation
+reducing capacity below active encumbrance
+double release
+```
+
+and verified that rejected operations did not mutate the financial accounting state.
+
+Important evidence boundary:
+
+```text
+The M4 CC3 run registered its VERIFIED claim fixture directly through ClaimRegistry.
+It tests M4 accounting, not a second Attestcoin ingestion proof.
+M3 separately proves the Sepolia -> Attestcoin -> ClaimASC -> VERIFIED boundary.
+```
+
+The M4 ClaimRegistry extends the previously live-tested M3 ClaimRegistry with additive financeability/encumbrance state while preserving the existing `registerVerifiedClaim` interface. Current CI exercises the combined codebase. A fresh all-in-one Sepolia -> Attestcoin -> current ClaimRegistry -> financeability -> encumbrance test has not yet been run and must not be implied by the separate M3 and M4 evidence bundles.
+
+---
+
 # Workflow Security State
 
-The M3 live workflow is again:
+The M3 and M4 live workflows are again:
 
 ```text
 workflow_dispatch only
@@ -414,7 +554,7 @@ permissions: contents read
 environment: testnet
 ```
 
-A temporary exact-path push trigger was used solely because the connected GitHub execution interface could not dispatch a manual workflow. It was removed immediately after the successful run, and the trigger file was deleted.
+Temporary exact-path push triggers were used solely because the connected GitHub execution interface could not dispatch manual workflows. Each was removed immediately after its successful run, and its trigger file was deleted.
 
 The `testnet` GitHub environment currently contains throwaway testnet deployer secrets. Environment protection hardening remains an operational follow-up; these credentials are not production credentials.
 
@@ -442,8 +582,6 @@ DATABASE != CANONICAL FINANCIAL STATE
 The following remain `NOT_STARTED`:
 
 ```text
-financeable-capacity controls
-EncumbranceRegistry
 FacilityManager
 AllocationManager
 CapitalCommitmentVault
@@ -464,9 +602,7 @@ Wormhole residual settlement integration
 Credal integration
 ```
 
-No financeable capacity has been assigned.
-
-No claim has been encumbered.
+Financeable capacity and active encumbrance now exist as testnet-tested Cleara state primitives.
 
 No capital commitment has been recognized.
 
@@ -484,29 +620,33 @@ No production deployment exists.
 
 # Next Authorized Milestone
 
-M3 has passed its live promotion gate.
+M4 has passed its local property and CC3 live accounting gates.
 
 The next canonical milestone is:
 
 ```text
-M4 Financeability + Encumbrance
+M5 Facility + Allocation
 ```
 
-M4 must enforce:
+M5 must introduce the authority that binds:
 
 ```text
-VERIFIED CLAIM != FINANCEABLE CLAIM
-financeableCapacity <= faceValue
-activeEncumbrance <= financeableCapacity
-capacity reservation and encumbrance creation are atomic
-terminal claims cannot silently become financeable again
-evidence updates do not reset claim identity or encumbrance accounting
+verified/active claims
+encumbrances
+provider allocations
+facility lifecycle
 ```
 
-M4 may use the now-verified M3 ClaimRegistry state as its input boundary.
+without collapsing:
+
+```text
+ALLOCATION != CAPITAL COMMITMENT
+```
+
+M5 is also the earliest milestone in which `EncumbranceStatus.CONSUMED` may be defined, because consumption must correspond to an explicit facility-owned position rather than simply freeing capacity.
 
 ---
 
 # Public Claim Allowed Now
 
-> Cleara has live-tested its first cross-chain financial-state path on Sepolia and Creditcoin CC3: a real ClaimCreated transaction was proven through Attestcoin, semantically validated by Cleara's ClaimASC, and registered as a VERIFIED claim on Creditcoin. The same run rejected replay, wrong-chain, wrong-source, and failed-receipt cases. Cleara remains testnet software; financeability, commitments, facilities, clearing, and settlement are not yet implemented.
+> Cleara has live-tested its first cross-chain claim-ingestion path and its first financing-capacity control on Creditcoin CC3. A real Sepolia ClaimCreated transaction was proven through Attestcoin and registered as a VERIFIED claim on Creditcoin; separately, Cleara's current financeability and encumbrance contracts enforced bounded claim capacity, rejected over-encumbrance and unsafe capacity reduction, and restored released capacity exactly once on CC3. These are testnet evidence paths, not a claim of production readiness or a single all-in-one facility flow. Capital commitments, facilities, obligations, clearing, and settlement are not yet implemented.
