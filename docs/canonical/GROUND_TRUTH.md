@@ -1,7 +1,7 @@
 # Cleara Ground Truth
 
 **Snapshot:** 29 August 2026  
-**Operational status:** M1 `VERIFIED_CLEARA`; M2-M6 `TESTED_TESTNET`; M7 `IMPLEMENTED_LOCAL` with live multiparty evidence in progress.
+**Operational status:** M1 `VERIFIED_CLEARA`; M2-M7 `TESTED_TESTNET`; M8 `NOT_STARTED`.
 
 This document is the highest operational statement of what Cleara can currently prove. No testnet result implies production safety, mainnet readiness, legal enforceability, economic finality, or audit completion.
 
@@ -11,18 +11,6 @@ This document is the highest operational statement of what Cleara can currently 
 Repository: etvjay/Cleara
 Default branch: main
 Network focus: Creditcoin CC3 testnet + Ethereum Sepolia
-```
-
-## Status Vocabulary
-
-```text
-VERIFIED_CLEARA
-IMPLEMENTED_LOCAL
-TESTED_TESTNET
-NOT_STARTED
-NOT_VERIFIED
-FUTURE
-FORBIDDEN_CLAIM
 ```
 
 ## Frozen Semantic Boundaries
@@ -35,6 +23,7 @@ VALID CLAIM != FINANCEABLE CLAIM
 BALANCE != CAPITAL COMMITMENT
 ALLOCATION != CAPITAL COMMITMENT
 PROVEN COMMIT EVENT != PERPETUAL CURRENT COMMITMENT
+CAPITALIZED != committedAmount == target alone
 ECONOMIC EQUIVALENCE != EXECUTION EQUIVALENCE
 RECIPROCITY != SETOFF AUTHORITY
 CLEARING != SETTLEMENT
@@ -51,11 +40,20 @@ committedAmount <= allocatedAmount <= encumberedAmount <= targetAmount
 
 Consumed encumbrance continues counting against claim capacity. Allocation cancellation does not release claim capacity. Only verified externally constrained capital may increase committed capital.
 
----
+# Milestone Status
 
-# M1 — Creditcoin / Attestcoin Verification Substrate
+```text
+M1 Creditcoin / Attestcoin verification substrate  VERIFIED_CLEARA
+M2 Registries                                  TESTED_TESTNET
+M3 Attested Claim Ingestion                    TESTED_TESTNET
+M4 Financeability + Encumbrance                TESTED_TESTNET
+M5 Facility + Allocation                       TESTED_TESTNET
+M6 Capital Commitment                          TESTED_TESTNET
+M7 Multiparty Capitalization Seal              TESTED_TESTNET
+M8 ObligationLedger                            NOT_STARTED
+```
 
-Status: `VERIFIED_CLEARA`
+## M1 — Verification Substrate
 
 Verified live on CC3:
 
@@ -75,22 +73,9 @@ Artifact: 9713789625
 SHA256: 64394abd8c2382f10c7499d1cb86122d8bd3502a241433307b8a3d1de360cf10
 ```
 
-A real attested Sepolia transaction proof was generated and accepted; tampered transaction bytes were rejected.
+## M2 — Registries
 
-Frozen:
-
-```text
-chainKey != EVM chainId
-Attestcoin availability is asynchronous
-```
-
----
-
-# M2 — Registries
-
-Status: `TESTED_TESTNET`
-
-Implemented:
+Implemented and exercised on CC3:
 
 ```text
 DomainRegistry
@@ -100,53 +85,17 @@ PolicyRegistry
 AuthorityRegistry
 ```
 
-ADR-0001 canonical Evidence V2 identity:
+Canonical Evidence V2 identity:
 
 ```text
-keccak256(
-  "CLEARA_EVIDENCE_V2",
-  domainId,
-  chainKey,
-  blockHeight,
-  txIndex,
-  eventIndex
-)
+keccak256("CLEARA_EVIDENCE_V2", domainId, chainKey, blockHeight, txIndex, eventIndex)
 ```
 
-Caller-supplied conventional transaction hash is provenance metadata, not canonical evidence identity.
-
-M2 registries were exercised as live CC3 dependencies in the M3 round trip.
-
----
-
-# M3 — Attested Claim Ingestion
+## M3 — Attested Claim Ingestion
 
 Status: `TESTED_TESTNET`
 
-Implemented:
-
-```text
-ClaimSource
-ClaimRegistry
-ClaimASC
-```
-
-Acceptance boundary:
-
-```text
-correct chainKey
--> active authorized source domain
--> proof-native replay identity
--> Block Prover verification
--> receipt.status == 1
--> exact source ClaimSource
--> exact ClaimCreated event semantics
--> registered active asset class
--> Evidence V2
--> ClaimRegistry VERIFIED
-```
-
-Live evidence:
+Evidence:
 
 ```text
 Run: 33253029696
@@ -155,49 +104,11 @@ SHA256: 27f3eef3050ed96d659630a90b052e87832fbf5ad0df2cc3dcd9879433c1d488
 Evidence: evidence/runtime/M3_CLAIM_ROUNDTRIP_2026-08-29.md
 ```
 
-Key deployments:
+Live negative paths rejected proof replay, wrong chainKey, wrong source contract, and a proven failed source transaction (`receipt.status == 0`).
 
-```text
-Sepolia ClaimSource: 0xdd013B3423b709bAaC7d2719fCB9d06218Dc2187
-CC3 ClaimRegistry:   0x08b3344F24E765e1F61209eEee7d428703F233e9
-CC3 ClaimASC:        0x0F6F16983856D5ef7506CFA10e6520B43495c122
-```
-
-Rejected live:
-
-```text
-proof replay
-wrong chainKey
-wrong source contract
-proven source transaction with receipt.status == 0
-```
-
-Therefore:
-
-```text
-PROVEN != VALID FOR THIS PROTOCOL STATE
-INCLUSION != TRANSACTION SUCCESS
-```
-
----
-
-# M4 — Financeability + Encumbrance
+## M4 — Financeability + Encumbrance
 
 Status: `TESTED_TESTNET`
-
-Implemented:
-
-```text
-Claim financeable capacity
-EncumbranceRegistry
-```
-
-Invariant:
-
-```text
-activeEncumbrance <= financeableCapacity <= faceValue
-availableCapacity = financeableCapacity - activeEncumbrance
-```
 
 Evidence:
 
@@ -208,27 +119,15 @@ SHA256: cb0d42256da26ba6f769b9d377dfebf830b0d44a5efafa8b8d36b345537fc940
 Evidence: evidence/runtime/M4_FINANCEABILITY_2026-08-29.md
 ```
 
-Live vector proved over-encumbrance rejection, inability to cut capacity below an active reservation, and exact-once release. Three M4 fuzz properties passed 1,000 runs each.
-
----
-
-# M5 — Facility + Allocation
-
-Status: `TESTED_TESTNET`
-
-Implemented:
-
-```text
-FacilityManager
-AllocationManager
-ACTIVE -> CONSUMED encumbrance binding
-```
-
 Invariant:
 
 ```text
-allocatedAmount <= encumberedAmount <= targetAmount
+activeEncumbrance <= financeableCapacity <= faceValue
 ```
+
+## M5 — Facility + Allocation
+
+Status: `TESTED_TESTNET`
 
 Evidence:
 
@@ -248,46 +147,9 @@ allocation cancellation restores allocation accounting
 allocation cancellation does not free claim encumbrance
 ```
 
-Three M5 fuzz properties passed 1,000 runs each.
-
----
-
-# M6 — Capital Commitment
+## M6 — Capital Commitment
 
 Status: `TESTED_TESTNET`
-
-Implemented:
-
-```text
-CapitalCommitmentVault
-CommitmentASC
-CommitmentRegistry
-AllocationManager ACTIVE -> COMMITTED binding
-FacilityManager committedAmount accounting
-```
-
-Source-chain meaning:
-
-```text
-provider approves ERC20
--> CapitalCommitmentVault.safeTransferFrom
--> provider loses unilateral access to committed amount
--> CapitalCommitted event
-```
-
-Creditcoin meaning:
-
-```text
-CapitalCommitted event
--> Attestcoin proof
--> exact domain/chainKey/vault validation
--> receipt.status == 1
--> exact asset representation
--> exact facility/allocation/provider/amount/asset/expiry match
--> CommitmentRegistry ACTIVE
--> Allocation COMMITTED
--> facility committedAmount increases
-```
 
 Evidence:
 
@@ -298,140 +160,118 @@ SHA256: 07a3ca2c04c9e61d44d52ffd8d9e1b424f45f5f267a7d3521b0249c04f58f1c7
 Evidence: evidence/runtime/M6_CAPITAL_COMMITMENT_2026-08-29.md
 ```
 
-Source evidence:
+M6 proved:
 
 ```text
-Sepolia token: 0x3AB76d450384017FCe4e4924f8b1f687E8341e6D
-Sepolia vault: 0x772F05EaafbddF8359CF6199842522e8436369a7
-Commit tx: 0x34654a3907716ab2d597783aab6cb5b48fdc89d08b501b40dd41c838f3481ef0
-Source block: 11592858
-Committed amount: 1,000,000
-Observed vault balance: 1,000,000
-Source state: COMMITTED
+source ERC20 transferred into CapitalCommitmentVault
+-> CapitalCommitted
+-> Attestcoin proof
+-> CommitmentASC semantic validation
+-> CommitmentRegistry ACTIVE
+-> Allocation COMMITTED
+-> facility committedAmount increased
 ```
 
-CC3 evidence deployments:
+M6 limitation remains:
 
 ```text
-FacilityManager:    0x0945aEa515427E2DC57954F4C3d48881adDbab97
-AllocationManager:  0x950C12Ddd224F17E39953b4D70e1855aB8ffCCcF
-CommitmentRegistry: 0x435594014cFd129ae58EeafbF61e962da1123807
-CommitmentASC:      0x3C09f922E5F54f46920D548fdb39927b1B418CC9
+CapitalCommitted at T0 does not prove perpetual source-chain constraint.
 ```
 
-Observed result:
+## M7 — Multiparty Capitalization Seal
+
+Status: `TESTED_TESTNET`
+
+Evidence:
 
 ```text
-AllocationStatus: COMMITTED
-CommitmentStatus: ACTIVE
-committedAmount: 1,000,000
-replay: REJECTED
+Run: 33274674575
+Head exercised: e869ae45688fcfd0a09d5c92038323491b3cf8ba
+Artifact: 9721384433
+SHA256: 76d92928df25c366faf03165764b94ecf2c82e8a45f80643996d79b20a6731a2
+Evidence: evidence/runtime/M7_MULTIPARTY_CAPITALIZATION_2026-08-29.md
 ```
 
-The M6 test fixture also exercised the then-thin `CAPITALIZED` state because target/allocation/encumbrance/commitment were all 1,000,000. This does not substitute for M7's capitalization-set semantics.
-
-M6 limitation:
+Build/property gate:
 
 ```text
-CapitalCommitted at T0 proves source capital was constrained at T0.
-It does not prove the capital remains constrained forever.
-```
-
-Source lifecycle synchronization for `CONSUMED`, `RELEASED`, and `EXPIRED` remains a future requirement before production claims.
-
----
-
-# M7 — Multiparty Capitalization Seal
-
-Status: `IMPLEMENTED_LOCAL`
-
-Live evidence run: `33274674575` — in progress at this snapshot.
-
-Implemented:
-
-```text
-CapitalizationManager
-one-time FacilityManager capitalization-authority binding
-capitalizationRoot
-capitalRequiredUntil
-capitalizationCommitmentCount
-capitalizedAt
-MAX_COMMITMENTS = 10
-```
-
-Canonical capitalization root:
-
-```text
-keccak256(abi.encode(
-  "CLEARA_CAPITALIZATION_V1",
-  facilityId,
-  assetClassId,
-  policyBundleHash,
-  capitalRequiredUntil,
-  sortedCommitmentIds
-))
-```
-
-Seal requirements:
-
-```text
-facility.status == CAPITALIZING
-allocatedAmount == targetAmount
-committedAmount == targetAmount
-encumberedAmount >= targetAmount
-commitment set non-empty and <= 10
-commitment IDs strictly increasing
-all commitments ACTIVE
-all commitments belong to facility
-all commitment asset classes match facility
-all commitments expire >= capitalRequiredUntil
-matching allocations are COMMITTED
-matching allocation provider == commitment provider
-matching allocation amount == commitment amount
-sum(commitment amounts) == targetAmount
-```
-
-Authority boundary:
-
-```text
-FacilityManager.bindCapitalizationManager can succeed once.
-Ordinary FACILITY_MANAGER_ROLE cannot finalize capitalization.
-Only the bound CapitalizationManager can write the capitalization seal and transition CAPITALIZING -> CAPITALIZED.
-```
-
-Local evidence:
-
-```text
-Run: 33274576602
 42 tests passed
 0 failed
 0 skipped
 ```
 
-M7-specific fuzz properties, each 1,000 runs:
+Three M7 fuzz properties each passed 1,000 cases:
 
 ```text
-arbitrary exact three-provider splits seal and conserve target
-short-horizon member cannot mutate the capitalization seal
-duplicate commitment membership cannot seal
+exact three-provider splits always seal deterministically
+short-horizon member cannot mutate the seal
+duplicate membership cannot seal
 ```
 
-The active live M7 experiment uses three ephemeral Sepolia provider wallets and the split:
+Live source composition:
 
 ```text
-400,000 + 350,000 + 250,000 = 1,000,000 target
+Provider A  400,000  0x8766760e375bD43f600D23C40aDCeeDD62a60e2b
+Provider B  350,000  0x9c97121F58967a5D4E060467aa4ec704A4c20D8c
+Provider C  250,000  0xA4498B69683178ab46133BEc4A140de670A0C2D2
+                    ---------
+Target             1,000,000
 ```
 
-The ephemeral provider private keys exist only within the Actions runner and are neither stored as repository secrets nor emitted as evidence.
+All three providers independently locked test ERC20 capital into the Sepolia `CapitalCommitmentVault`. Their source transactions were mined at blocks `11594330`, `11594334`, and `11594337`, then separately proven through Attestcoin and accepted on CC3.
 
-M7 is not `TESTED_TESTNET` until the live run completes, evidence is inspected, and the status is explicitly promoted.
-
----
-
-# Not Yet Implemented / Not Yet Proven
+Final CC3 accounting:
 
 ```text
-M7 live multiparty capitalization promotion
+FacilityStatus: CAPITALIZED
+encumberedAmount: 1,000,000
+allocatedAmount:  1,000,000
+committedAmount:  1,000,000
+commitmentCount:  3
+sealTotal:        1,000,000
+capitalizationRoot:
+0x1ca109babcb91c33eb6124d1693b27fe6d9397cfa0730e56ce765feb3ae0f512
+capitalRequiredUntil: 1788123587
+```
+
+Live negative paths rejected:
+
+```text
+direct FacilityManager capitalization bypass
+duplicate commitment set
+invalid capital horizon
+capitalization reseal
+```
+
+M7 therefore establishes:
+
+```text
+CAPITALIZED == validated + horizon-safe + immutable commitment composition
+```
+
+and not merely:
+
+```text
+committedAmount == targetAmount
+```
+
+## Current Evidence Boundary
+
+Cleara has separately proven on testnet:
+
+```text
+M3: Sepolia claim -> Attestcoin -> VERIFIED claim
+M4: VERIFIED fixture -> financeable capacity -> bounded encumbrance
+M5: encumbrance -> facility -> provider allocation
+M6: externally locked Sepolia capital -> Attestcoin -> ACTIVE commitment
+M7: three independently locked commitments -> immutable capitalization seal
+```
+
+These milestones are independently evidenced. Cleara does not yet claim one uninterrupted M3 -> M7 lifecycle against one shared deployment set.
+
+## Not Yet Implemented / Not Yet Proven
+
+```text
 commitment lifecycle synchronization after source consume/release/expiry
 M8 ObligationLedger
 M9 ClearingEngine / ClearingEpoch
@@ -449,28 +289,9 @@ production-value operation
 
 Writability remains `FUTURE` and is not an MVP dependency.
 
----
+## Allowed Public Claim
 
-# Current Evidence Boundary
-
-Cleara has separately proven on testnet:
-
-```text
-M3: Sepolia claim -> Attestcoin -> VERIFIED claim
-M4: VERIFIED fixture -> financeable capacity -> bounded encumbrance
-M5: encumbrance -> facility -> provider allocation
-M6: externally locked Sepolia capital -> Attestcoin -> ACTIVE commitment
-```
-
-Cleara does not yet claim that M3-M6 were executed as one uninterrupted end-to-end financial workflow against one shared deployment set.
-
----
-
-# Allowed Public Claim
-
-Current strongest allowed claim:
-
-> Cleara has testnet evidence for Attestcoin-backed claim ingestion, bounded financeability and encumbrance, facility/allocation coordination, and externally constrained Sepolia capital commitments recognized on Creditcoin. Multiparty capitalization sealing is implemented and under live testnet validation.
+> Cleara has testnet evidence for Attestcoin-backed claim ingestion, bounded financeability and encumbrance, facility/allocation coordination, externally constrained Sepolia capital commitments recognized on Creditcoin, and three-provider capitalization sealed into an immutable commitment composition on CC3.
 
 Forbidden current claims include:
 
@@ -481,7 +302,6 @@ mainnet deployed
 legally enforceable receivables
 live production lenders or borrowers
 source lifecycle synchronization complete
-multiparty capitalization testnet-proven until M7 live evidence passes
 obligations implemented
 clearing implemented
 bridge reduction measured in production
@@ -491,9 +311,7 @@ Writability live dependency
 Base or Arbitrum Attestcoin source support
 ```
 
----
-
-# Current Frontier
+## Current Frontier
 
 ```text
 M1  VERIFIED_CLEARA
@@ -502,7 +320,7 @@ M3  TESTED_TESTNET
 M4  TESTED_TESTNET
 M5  TESTED_TESTNET
 M6  TESTED_TESTNET
-M7  IMPLEMENTED_LOCAL / LIVE_EVIDENCE_RUNNING
+M7  TESTED_TESTNET
 M8  NOT_STARTED
 ```
 
