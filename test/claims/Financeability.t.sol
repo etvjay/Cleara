@@ -38,12 +38,13 @@ contract FinanceabilityTest {
         require(claim.financeableCapacity == 80, "capacity");
         require(registry.availableCapacity(claimId) == 80, "available");
 
-        (bool ok,) = address(registry).call(
-            abi.encodeCall(
-                registry.setFinanceableCapacity,
-                (claimId, uint256(101), keccak256("policy2"), keccak256("decision2"))
-            )
-        );
+        (bool ok,) = address(registry)
+            .call(
+                abi.encodeCall(
+                    registry.setFinanceableCapacity,
+                    (claimId, uint256(101), keccak256("policy2"), keccak256("decision2"))
+                )
+            );
         require(!ok, "capacity above face accepted");
     }
 
@@ -52,12 +53,13 @@ contract FinanceabilityTest {
         registry.grantRole(registry.ENCUMBRANCE_ROLE(), address(this));
         registry.reserveEncumbrance(claimId, 50);
 
-        (bool ok,) = address(registry).call(
-            abi.encodeCall(
-                registry.setFinanceableCapacity,
-                (claimId, uint256(49), keccak256("policy2"), keccak256("decision2"))
-            )
-        );
+        (bool ok,) = address(registry)
+            .call(
+                abi.encodeCall(
+                    registry.setFinanceableCapacity,
+                    (claimId, uint256(49), keccak256("policy2"), keccak256("decision2"))
+                )
+            );
         require(!ok, "capacity below encumbrance accepted");
         require(registry.availableCapacity(claimId) == 30, "available changed");
     }
