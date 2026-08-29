@@ -36,10 +36,16 @@ contract FacilityManager is AccessControl {
         uint64 closesAt;
         bytes32 policyBundleHash;
         uint256 nonce;
+        bytes32 capitalizationRoot;
+        uint64 capitalRequiredUntil;
+        uint64 capitalizedAt;
+        uint32 capitalizationCommitmentCount;
         FacilityStatus status;
     }
 
     EncumbranceRegistry public immutable encumbranceRegistry;
+    address public capitalizationManager;
+
     mapping(bytes32 => Facility) private _facilities;
     mapping(address => uint256) public nextNonceBySponsor;
     mapping(bytes32 => bool) public encumbranceBound;
@@ -51,6 +57,8 @@ contract FacilityManager is AccessControl {
     error EncumbranceAlreadyBound(bytes32 encumbranceId);
     error WrongFacility(bytes32 expected, bytes32 actual);
     error FacilityCapacityExceeded(uint256 requestedTotal, uint256 encumberedAmount, uint256 targetAmount);
+    error CapitalizationManagerAlreadySet(address currentManager);
+    error UnauthorizedCapitalizationManager(address caller);
 
     event FacilityCreated(
         bytes32 indexed facilityId,
@@ -66,12 +74,27 @@ contract FacilityManager is AccessControl {
     event EncumbranceBound(bytes32 indexed facilityId, bytes32 indexed encumbranceId, uint256 amount);
     event AllocatedAmountChanged(bytes32 indexed facilityId, uint256 previousAmount, uint256 newAmount);
     event CommittedAmountChanged(bytes32 indexed facilityId, uint256 previousAmount, uint256 newAmount);
+    event CapitalizationManagerBound(address indexed capitalizationManager);
+    event CapitalizationSealed(
+        bytes32 indexed facilityId,
+        bytes32 indexed capitalizationRoot,
+        uint64 capitalRequiredUntil,
+        uint32 commitmentCount,
+        uint256 committedAmount
+    );
 
     constructor(address admin, EncumbranceRegistry encumbranceRegistry_) {
         if (address(encumbranceRegistry_) == address(0)) revert InvalidFacility();
         encumbranceRegistry = encumbranceRegistry_;
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(FACILITY_MANAGER_ROLE, admin);
+    }
+
+    function bindCapitalizationManager(address manager) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (manager == address(0)) revert InvalidFacility();
+        if (capitalizationManager != address(0)) revert CapitalizationManagerAlreadySet(capitalizationManager);
+        capitalizationManager = manager;
+        emit CapitalizationManagerBound(manager);
     }
 
     function computeFacilityId(address sponsor, uint256 facilityNonce, bytes32 policyBundleHash)
@@ -111,6 +134,10 @@ contract FacilityManager is AccessControl {
             closesAt: closesAt,
             policyBundleHash: policyBundleHash,
             nonce: nonce,
+            capitalizationRoot: bytes32(0),
+            capitalRequiredUntil: 0,
+            capitalizedAt: 0,
+            capitalizationCommitmentCount: 0,
             status: FacilityStatus.PROPOSED
         });
 
@@ -136,17 +163,35 @@ contract FacilityManager is AccessControl {
 
     function beginCapitalizing(bytes32 facilityId) external onlyRole(FACILITY_MANAGER_ROLE) {
         Facility storage facility = _requireState(facilityId, FacilityStatus.ALLOCATING);
-        if (facility.allocatedAmount == 0) revert InvalidFacility();
+        if (facility.allocatedAmount != facility.targetAmount || facility.encumberedAmount < facility.targetAmount) {
+            revert InvalidFacility();
+        }
         _transition(facility, FacilityStatus.CAPITALIZING);
     }
 
-    function finalizeCapitalization(bytes32 facilityId) external onlyRole(FACILITY_MANAGER_ROLE) {
+    function finalizeCapitalization(
+        bytes32 facilityId,
+        bytes32 capitalizationRoot,
+        uint64 capitalRequiredUntil,
+        uint32 commitmentCount
+    ) external {
+        if (msg.sender != capitalizationManager) revert UnauthorizedCapitalizationManager(msg.sender);
         Facility storage facility = _requireState(facilityId, FacilityStatus.CAPITALIZING);
-        if (facility.committedAmount != facility.targetAmount) revert InvalidFacility();
-        if (facility.committedAmount > facility.allocatedAmount || facility.committedAmount > facility.encumberedAmount)
-        {
-            revert InvalidFacility();
-        }
+        if (
+            capitalizationRoot == bytes32(0) || commitmentCount == 0 || capitalRequiredUntil <= block.timestamp
+                || facility.committedAmount != facility.targetAmount
+                || facility.committedAmount > facility.allocatedAmount
+                || facility.committedAmount > facility.encumberedAmount
+        ) revert InvalidFacility();
+
+        facility.capitalizationRoot = capitalizationRoot;
+        facility.capitalRequiredUntil = capitalRequiredUntil;
+        facility.capitalizedAt = uint64(block.timestamp);
+        facility.capitalizationCommitmentCount = commitmentCount;
+
+        emit CapitalizationSealed(
+            facilityId, capitalizationRoot, capitalRequiredUntil, commitmentCount, facility.committedAmount
+        );
         _transition(facility, FacilityStatus.CAPITALIZED);
     }
 
