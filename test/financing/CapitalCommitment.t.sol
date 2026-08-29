@@ -127,10 +127,16 @@ contract CapitalCommitmentTest {
         require(facilities.getFacility(facilityId).committedAmount == 0, "failed recognition mutated facility");
     }
 
-    function testFacilityCannotCapitalizeWithoutFullCommitment() public {
+    function testFacilityCannotCapitalizeWithoutSealAuthority() public {
+        allocations.recognizeCommitment(allocationId, address(this), 100);
         facilities.beginCapitalizing(facilityId);
-        (bool ok,) = address(facilities).call(abi.encodeCall(facilities.finalizeCapitalization, (facilityId)));
-        require(!ok, "facility capitalized without committed target");
+        (bool ok,) = address(facilities).call(
+            abi.encodeCall(
+                facilities.finalizeCapitalization,
+                (facilityId, keccak256("fake-root"), uint64(block.timestamp + 1 days), uint32(1))
+            )
+        );
+        require(!ok, "ordinary facility authority bypassed capitalization seal");
         require(
             facilities.getFacility(facilityId).status == FacilityManager.FacilityStatus.CAPITALIZING,
             "failed capitalization mutated state"
