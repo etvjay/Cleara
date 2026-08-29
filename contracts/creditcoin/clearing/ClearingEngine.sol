@@ -47,8 +47,12 @@ contract ClearingEngine is AccessControl {
     error IncompatibleObligations();
     error InvalidPolicy(bytes32 policyId);
 
-    event ClearingEpochOpened(bytes32 indexed epochId, bytes32 indexed policyId, bytes32 indexed assetClassId, uint256 nonce);
-    event ClearingEpochSealed(bytes32 indexed epochId, bytes32 indexed inputRoot, bytes32 obligationA, bytes32 obligationB);
+    event ClearingEpochOpened(
+        bytes32 indexed epochId, bytes32 indexed policyId, bytes32 indexed assetClassId, uint256 nonce
+    );
+    event ClearingEpochSealed(
+        bytes32 indexed epochId, bytes32 indexed inputRoot, bytes32 obligationA, bytes32 obligationB
+    );
     event ClearingEpochComputed(
         bytes32 indexed epochId,
         uint256 grossBefore,
@@ -68,11 +72,7 @@ contract ClearingEngine is AccessControl {
         _grantRole(CLEARING_OPERATOR_ROLE, admin);
     }
 
-    function computeEpochId(bytes32 policyId, bytes32 assetClassId, uint256 epochNonce)
-        public
-        pure
-        returns (bytes32)
-    {
+    function computeEpochId(bytes32 policyId, bytes32 assetClassId, uint256 epochNonce) public pure returns (bytes32) {
         return keccak256(abi.encode("CLEARA_CLEARING_EPOCH_V1", policyId, assetClassId, epochNonce));
     }
 
@@ -112,7 +112,9 @@ contract ClearingEngine is AccessControl {
         onlyRole(CLEARING_OPERATOR_ROLE)
     {
         ClearingEpoch storage epoch = _requireState(epochId, EpochStatus.OPEN);
-        if (obligationX == bytes32(0) || obligationY == bytes32(0) || obligationX == obligationY) revert InvalidEpoch();
+        if (obligationX == bytes32(0) || obligationY == bytes32(0) || obligationX == obligationY) {
+            revert InvalidEpoch();
+        }
 
         ObligationLedger.Obligation memory x = obligationLedger.getObligation(obligationX);
         ObligationLedger.Obligation memory y = obligationLedger.getObligation(obligationY);
@@ -165,11 +167,7 @@ contract ClearingEngine is AccessControl {
         if (epoch.status == EpochStatus.NONE) revert UnknownEpoch(epochId);
     }
 
-    function _requireState(bytes32 epochId, EpochStatus expected)
-        internal
-        view
-        returns (ClearingEpoch storage epoch)
-    {
+    function _requireState(bytes32 epochId, EpochStatus expected) internal view returns (ClearingEpoch storage epoch) {
         epoch = _epochs[epochId];
         if (epoch.status == EpochStatus.NONE) revert UnknownEpoch(epochId);
         if (epoch.status != expected) revert InvalidEpochState(epochId, epoch.status);
