@@ -31,6 +31,7 @@ contract FacilityManager is AccessControl {
         uint256 targetAmount;
         uint256 encumberedAmount;
         uint256 allocatedAmount;
+        uint256 committedAmount;
         uint64 opensAt;
         uint64 closesAt;
         bytes32 policyBundleHash;
@@ -64,6 +65,7 @@ contract FacilityManager is AccessControl {
     event FacilityStatusChanged(bytes32 indexed facilityId, FacilityStatus previousStatus, FacilityStatus newStatus);
     event EncumbranceBound(bytes32 indexed facilityId, bytes32 indexed encumbranceId, uint256 amount);
     event AllocatedAmountChanged(bytes32 indexed facilityId, uint256 previousAmount, uint256 newAmount);
+    event CommittedAmountChanged(bytes32 indexed facilityId, uint256 previousAmount, uint256 newAmount);
 
     constructor(address admin, EncumbranceRegistry encumbranceRegistry_) {
         if (address(encumbranceRegistry_) == address(0)) revert InvalidFacility();
@@ -104,6 +106,7 @@ contract FacilityManager is AccessControl {
             targetAmount: targetAmount,
             encumberedAmount: 0,
             allocatedAmount: 0,
+            committedAmount: 0,
             opensAt: opensAt,
             closesAt: closesAt,
             policyBundleHash: policyBundleHash,
@@ -131,6 +134,21 @@ contract FacilityManager is AccessControl {
         _transition(facility, FacilityStatus.ALLOCATING);
     }
 
+    function beginCapitalizing(bytes32 facilityId) external onlyRole(FACILITY_MANAGER_ROLE) {
+        Facility storage facility = _requireState(facilityId, FacilityStatus.ALLOCATING);
+        if (facility.allocatedAmount == 0) revert InvalidFacility();
+        _transition(facility, FacilityStatus.CAPITALIZING);
+    }
+
+    function finalizeCapitalization(bytes32 facilityId) external onlyRole(FACILITY_MANAGER_ROLE) {
+        Facility storage facility = _requireState(facilityId, FacilityStatus.CAPITALIZING);
+        if (facility.committedAmount != facility.targetAmount) revert InvalidFacility();
+        if (facility.committedAmount > facility.allocatedAmount || facility.committedAmount > facility.encumberedAmount) {
+            revert InvalidFacility();
+        }
+        _transition(facility, FacilityStatus.CAPITALIZED);
+    }
+
     function bindEncumbrance(bytes32 facilityId, bytes32 encumbranceId) external onlyRole(FACILITY_MANAGER_ROLE) {
         Facility storage facility = _facilities[facilityId];
         if (facility.status == FacilityStatus.NONE) revert UnknownFacility(facilityId);
@@ -141,9 +159,7 @@ contract FacilityManager is AccessControl {
 
         EncumbranceRegistry.Encumbrance memory encumbrance = encumbranceRegistry.getEncumbrance(encumbranceId);
         if (encumbrance.facilityId != facilityId) revert WrongFacility(facilityId, encumbrance.facilityId);
-        if (encumbrance.status != EncumbranceRegistry.EncumbranceStatus.ACTIVE) {
-            revert InvalidFacility();
-        }
+        if (encumbrance.status != EncumbranceRegistry.EncumbranceStatus.ACTIVE) revert InvalidFacility();
 
         uint256 nextEncumbered = facility.encumberedAmount + encumbrance.amount;
         if (nextEncumbered > facility.targetAmount) {
@@ -176,6 +192,27 @@ contract FacilityManager is AccessControl {
         uint256 previous = facility.allocatedAmount;
         facility.allocatedAmount = previous - amount;
         emit AllocatedAmountChanged(facilityId, previous, facility.allocatedAmount);
+    }
+
+    function increaseCommittedAmount(bytes32 facilityId, uint256 amount) external onlyRole(FACILITY_MANAGER_ROLE) {
+        Facility storage facility = _facilities[facilityId];
+        if (facility.status == FacilityStatus.NONE) revert UnknownFacility(facilityId);
+        if (facility.status != FacilityStatus.ALLOCATING && facility.status != FacilityStatus.CAPITALIZING) {
+            revert InvalidFacilityState(facilityId, facility.status);
+        }
+        if (amount == 0) revert InvalidFacility();
+
+        uint256 nextCommitted = facility.committedAmount + amount;
+        if (
+            nextCommitted > facility.allocatedAmount || nextCommitted > facility.encumberedAmount
+                || nextCommitted > facility.targetAmount
+        ) {
+            revert FacilityCapacityExceeded(nextCommitted, facility.encumberedAmount, facility.targetAmount);
+        }
+
+        uint256 previous = facility.committedAmount;
+        facility.committedAmount = nextCommitted;
+        emit CommittedAmountChanged(facilityId, previous, nextCommitted);
     }
 
     function getFacility(bytes32 facilityId) external view returns (Facility memory facility) {
