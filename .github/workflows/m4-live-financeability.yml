@@ -2,9 +2,6 @@ name: M4 Live Financeability
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - ".github/m4-live-financeability.trigger"
 
 permissions:
   contents: read
