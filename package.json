@@ -8,6 +8,18 @@
     "probe:creditcoin": "tsx scripts/probe/creditcoin-rpc.ts",
     "probe:chaininfo": "tsx scripts/probe/attestcoin-supported-chains.ts",
     "probe:blockprover": "tsx scripts/probe/block-prover.ts",
+    "probe:attestcoin:gates": "tsx scripts/probe/live-attestcoin-gates.ts",
     "bootstrap:check": "bash scripts/bootstrap/check-machine.sh"
+  },
+  "dependencies": {
+    "@gluwa/usc-sdk": "0.18.0",
+    "ethers": "6.17.0",
+    "viem": "2.56.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "tsx": "4.23.12",
+    "turbo": "2.10.10",
+    "typescript": "7.0.2"
   }
 }
