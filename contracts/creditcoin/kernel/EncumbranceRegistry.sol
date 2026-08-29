@@ -6,6 +6,7 @@ import {ClaimRegistry} from "./ClaimRegistry.sol";
 
 contract EncumbranceRegistry is AccessControl {
     bytes32 public constant ENCUMBRANCE_MANAGER_ROLE = keccak256("ENCUMBRANCE_MANAGER_ROLE");
+    bytes32 public constant FACILITY_ROLE = keccak256("FACILITY_ROLE");
 
     enum EncumbranceStatus {
         NONE,
@@ -59,6 +60,7 @@ contract EncumbranceRegistry is AccessControl {
         claimRegistry = claimRegistry_;
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(ENCUMBRANCE_MANAGER_ROLE, admin);
+        _grantRole(FACILITY_ROLE, admin);
     }
 
     function computeEncumbranceId(bytes32 claimId, bytes32 facilityId, uint256 nonce) public pure returns (bytes32) {
@@ -100,6 +102,21 @@ contract EncumbranceRegistry is AccessControl {
 
         emit EncumbranceCreated(encumbranceId, claimId, facilityId, beneficiary, amount, expiresAt, nonce);
         emit EncumbranceStatusChanged(encumbranceId, EncumbranceStatus.PROPOSED, EncumbranceStatus.ACTIVE);
+    }
+
+    function consumeEncumbrance(bytes32 encumbranceId) external onlyRole(FACILITY_ROLE) {
+        Encumbrance storage encumbrance = _requireActive(encumbranceId);
+        _transition(encumbrance, EncumbranceStatus.CONSUMED);
+    }
+
+    function releaseConsumedEncumbrance(bytes32 encumbranceId) external onlyRole(FACILITY_ROLE) {
+        Encumbrance storage encumbrance = _encumbrances[encumbranceId];
+        if (encumbrance.status == EncumbranceStatus.NONE) revert UnknownEncumbrance(encumbranceId);
+        if (encumbrance.status != EncumbranceStatus.CONSUMED) {
+            revert InvalidEncumbranceState(encumbranceId, encumbrance.status);
+        }
+        claimRegistry.releaseEncumbrance(encumbrance.claimId, encumbrance.amount);
+        _transition(encumbrance, EncumbranceStatus.RELEASED);
     }
 
     function releaseEncumbrance(bytes32 encumbranceId) external onlyRole(ENCUMBRANCE_MANAGER_ROLE) {
