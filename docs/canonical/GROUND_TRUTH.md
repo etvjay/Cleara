@@ -1,7 +1,7 @@
 # Cleara Ground Truth
 
-**Snapshot:** 29 August 2026
-**Status:** M1 live verification substrate complete; M2/M3 implemented locally; no Cleara contracts deployed
+**Snapshot:** 29 August 2026  
+**Status:** M1 verification substrate VERIFIED; M2/M3 TESTED_TESTNET; M4 not started
 
 ## Repository
 
@@ -11,11 +11,27 @@ Default branch: main
 Remote scaffold: live
 ```
 
-## Verified Cleara Runtime Facts
+## Status Vocabulary Used Here
 
-The following have been verified by Cleara's own GitHub Actions runtime and may be treated as `VERIFIED_CLEARA`.
+```text
+VERIFIED_CLEARA
+IMPLEMENTED_LOCAL
+TESTED_TESTNET
+NOT_STARTED
+NOT_VERIFIED
+FUTURE
+FORBIDDEN_CLAIM
+```
 
-### Creditcoin CC3 Testnet
+No testnet result in this document implies production or mainnet readiness.
+
+---
+
+# M1 — Creditcoin / Attestcoin Verification Substrate
+
+The following were verified by Cleara's own GitHub Actions runtime and are `VERIFIED_CLEARA`.
+
+## Creditcoin CC3 Testnet
 
 ```text
 RPC: https://rpc.cc3-testnet.creditcoin.network
@@ -23,7 +39,7 @@ EVM chainId: 102031
 G0: PASS
 ```
 
-### Attestcoin ChainInfo
+## Attestcoin ChainInfo
 
 Live `getSupportedChains()` on CC3 testnet returned:
 
@@ -32,15 +48,13 @@ chainKey 1 -> EVM chainId 11155111 -> Ethereum Sepolia
 chainKey 3 -> EVM chainId 1        -> Ethereum Mainnet
 ```
 
-Therefore:
+Frozen invariant:
 
 ```text
 chainKey != EVM chainId
 ```
 
-remains a frozen implementation invariant.
-
-### Proof Builder
+## Proof Builder
 
 Verified endpoint:
 
@@ -48,7 +62,7 @@ Verified endpoint:
 https://prover.cc3-testnet.creditcoin.network/
 ```
 
-G2: PASS using real attested Sepolia transaction:
+G2 passed using real attested Sepolia transaction:
 
 ```text
 0x8a848420854482e0978b3d6c1345b6a0dfb0263a9620df90ff1a90db18fcbcf6
@@ -60,16 +74,16 @@ Source block:
 11591355
 ```
 
-### Block Prover
+## Block Prover
 
-G3: PASS.
+G3 passed:
 
 ```text
 valid proof accepted: true
 tampered txBytes proof rejected: true
 ```
 
-The tampered proof reverted with:
+Tampered proof failure:
 
 ```text
 Merkle proof validation failed
@@ -84,7 +98,7 @@ Artifact SHA256: 64394abd8c2382f10c7499d1cb86122d8bd3502a241433307b8a3d1de360cf1
 Repository evidence: evidence/runtime/ATTESTCOIN_GATES_2026-08-29.md
 ```
 
-## M1 Gate Status
+M1 status:
 
 ```text
 G0 Creditcoin environment   VERIFIED_CLEARA / PASS
@@ -93,32 +107,39 @@ G2 Proof Builder            VERIFIED_CLEARA / PASS
 G3 Block Prover             VERIFIED_CLEARA / PASS
 ```
 
-## M2 Registries
+---
+
+# M2 — Registries
 
 Current status:
 
 ```text
-DomainRegistry      IMPLEMENTED_LOCAL
-AssetRegistry       IMPLEMENTED_LOCAL
-EvidenceRegistry    IMPLEMENTED_LOCAL
-PolicyRegistry      IMPLEMENTED_LOCAL
-AuthorityRegistry   IMPLEMENTED_LOCAL
+DomainRegistry      TESTED_TESTNET
+AssetRegistry       TESTED_TESTNET
+EvidenceRegistry    TESTED_TESTNET
+PolicyRegistry      TESTED_TESTNET
+AuthorityRegistry   TESTED_TESTNET
 ```
 
-Latest validating CI:
+They were deployed on CC3 testnet as part of the successful M3 evidence run.
+
+Evidence deployment addresses:
 
 ```text
-GitHub Actions run 33249858831
-forge fmt --check PASS
-forge build --sizes PASS
-forge test -vvv PASS
+DomainRegistry:    0x4fFD44f86362a767644efFf63aD34AfC35AeD005
+AssetRegistry:     0xdC0D9D3983465b9Cb8c22e3D7e656bc7C206690d
+EvidenceRegistry:  0x153e6ED2303CF5De4Dca4522f41939034e3cb2Ec
+PolicyRegistry:    0x2cd6ca928979E5E870D862ee6723f9921798c505
+AuthorityRegistry: 0xA8eD6954F0E9B7aB9ba4C71cd420F957b0b6E54B
 ```
 
-### Evidence Identity Correction
+These are test/evidence deployments. They are not production contracts.
 
-`ADR-0001` supersedes the draft Evidence V1 identifier before any deployment.
+## Evidence Identity — ADR-0001
 
-Canonical evidence identity is now:
+`ADR-0001` supersedes the draft Evidence V1 identifier.
+
+Canonical Evidence V2 identity is:
 
 ```text
 keccak256(
@@ -135,25 +156,26 @@ Reason:
 
 ```text
 txIndex is derived from the same Merkle proof validated by the native verifier.
-a caller-supplied conventional source txHash is not treated as authenticated onchain identity.
+a caller-supplied conventional source txHash is not authenticated onchain identity.
 ```
 
-The record may bind `keccak256(encodedTransaction)` and offchain evidence bundles may retain the conventional source transaction hash for provenance.
+The evidence record may bind `keccak256(encodedTransaction)`.
+Offchain bundles may retain the conventional source transaction hash for provenance and navigation.
 
-No M2 contract is deployed.
+---
 
-## M3 Claim Path
+# M3 — Attested Claim Ingestion
 
 Current status:
 
 ```text
-ClaimSource          IMPLEMENTED_LOCAL
-ClaimRegistry        IMPLEMENTED_LOCAL
-ClaimASC             IMPLEMENTED_LOCAL
-INativeQueryVerifier IMPLEMENTED_LOCAL boundary
+ClaimSource          TESTED_TESTNET
+ClaimRegistry        TESTED_TESTNET
+ClaimASC             TESTED_TESTNET
+INativeQueryVerifier TESTED_TESTNET boundary
 ```
 
-Dependencies exercised by CI:
+Dependencies exercised:
 
 ```text
 @gluwa/usc-sdk        0.18.0
@@ -163,6 +185,10 @@ Foundry               1.7.1
 via_ir                 true
 ```
 
+`via_ir = true` is currently required because the Attestcoin decoder path triggers Solidity stack-depth limitations in non-IR code generation. Cleara's own acceptance function was first refactored to reduce live stack pressure before IR was enabled.
+
+## ClaimASC Authority Boundary
+
 `ClaimASC` is immutable-bound to one:
 
 ```text
@@ -171,61 +197,230 @@ source domainId
 source ClaimSource contract
 ```
 
-Its intended acceptance pipeline is implemented as:
+It also consults live domain and asset registries.
+
+Therefore a source domain disabled after deployment cannot continue accepting claims, and an inactive/unregistered asset class cannot be accepted.
+
+ClaimASC has no financeability authority.
+
+Implemented acceptance path:
 
 ```text
 correct chainKey
+-> live source-domain authorization
 -> derive proof-native txIndex
 -> replay check
 -> native Block Prover verifyAndEmit
 -> decode EVM receipt
 -> require receipt.status == 1
--> require exact ClaimCreated signature
+-> require exact ClaimCreated event signature
 -> require exactly one matching ClaimCreated log
 -> require exact source contract
--> decode claim payload
+-> decode payload
+-> require registered active asset class
 -> register Evidence V2
 -> register Claim state VERIFIED
 ```
 
-`ClaimASC` has no financeability authority.
+---
 
-M3 is not `TESTED_TESTNET` yet because the complete live claim round-trip has not been executed.
+# M3 Live Testnet Evidence
 
-## Not Yet Verified or Deployed
-
-```text
-No Cleara contract is deployed on Sepolia.
-No Cleara contract is deployed on CC3 testnet.
-No ClaimCreated event has been accepted by live ClaimASC.
-No claim has been financially accepted beyond the local ClaimRegistry implementation.
-No financeable capacity exists.
-No encumbrance exists.
-No capital commitment exists.
-No facility is capitalized.
-No obligation has been cleared.
-No settlement has been reconciled.
-```
-
-The following remain `NOT_STARTED`:
+GitHub Actions run:
 
 ```text
-EncumbranceRegistry
-FacilityManager
-AllocationManager
-CapitalCommitmentVault
-CommitmentASC
-CommitmentRegistry
-ObligationLedger
-ClearingEngine
-ResidualLedger
-SettlementRouter
-SettlementAdapter
-SettlementASC
-SettlementReconciler
+33253029696
 ```
 
-## Frozen Semantic Boundaries
+Artifact:
+
+```text
+Artifact ID: 9715192463
+Artifact SHA256: 27f3eef3050ed96d659630a90b052e87832fbf5ad0df2cc3dcd9879433c1d488
+Repository evidence: evidence/runtime/M3_CLAIM_ROUNDTRIP_2026-08-29.md
+```
+
+## Testnet Signer Addresses
+
+```text
+Sepolia: 0x04A9351c40748348f4a4e012d21b2Bd775a5d484
+CC3:     0x5ac98dc6f8408564645f36195aC0F9c5B1c0C0C8
+```
+
+Private keys were consumed only through GitHub `testnet` environment secrets and were redacted from runner logs.
+
+## Deployed M3 Contracts
+
+Sepolia:
+
+```text
+ClaimSource: 0xdd013B3423b709bAaC7d2719fCB9d06218Dc2187
+```
+
+CC3:
+
+```text
+ClaimRegistry: 0x08b3344F24E765e1F61209eEee7d428703F233e9
+ClaimASC:      0x0F6F16983856D5ef7506CFA10e6520B43495c122
+```
+
+Additional negative-test gateway:
+
+```text
+WrongSourceASC: 0xcFC354FDD8938943BBF5E6908937C9175A00cf4C
+```
+
+## Domain / Asset
+
+```text
+source chainKey: 1
+sourceDomainId: 0x1654b943073ae832a6819e7e0b3654c6f3df918b68411b60b0fd4884b18a4851
+assetClassId:   0xa2518a1efcc7102c995133774e96f25cd34715d11795719720b421f3b4f45221
+```
+
+## Positive Path
+
+Real Sepolia `ClaimCreated` transaction:
+
+```text
+0x4b253921043fc71207a4974d0f98dad1225e0ed878c3a342ed1b2772ff8b9869
+```
+
+Source block:
+
+```text
+11591891
+```
+
+After Attestcoin attested the source history, the proof was constructed and submitted to live CC3 `ClaimASC`.
+
+Successful CC3 acceptance transaction:
+
+```text
+0x6d08e19ebaf019feb9134e2219168ddd880d592a0f88895cb2b137df47efa1d6
+```
+
+Result:
+
+```text
+claimId:
+0x27c1118eb3ad8a81d585fc0c683f1b0b6727710cb83871e043d2509e171432e7
+
+evidenceId:
+0x517a141de1d1a23d0829b573227cf1498b3639b2ec037cfc4f35c450cd33dcaa
+
+ClaimRegistry state:
+VERIFIED
+```
+
+This is direct testnet evidence of:
+
+```text
+Sepolia ClaimSource
+-> real ClaimCreated event
+-> Attestcoin Readability proof
+-> CC3 ClaimASC semantic validation
+-> EvidenceRegistry V2
+-> ClaimRegistry VERIFIED
+```
+
+## Negative Paths Verified Live
+
+The same run rejected:
+
+```text
+replay of already-processed proof coordinates
+wrong source chainKey
+valid proof submitted to ClaimASC bound to a different source contract
+source transaction with receipt.status == 0
+```
+
+Deliberately failed Sepolia transaction:
+
+```text
+0x59257e69a97eadbcbe0cc848768610e191f8a3d53cbbd53c6dd3798611de2c2a
+```
+
+Source block:
+
+```text
+11591939
+```
+
+Attestcoin proved the transaction history, but `ClaimASC` rejected its business acceptance because the receipt failed.
+
+This preserves:
+
+```text
+PROVEN != VALID FOR THIS FACILITY / PROTOCOL STATE
+INCLUSION != TRANSACTION SUCCESS
+```
+
+The current ethers surface reported these custom-error reverts as `unknown custom error`. Improving revert decoding is a developer-experience task, not a correctness blocker.
+
+## Build Gate Before Live Execution
+
+```text
+forge fmt --check PASS
+forge build --sizes PASS
+forge test -vvv PASS
+12 tests passed
+0 failed
+```
+
+`ClaimASC` runtime size:
+
+```text
+6,896 bytes
+```
+
+## Attestcoin Timing Observed
+
+The live run directly observed sparse attestation progression.
+
+For successful source block `11591891`, the Proof Builder reported latest attested/cache heights advancing through:
+
+```text
+11591850
+11591860
+11591870
+11591880
+11591890
+```
+
+before the proof became available.
+
+A second wait occurred for failed source block `11591939`.
+
+Therefore Cleara must continue treating Attestcoin source verification as asynchronous.
+
+Forbidden claim:
+
+```text
+"cross-chain verification completes in one Creditcoin block"
+```
+
+A Creditcoin verification transaction may execute within its own block once proof material is available; that is not total source-to-Creditcoin latency.
+
+---
+
+# Workflow Security State
+
+The M3 live workflow is again:
+
+```text
+workflow_dispatch only
+permissions: contents read
+environment: testnet
+```
+
+A temporary exact-path push trigger was used solely because the connected GitHub execution interface could not dispatch a manual workflow. It was removed immediately after the successful run, and the trigger file was deleted.
+
+The `testnet` GitHub environment currently contains throwaway testnet deployer secrets. Environment protection hardening remains an operational follow-up; these credentials are not production credentials.
+
+---
+
+# Frozen Semantic Boundaries
 
 ```text
 CLAIM != PROOF
@@ -240,27 +435,78 @@ SETTLEMENT INITIATED != SETTLED
 DATABASE != CANONICAL FINANCIAL STATE
 ```
 
-## Next Authorized Milestone
+---
 
-The next promotion gate is the live M3 claim round-trip:
+# Not Yet Implemented / Verified
+
+The following remain `NOT_STARTED`:
 
 ```text
-Sepolia ClaimSource deploy
--> ClaimCreated transaction
--> wait for Attestcoin attestation
--> generate proof
--> deploy/configure M2 + ClaimRegistry + ClaimASC on CC3
--> submit proof to ClaimASC
--> observe ClaimRegistry VERIFIED state
--> replay rejection
--> wrong-source rejection
--> failed-receipt rejection fixture/test
+financeable-capacity controls
+EncumbranceRegistry
+FacilityManager
+AllocationManager
+CapitalCommitmentVault
+CommitmentASC
+CommitmentRegistry
+ObligationLedger
+ClearingEngine
+ResidualLedger
+SettlementRouter
+SettlementAdapter
+SettlementASC
+SettlementReconciler
+workers
+indexer/database projections
+public API
+frontend
+Wormhole residual settlement integration
+Credal integration
 ```
 
-Only after that may M3 become `TESTED_TESTNET`.
+No financeable capacity has been assigned.
 
-M4 financeability/encumbrance must not begin from an assumption that M3 is already live-tested.
+No claim has been encumbered.
 
-## Public Claim Allowed Now
+No capital commitment has been recognized.
 
-> Cleara has independently verified the live Creditcoin CC3 / Attestcoin Readability proof path, including tampered-proof rejection. Its initial registries and attested claim-ingestion path are implemented and pass the current local contract CI suite, but Cleara contracts have not yet been deployed and the live claim round-trip remains pending.
+No facility has been capitalized.
+
+No obligation has been formed or cleared.
+
+No residual settlement has been executed or reconciled.
+
+No Cleara mainnet deployment exists.
+
+No production deployment exists.
+
+---
+
+# Next Authorized Milestone
+
+M3 has passed its live promotion gate.
+
+The next canonical milestone is:
+
+```text
+M4 Financeability + Encumbrance
+```
+
+M4 must enforce:
+
+```text
+VERIFIED CLAIM != FINANCEABLE CLAIM
+financeableCapacity <= faceValue
+activeEncumbrance <= financeableCapacity
+capacity reservation and encumbrance creation are atomic
+terminal claims cannot silently become financeable again
+evidence updates do not reset claim identity or encumbrance accounting
+```
+
+M4 may use the now-verified M3 ClaimRegistry state as its input boundary.
+
+---
+
+# Public Claim Allowed Now
+
+> Cleara has live-tested its first cross-chain financial-state path on Sepolia and Creditcoin CC3: a real ClaimCreated transaction was proven through Attestcoin, semantically validated by Cleara's ClaimASC, and registered as a VERIFIED claim on Creditcoin. The same run rejected replay, wrong-chain, wrong-source, and failed-receipt cases. Cleara remains testnet software; financeability, commitments, facilities, clearing, and settlement are not yet implemented.
