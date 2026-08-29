@@ -183,7 +183,11 @@ contract FacilityManager is AccessControl {
         if (facility.status == FacilityStatus.NONE) revert UnknownFacility(facilityId);
     }
 
-    function _requireState(bytes32 facilityId, FacilityStatus expected) internal view returns (Facility storage facility) {
+    function _requireState(bytes32 facilityId, FacilityStatus expected)
+        internal
+        view
+        returns (Facility storage facility)
+    {
         facility = _facilities[facilityId];
         if (facility.status == FacilityStatus.NONE) revert UnknownFacility(facilityId);
         if (facility.status != expected) revert InvalidFacilityState(facilityId, facility.status);
