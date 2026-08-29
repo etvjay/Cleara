@@ -11,6 +11,7 @@
     "probe:attestcoin:gates": "tsx scripts/probe/live-attestcoin-gates.ts",
     "live:m3:claim": "tsx scripts/live/m3-claim-roundtrip.ts",
     "live:m4:financeability": "tsx scripts/live/m4-financeability.ts",
+    "live:m5:facility-allocation": "tsx scripts/live/m5-facility-allocation.ts",
     "bootstrap:check": "bash scripts/bootstrap/check-machine.sh"
   },
   "dependencies": {
