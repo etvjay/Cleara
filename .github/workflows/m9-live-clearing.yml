@@ -2,9 +2,6 @@ name: M9 Live Bilateral Clearing
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - ".github/m9-live-clearing.trigger"
 
 permissions:
   contents: read
