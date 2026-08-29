@@ -1,0 +1,13 @@
+node_modules/
+.env
+.env.*
+!.env.example
+out/
+cache/
+broadcast/
+coverage/
+.vercel/
+.wrangler/
+.supabase/
+.DS_Store
+*.log

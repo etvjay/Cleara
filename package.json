@@ -1,0 +1,13 @@
+{
+  "name": "cleara",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@11.24.0",
+  "engines": { "node": ">=24.19.0 <25" },
+  "scripts": {
+    "probe:creditcoin": "tsx scripts/probe/creditcoin-rpc.ts",
+    "probe:chaininfo": "tsx scripts/probe/attestcoin-supported-chains.ts",
+    "probe:blockprover": "tsx scripts/probe/block-prover.ts",
+    "bootstrap:check": "bash scripts/bootstrap/check-machine.sh"
+  }
+}
