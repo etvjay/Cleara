@@ -11,6 +11,9 @@ on:
         description: "Attestcoin Proof Builder URL"
         required: false
         default: "https://prover.cc3-testnet.creditcoin.network/"
+  push:
+    paths:
+      - ".github/m3-live-claim.trigger"
 
 permissions:
   contents: read
