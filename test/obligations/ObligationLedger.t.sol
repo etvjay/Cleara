@@ -94,43 +94,45 @@ contract ObligationLedgerTest {
     }
 
     function testCannotCreateObligationBeforeCapitalizationSeal() public {
-        (bool ok,) = address(obligations).call(
-            abi.encodeCall(
-                obligations.createObligation,
-                (
-                    uncapitalizedFacilityId,
-                    debtor,
-                    creditor,
-                    assetClassId,
-                    100_000,
-                    uint64(block.timestamp + 30 days),
-                    keccak256("policy"),
-                    keccak256("terms"),
-                    ObligationLedger.ObligationKind.DRAWDOWN
+        (bool ok,) = address(obligations)
+            .call(
+                abi.encodeCall(
+                    obligations.createObligation,
+                    (
+                        uncapitalizedFacilityId,
+                        debtor,
+                        creditor,
+                        assetClassId,
+                        100_000,
+                        uint64(block.timestamp + 30 days),
+                        keccak256("policy"),
+                        keccak256("terms"),
+                        ObligationLedger.ObligationKind.DRAWDOWN
+                    )
                 )
-            )
-        );
+            );
         require(!ok, "uncapitalized facility created obligation");
         require(obligations.nextNonceByFacility(uncapitalizedFacilityId) == 0, "failed issue consumed nonce");
     }
 
     function testCannotCreateObligationForWrongAssetClass() public {
-        (bool ok,) = address(obligations).call(
-            abi.encodeCall(
-                obligations.createObligation,
-                (
-                    capitalizedFacilityId,
-                    debtor,
-                    creditor,
-                    keccak256("EUR"),
-                    100_000,
-                    uint64(block.timestamp + 30 days),
-                    keccak256("policy"),
-                    keccak256("terms"),
-                    ObligationLedger.ObligationKind.DRAWDOWN
+        (bool ok,) = address(obligations)
+            .call(
+                abi.encodeCall(
+                    obligations.createObligation,
+                    (
+                        capitalizedFacilityId,
+                        debtor,
+                        creditor,
+                        keccak256("EUR"),
+                        100_000,
+                        uint64(block.timestamp + 30 days),
+                        keccak256("policy"),
+                        keccak256("terms"),
+                        ObligationLedger.ObligationKind.DRAWDOWN
+                    )
                 )
-            )
-        );
+            );
         require(!ok, "wrong-asset obligation accepted");
         require(obligations.nextNonceByFacility(capitalizedFacilityId) == 0, "failed issue consumed nonce");
     }
@@ -151,40 +153,42 @@ contract ObligationLedgerTest {
     }
 
     function testRejectsSelfObligationAndUnspecifiedKind() public {
-        (bool selfOk,) = address(obligations).call(
-            abi.encodeCall(
-                obligations.createObligation,
-                (
-                    capitalizedFacilityId,
-                    debtor,
-                    debtor,
-                    assetClassId,
-                    100_000,
-                    uint64(block.timestamp + 30 days),
-                    keccak256("policy"),
-                    keccak256("terms"),
-                    ObligationLedger.ObligationKind.DRAWDOWN
+        (bool selfOk,) = address(obligations)
+            .call(
+                abi.encodeCall(
+                    obligations.createObligation,
+                    (
+                        capitalizedFacilityId,
+                        debtor,
+                        debtor,
+                        assetClassId,
+                        100_000,
+                        uint64(block.timestamp + 30 days),
+                        keccak256("policy"),
+                        keccak256("terms"),
+                        ObligationLedger.ObligationKind.DRAWDOWN
+                    )
                 )
-            )
-        );
+            );
         require(!selfOk, "self-obligation accepted");
 
-        (bool kindOk,) = address(obligations).call(
-            abi.encodeCall(
-                obligations.createObligation,
-                (
-                    capitalizedFacilityId,
-                    debtor,
-                    creditor,
-                    assetClassId,
-                    100_000,
-                    uint64(block.timestamp + 30 days),
-                    keccak256("policy"),
-                    keccak256("terms"),
-                    ObligationLedger.ObligationKind.UNSPECIFIED
+        (bool kindOk,) = address(obligations)
+            .call(
+                abi.encodeCall(
+                    obligations.createObligation,
+                    (
+                        capitalizedFacilityId,
+                        debtor,
+                        creditor,
+                        assetClassId,
+                        100_000,
+                        uint64(block.timestamp + 30 days),
+                        keccak256("policy"),
+                        keccak256("terms"),
+                        ObligationLedger.ObligationKind.UNSPECIFIED
+                    )
                 )
-            )
-        );
+            );
         require(!kindOk, "unspecified obligation kind accepted");
     }
 
@@ -204,9 +208,8 @@ contract ObligationLedgerTest {
 
     function _makeCapitalizedFacility(uint256 amount, uint256 salt) internal returns (bytes32 facilityId) {
         facilityId = _makeAllocatingFacility(amount, salt);
-        bytes32 allocationId = allocations.proposeAllocation(
-            facilityId, provider, amount, uint64(block.timestamp + 90 days)
-        );
+        bytes32 allocationId =
+            allocations.proposeAllocation(facilityId, provider, amount, uint64(block.timestamp + 90 days));
         allocations.activateAllocation(allocationId);
 
         bytes32 commitmentId = commitments.registerActiveCommitment(
