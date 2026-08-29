@@ -2,9 +2,6 @@ name: M7 Live Multiparty Capitalization
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - ".github/m7-live-capitalization.trigger"
 
 permissions:
   contents: read
