@@ -87,9 +87,8 @@ contract CapitalizationTest {
         require(seal.totalCommitted == 100, "seal total mismatch");
         require(seal.capitalizationRoot == root, "seal root mismatch");
 
-        (bool ok,) = address(capitalization).call(
-            abi.encodeCall(capitalization.sealCapitalization, (facilityId, requiredUntil, commitmentIds))
-        );
+        (bool ok,) = address(capitalization)
+            .call(abi.encodeCall(capitalization.sealCapitalization, (facilityId, requiredUntil, commitmentIds)));
         require(!ok, "capitalization resealed");
     }
 
@@ -104,12 +103,12 @@ contract CapitalizationTest {
         commitmentIds[1] = aCommitment;
         commitmentIds[2] = aCommitment;
 
-        (bool ok,) = address(capitalization).call(
-            abi.encodeCall(
-                capitalization.sealCapitalization,
-                (facilityId, uint64(block.timestamp + 30 days), commitmentIds)
-            )
-        );
+        (bool ok,) = address(capitalization)
+            .call(
+                abi.encodeCall(
+                    capitalization.sealCapitalization, (facilityId, uint64(block.timestamp + 30 days), commitmentIds)
+                )
+            );
         require(!ok, "duplicate commitment accepted");
         require(
             facilities.getFacility(facilityId).status == FacilityManager.FacilityStatus.CAPITALIZING,
@@ -124,12 +123,12 @@ contract CapitalizationTest {
         facilities.beginCapitalizing(facilityId);
 
         bytes32[] memory commitmentIds = _sorted3(aCommitment, bCommitment, cCommitment);
-        (bool ok,) = address(capitalization).call(
-            abi.encodeCall(
-                capitalization.sealCapitalization,
-                (facilityId, uint64(block.timestamp + 30 days), commitmentIds)
-            )
-        );
+        (bool ok,) = address(capitalization)
+            .call(
+                abi.encodeCall(
+                    capitalization.sealCapitalization, (facilityId, uint64(block.timestamp + 30 days), commitmentIds)
+                )
+            );
         require(!ok, "short-lived commitment accepted");
     }
 
