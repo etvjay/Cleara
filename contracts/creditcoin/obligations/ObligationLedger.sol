@@ -6,6 +6,7 @@ import {FacilityManager} from "../financing/FacilityManager.sol";
 
 contract ObligationLedger is AccessControl {
     bytes32 public constant OBLIGATION_ISSUER_ROLE = keccak256("OBLIGATION_ISSUER_ROLE");
+    bytes32 public constant CLEARING_AUTHORIZER_ROLE = keccak256("CLEARING_AUTHORIZER_ROLE");
 
     enum ObligationStatus {
         NONE,
@@ -45,12 +46,15 @@ contract ObligationLedger is AccessControl {
         uint64 maturity;
         bytes32 policyId;
         bytes32 termsHash;
+        bytes32 clearingPolicyId;
+        bytes32 clearingEpochId;
         uint256 nonce;
         ObligationKind kind;
         ObligationStatus status;
     }
 
     FacilityManager public immutable facilityManager;
+    address public clearingEngine;
 
     mapping(bytes32 => Obligation) private _obligations;
     mapping(bytes32 => uint256) public nextNonceByFacility;
@@ -61,6 +65,9 @@ contract ObligationLedger is AccessControl {
     error InvalidObligationState(bytes32 obligationId, ObligationStatus status);
     error FacilityNotCapitalized(bytes32 facilityId, FacilityManager.FacilityStatus status);
     error WrongAssetClass(bytes32 expected, bytes32 actual);
+    error ClearingEngineAlreadySet(address currentEngine);
+    error UnauthorizedClearingEngine(address caller);
+    error ClearingAmountExceeded(bytes32 obligationId, uint256 requested, uint256 remaining);
 
     event ObligationCreated(
         bytes32 indexed obligationId,
@@ -75,15 +82,26 @@ contract ObligationLedger is AccessControl {
         uint256 nonce,
         ObligationKind kind
     );
-
     event ObligationFinalized(bytes32 indexed obligationId);
     event ObligationDisputed(bytes32 indexed obligationId);
+    event ClearingEngineBound(address indexed clearingEngine);
+    event ClearingAuthorized(bytes32 indexed obligationId, bytes32 indexed clearingPolicyId);
+    event ObligationEnteredClearing(bytes32 indexed obligationId, bytes32 indexed clearingEpochId);
+    event ClearingApplied(bytes32 indexed obligationId, bytes32 indexed clearingEpochId, uint256 amount);
 
     constructor(address admin, FacilityManager facilityManager_) {
         if (admin == address(0) || address(facilityManager_) == address(0)) revert InvalidObligation();
         facilityManager = facilityManager_;
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(OBLIGATION_ISSUER_ROLE, admin);
+        _grantRole(CLEARING_AUTHORIZER_ROLE, admin);
+    }
+
+    function bindClearingEngine(address engine) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (engine == address(0)) revert InvalidObligation();
+        if (clearingEngine != address(0)) revert ClearingEngineAlreadySet(clearingEngine);
+        clearingEngine = engine;
+        emit ClearingEngineBound(engine);
     }
 
     function computeObligationId(
@@ -141,6 +159,8 @@ contract ObligationLedger is AccessControl {
             maturity: maturity,
             policyId: policyId,
             termsHash: termsHash,
+            clearingPolicyId: bytes32(0),
+            clearingEpochId: bytes32(0),
             nonce: nonce,
             kind: kind,
             status: ObligationStatus.CREATED
@@ -163,6 +183,38 @@ contract ObligationLedger is AccessControl {
         emit ObligationDisputed(obligationId);
     }
 
+    function authorizeClearing(bytes32 obligationId, bytes32 clearingPolicyId)
+        external
+        onlyRole(CLEARING_AUTHORIZER_ROLE)
+    {
+        if (clearingPolicyId == bytes32(0)) revert InvalidObligation();
+        Obligation storage obligation = _requireState(obligationId, ObligationStatus.FINALIZED);
+        obligation.clearingPolicyId = clearingPolicyId;
+        obligation.status = ObligationStatus.ELIGIBLE_FOR_CLEARING;
+        emit ClearingAuthorized(obligationId, clearingPolicyId);
+    }
+
+    function enterClearingEpoch(bytes32 obligationId, bytes32 clearingEpochId) external {
+        _onlyClearingEngine();
+        if (clearingEpochId == bytes32(0)) revert InvalidObligation();
+        Obligation storage obligation = _requireState(obligationId, ObligationStatus.ELIGIBLE_FOR_CLEARING);
+        obligation.clearingEpochId = clearingEpochId;
+        obligation.status = ObligationStatus.IN_CLEARING_EPOCH;
+        emit ObligationEnteredClearing(obligationId, clearingEpochId);
+    }
+
+    function applyClearing(bytes32 obligationId, bytes32 clearingEpochId, uint256 amount) external {
+        _onlyClearingEngine();
+        if (amount == 0) revert InvalidObligation();
+        Obligation storage obligation = _requireState(obligationId, ObligationStatus.IN_CLEARING_EPOCH);
+        if (obligation.clearingEpochId != clearingEpochId) revert InvalidObligation();
+        uint256 remaining = obligation.originalAmount - obligation.clearedAmount - obligation.settledAmount;
+        if (amount > remaining) revert ClearingAmountExceeded(obligationId, amount, remaining);
+        obligation.clearedAmount += amount;
+        obligation.status = ObligationStatus.CLEARED;
+        emit ClearingApplied(obligationId, clearingEpochId, amount);
+    }
+
     function remainingAmount(bytes32 obligationId) external view returns (uint256) {
         Obligation memory obligation = getObligation(obligationId);
         return obligation.originalAmount - obligation.clearedAmount - obligation.settledAmount;
@@ -171,6 +223,10 @@ contract ObligationLedger is AccessControl {
     function getObligation(bytes32 obligationId) public view returns (Obligation memory obligation) {
         obligation = _obligations[obligationId];
         if (obligation.status == ObligationStatus.NONE) revert UnknownObligation(obligationId);
+    }
+
+    function _onlyClearingEngine() internal view {
+        if (msg.sender != clearingEngine) revert UnauthorizedClearingEngine(msg.sender);
     }
 
     function _requireState(bytes32 obligationId, ObligationStatus expected)
