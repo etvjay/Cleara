@@ -2,9 +2,6 @@ name: M8 Live Obligations
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - ".github/m8-live-obligations.trigger"
 
 permissions:
   contents: read
