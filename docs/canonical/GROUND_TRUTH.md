@@ -1,7 +1,7 @@
 # Cleara Ground Truth
 
 **Snapshot:** 29 August 2026
-**Status:** M1 verification substrate complete; protocol implementation not started
+**Status:** M1 live verification substrate complete; M2/M3 implemented locally; no Cleara contracts deployed
 
 ## Repository
 
@@ -93,19 +93,123 @@ G2 Proof Builder            VERIFIED_CLEARA / PASS
 G3 Block Prover             VERIFIED_CLEARA / PASS
 ```
 
-## What This Does Not Prove
+## M2 Registries
 
-The M1 proof substrate does not prove any Cleara financial semantics.
-
-The following remain `NOT_STARTED` or `NOT_VERIFIED`:
+Current status:
 
 ```text
-DomainRegistry
-AssetRegistry
-EvidenceRegistry
-ClaimSource
-ClaimASC
-ClaimRegistry
+DomainRegistry      IMPLEMENTED_LOCAL
+AssetRegistry       IMPLEMENTED_LOCAL
+EvidenceRegistry    IMPLEMENTED_LOCAL
+PolicyRegistry      IMPLEMENTED_LOCAL
+AuthorityRegistry   IMPLEMENTED_LOCAL
+```
+
+Latest validating CI:
+
+```text
+GitHub Actions run 33249858831
+forge fmt --check PASS
+forge build --sizes PASS
+forge test -vvv PASS
+```
+
+### Evidence Identity Correction
+
+`ADR-0001` supersedes the draft Evidence V1 identifier before any deployment.
+
+Canonical evidence identity is now:
+
+```text
+keccak256(
+  "CLEARA_EVIDENCE_V2",
+  domainId,
+  chainKey,
+  blockHeight,
+  txIndex,
+  eventIndex
+)
+```
+
+Reason:
+
+```text
+txIndex is derived from the same Merkle proof validated by the native verifier.
+a caller-supplied conventional source txHash is not treated as authenticated onchain identity.
+```
+
+The record may bind `keccak256(encodedTransaction)` and offchain evidence bundles may retain the conventional source transaction hash for provenance.
+
+No M2 contract is deployed.
+
+## M3 Claim Path
+
+Current status:
+
+```text
+ClaimSource          IMPLEMENTED_LOCAL
+ClaimRegistry        IMPLEMENTED_LOCAL
+ClaimASC             IMPLEMENTED_LOCAL
+INativeQueryVerifier IMPLEMENTED_LOCAL boundary
+```
+
+Dependencies exercised by CI:
+
+```text
+@gluwa/usc-sdk        0.18.0
+@gluwa/usc-contracts  0.2.0
+Solidity              0.8.30
+Foundry               1.7.1
+via_ir                 true
+```
+
+`ClaimASC` is immutable-bound to one:
+
+```text
+source chainKey
+source domainId
+source ClaimSource contract
+```
+
+Its intended acceptance pipeline is implemented as:
+
+```text
+correct chainKey
+-> derive proof-native txIndex
+-> replay check
+-> native Block Prover verifyAndEmit
+-> decode EVM receipt
+-> require receipt.status == 1
+-> require exact ClaimCreated signature
+-> require exactly one matching ClaimCreated log
+-> require exact source contract
+-> decode claim payload
+-> register Evidence V2
+-> register Claim state VERIFIED
+```
+
+`ClaimASC` has no financeability authority.
+
+M3 is not `TESTED_TESTNET` yet because the complete live claim round-trip has not been executed.
+
+## Not Yet Verified or Deployed
+
+```text
+No Cleara contract is deployed on Sepolia.
+No Cleara contract is deployed on CC3 testnet.
+No ClaimCreated event has been accepted by live ClaimASC.
+No claim has been financially accepted beyond the local ClaimRegistry implementation.
+No financeable capacity exists.
+No encumbrance exists.
+No capital commitment exists.
+No facility is capitalized.
+No obligation has been cleared.
+No settlement has been reconciled.
+```
+
+The following remain `NOT_STARTED`:
+
+```text
 EncumbranceRegistry
 FacilityManager
 AllocationManager
@@ -120,18 +224,6 @@ SettlementAdapter
 SettlementASC
 SettlementReconciler
 ```
-
-No Cleara contract is currently deployed.
-
-No claim has been financially accepted by Cleara.
-
-No capital commitment has been recognized by Cleara.
-
-No facility has been capitalized.
-
-No obligation has been cleared.
-
-No settlement has been reconciled.
 
 ## Frozen Semantic Boundaries
 
@@ -150,28 +242,25 @@ DATABASE != CANONICAL FINANCIAL STATE
 
 ## Next Authorized Milestone
 
-M1 prerequisites are now satisfied.
-
-The next canonical implementation sequence is:
+The next promotion gate is the live M3 claim round-trip:
 
 ```text
-M2 Registries
-then
-M3 ClaimSource + ClaimASC + ClaimRegistry
+Sepolia ClaimSource deploy
+-> ClaimCreated transaction
+-> wait for Attestcoin attestation
+-> generate proof
+-> deploy/configure M2 + ClaimRegistry + ClaimASC on CC3
+-> submit proof to ClaimASC
+-> observe ClaimRegistry VERIFIED state
+-> replay rejection
+-> wrong-source rejection
+-> failed-receipt rejection fixture/test
 ```
 
-M3 must additionally prove the Cleara semantic boundary on top of Attestcoin:
+Only after that may M3 become `TESTED_TESTNET`.
 
-```text
-proof valid
-receipt.status == 1
-approved source contract
-exact event signature
-correct payload
-replay rejection
-financial state transition
-```
+M4 financeability/encumbrance must not begin from an assumption that M3 is already live-tested.
 
 ## Public Claim Allowed Now
 
-> Cleara has independently verified the live Creditcoin CC3 / Attestcoin Readability path from supported source-chain discovery through proof construction and Block Prover verification, including rejection of a tampered Merkle proof. Cleara protocol contracts and financial semantics are not implemented yet.
+> Cleara has independently verified the live Creditcoin CC3 / Attestcoin Readability proof path, including tampered-proof rejection. Its initial registries and attested claim-ingestion path are implemented and pass the current local contract CI suite, but Cleara contracts have not yet been deployed and the live claim round-trip remains pending.
