@@ -6,6 +6,7 @@ import {FacilityManager} from "./FacilityManager.sol";
 
 contract AllocationManager is AccessControl {
     bytes32 public constant ALLOCATION_MANAGER_ROLE = keccak256("ALLOCATION_MANAGER_ROLE");
+    bytes32 public constant COMMITMENT_GATEWAY_ROLE = keccak256("COMMITMENT_GATEWAY_ROLE");
 
     enum AllocationStatus {
         NONE,
@@ -37,6 +38,7 @@ contract AllocationManager is AccessControl {
     error UnknownAllocation(bytes32 allocationId);
     error InvalidAllocationState(bytes32 allocationId, AllocationStatus status);
     error AllocationNotExpired(bytes32 allocationId, uint64 expiresAt);
+    error CommitmentMismatch(bytes32 allocationId, address provider, uint256 amount);
 
     event AllocationProposed(
         bytes32 indexed allocationId,
@@ -102,6 +104,18 @@ contract AllocationManager is AccessControl {
 
         facilityManager.increaseAllocatedAmount(allocation.facilityId, allocation.amount);
         _transition(allocation, AllocationStatus.ACTIVE);
+    }
+
+    function recognizeCommitment(bytes32 allocationId, address provider, uint256 amount)
+        external
+        onlyRole(COMMITMENT_GATEWAY_ROLE)
+    {
+        Allocation storage allocation = _requireState(allocationId, AllocationStatus.ACTIVE);
+        if (allocation.provider != provider || allocation.amount != amount) {
+            revert CommitmentMismatch(allocationId, provider, amount);
+        }
+        facilityManager.increaseCommittedAmount(allocation.facilityId, amount);
+        _transition(allocation, AllocationStatus.COMMITTED);
     }
 
     function cancelAllocation(bytes32 allocationId) external onlyRole(ALLOCATION_MANAGER_ROLE) {
