@@ -175,7 +175,9 @@ contract FacilityManager is AccessControl {
         uint64 capitalRequiredUntil,
         uint32 commitmentCount
     ) external {
-        if (msg.sender != capitalizationManager) revert UnauthorizedCapitalizationManager(msg.sender);
+        if (msg.sender != capitalizationManager) {
+            revert UnauthorizedCapitalizationManager(msg.sender);
+        }
         Facility storage facility = _requireState(facilityId, FacilityStatus.CAPITALIZING);
         if (
             capitalizationRoot == bytes32(0) || commitmentCount == 0 || capitalRequiredUntil <= block.timestamp
