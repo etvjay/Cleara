@@ -1,0 +1,65 @@
+name: M5 Live Facility Allocation
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/m5-live-facility-allocation.trigger"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m5-live-facility-allocation
+  cancel-in-progress: false
+
+jobs:
+  facility-allocation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: testnet
+    env:
+      CREDITCOIN_RPC_HTTP: "https://rpc.cc3-testnet.creditcoin.network"
+      CC3_DEPLOYER_PRIVATE_KEY: ${{ secrets.CC3_DEPLOYER_PRIVATE_KEY }}
+      EVIDENCE_PATH: evidence/runtime/m5-facility-allocation.json
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.19.0
+
+      - run: corepack enable
+      - run: corepack prepare pnpm@11.24.0 --activate
+      - run: pnpm install --no-frozen-lockfile
+
+      - name: Assert required CC3 signer secret
+        shell: bash
+        run: |
+          test -n "$CC3_DEPLOYER_PRIVATE_KEY" || { echo "Missing testnet secret CC3_DEPLOYER_PRIVATE_KEY"; exit 1; }
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1.9.1
+        with:
+          version: v1.7.1
+
+      - name: Build and property gate
+        run: |
+          forge fmt --check
+          forge build --sizes
+          forge test -vvv
+
+      - name: Execute live M5 facility allocation test
+        run: pnpm live:m5:facility-allocation
+
+      - name: Upload M5 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m5-facility-allocation-${{ github.run_id }}
+          path: evidence/runtime/m5-facility-allocation.json
+          if-no-files-found: warn
+          retention-days: 90
