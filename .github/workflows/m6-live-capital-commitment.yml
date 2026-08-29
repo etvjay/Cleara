@@ -1,0 +1,62 @@
+name: M6 Live Capital Commitment
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/m6-live-capital-commitment.trigger"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m6-live-capital-commitment
+  cancel-in-progress: false
+
+jobs:
+  capital-commitment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: testnet
+    env:
+      SEPOLIA_RPC_HTTP: "https://ethereum-sepolia-rpc.publicnode.com"
+      CREDITCOIN_RPC_HTTP: "https://rpc.cc3-testnet.creditcoin.network"
+      ATTESTCOIN_PROOF_BUILDER_URL: "https://prover.cc3-testnet.creditcoin.network/"
+      SEPOLIA_DEPLOYER_PRIVATE_KEY: ${{ secrets.SEPOLIA_DEPLOYER_PRIVATE_KEY }}
+      CC3_DEPLOYER_PRIVATE_KEY: ${{ secrets.CC3_DEPLOYER_PRIVATE_KEY }}
+      EVIDENCE_PATH: evidence/runtime/m6-capital-commitment.json
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.19.0
+      - run: corepack enable
+      - run: corepack prepare pnpm@11.24.0 --activate
+      - run: pnpm install --no-frozen-lockfile
+      - name: Assert required testnet secrets
+        shell: bash
+        run: |
+          test -n "$SEPOLIA_DEPLOYER_PRIVATE_KEY" || { echo "Missing SEPOLIA_DEPLOYER_PRIVATE_KEY"; exit 1; }
+          test -n "$CC3_DEPLOYER_PRIVATE_KEY" || { echo "Missing CC3_DEPLOYER_PRIVATE_KEY"; exit 1; }
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1.9.1
+        with:
+          version: v1.7.1
+      - name: Build and property gate
+        run: |
+          forge fmt --check
+          forge build --sizes
+          forge test -vvv
+      - name: Execute live M6 commitment test
+        run: pnpm live:m6:capital-commitment
+      - name: Upload M6 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m6-capital-commitment-${{ github.run_id }}
+          path: evidence/runtime/m6-capital-commitment.json
+          if-no-files-found: warn
+          retention-days: 90
