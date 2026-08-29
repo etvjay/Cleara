@@ -15,6 +15,7 @@
     "live:m6:capital-commitment": "tsx scripts/live/m6-capital-commitment.ts",
     "live:m7:capitalization": "tsx scripts/live/m7-capitalization.ts",
     "live:m8:obligations": "tsx scripts/live/m8-obligations.ts",
+    "live:m9:clearing": "tsx scripts/live/m9-clearing.ts",
     "bootstrap:check": "bash scripts/bootstrap/check-machine.sh"
   },
   "dependencies": {
