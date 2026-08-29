@@ -13,19 +13,21 @@ contract DomainRegistryTest {
     function testConfigureAndReadDomain() public {
         bytes32 env = keccak256("CC3_TESTNET");
         bytes32 domainId = registry.computeDomainId(env, 11155111);
-        registry.configureDomain(DomainRegistry.DomainConfig({
-            domainId: domainId,
-            chainKey: 1,
-            evmChainId: 11155111,
-            readable: true,
-            writable: false,
-            settlement: true,
-            claim: true,
-            commitment: true,
-            evidence: true,
-            version: 1,
-            active: true
-        }));
+        registry.configureDomain(
+            DomainRegistry.DomainConfig({
+                domainId: domainId,
+                chainKey: 1,
+                evmChainId: 11155111,
+                readable: true,
+                writable: false,
+                settlement: true,
+                claim: true,
+                commitment: true,
+                evidence: true,
+                version: 1,
+                active: true
+            })
+        );
 
         DomainRegistry.DomainConfig memory got = registry.getDomain(domainId);
         require(got.chainKey == 1, "chainKey");
@@ -36,9 +38,17 @@ contract DomainRegistryTest {
 
     function testRejectChainKeyRebind() public {
         DomainRegistry.DomainConfig memory first = DomainRegistry.DomainConfig({
-            domainId: keccak256("domain-a"), chainKey: 1, evmChainId: 11155111,
-            readable: true, writable: false, settlement: false, claim: true,
-            commitment: true, evidence: true, version: 1, active: true
+            domainId: keccak256("domain-a"),
+            chainKey: 1,
+            evmChainId: 11155111,
+            readable: true,
+            writable: false,
+            settlement: false,
+            claim: true,
+            commitment: true,
+            evidence: true,
+            version: 1,
+            active: true
         });
         registry.configureDomain(first);
 

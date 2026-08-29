@@ -26,7 +26,16 @@ contract EvidenceRegistry is AccessControl {
     error UnknownEvidence(bytes32 evidenceId);
     error EvidenceAlreadyConsumed(bytes32 evidenceId);
 
-    event EvidenceRegistered(bytes32 indexed evidenceId, bytes32 indexed domainId, bytes32 indexed txHash, uint64 chainKey, uint256 blockHeight, uint32 eventIndex, bytes32 payloadHash, address gateway);
+    event EvidenceRegistered(
+        bytes32 indexed evidenceId,
+        bytes32 indexed domainId,
+        bytes32 indexed txHash,
+        uint64 chainKey,
+        uint256 blockHeight,
+        uint32 eventIndex,
+        bytes32 payloadHash,
+        address gateway
+    );
     event EvidenceConsumed(bytes32 indexed evidenceId, address indexed consumer);
 
     constructor(address admin) {
@@ -35,11 +44,24 @@ contract EvidenceRegistry is AccessControl {
         _grantRole(CONSUMER_ROLE, admin);
     }
 
-    function computeEvidenceId(bytes32 domainId, uint64 chainKey, uint256 blockHeight, bytes32 txHash, uint32 eventIndex) public pure returns (bytes32) {
+    function computeEvidenceId(
+        bytes32 domainId,
+        uint64 chainKey,
+        uint256 blockHeight,
+        bytes32 txHash,
+        uint32 eventIndex
+    ) public pure returns (bytes32) {
         return keccak256(abi.encode("CLEARA_EVIDENCE_V1", domainId, chainKey, blockHeight, txHash, eventIndex));
     }
 
-    function registerEvidence(bytes32 domainId, uint64 chainKey, uint256 blockHeight, bytes32 txHash, uint32 eventIndex, bytes32 payloadHash) external onlyRole(GATEWAY_ROLE) returns (bytes32 evidenceId) {
+    function registerEvidence(
+        bytes32 domainId,
+        uint64 chainKey,
+        uint256 blockHeight,
+        bytes32 txHash,
+        uint32 eventIndex,
+        bytes32 payloadHash
+    ) external onlyRole(GATEWAY_ROLE) returns (bytes32 evidenceId) {
         evidenceId = computeEvidenceId(domainId, chainKey, blockHeight, txHash, eventIndex);
         if (_records[evidenceId].evidenceId != bytes32(0)) revert EvidenceAlreadyRegistered(evidenceId);
         _records[evidenceId] = EvidenceRecord({
@@ -54,7 +76,9 @@ contract EvidenceRegistry is AccessControl {
             recordedAt: uint64(block.timestamp),
             consumed: false
         });
-        emit EvidenceRegistered(evidenceId, domainId, txHash, chainKey, blockHeight, eventIndex, payloadHash, msg.sender);
+        emit EvidenceRegistered(
+            evidenceId, domainId, txHash, chainKey, blockHeight, eventIndex, payloadHash, msg.sender
+        );
     }
 
     function consumeEvidence(bytes32 evidenceId) external onlyRole(CONSUMER_ROLE) {

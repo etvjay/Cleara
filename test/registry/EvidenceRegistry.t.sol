@@ -19,9 +19,13 @@ contract EvidenceRegistryTest {
         require(record.gateway == address(this), "gateway");
         require(!record.consumed, "premature consumption");
 
-        (bool duplicateOk,) = address(registry).call(
-            abi.encodeCall(registry.registerEvidence, (domainId, uint64(1), uint256(100), txHash, uint32(2), keccak256("payload")))
-        );
+        (bool duplicateOk,) = address(registry)
+            .call(
+                abi.encodeCall(
+                    registry.registerEvidence,
+                    (domainId, uint64(1), uint256(100), txHash, uint32(2), keccak256("payload"))
+                )
+            );
         require(!duplicateOk, "duplicate evidence accepted");
 
         registry.consumeEvidence(evidenceId);

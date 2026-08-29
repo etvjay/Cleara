@@ -29,7 +29,9 @@ contract PolicyRegistry is AccessControl {
     function configurePolicy(PolicyRecord calldata config) external onlyRole(POLICY_ADMIN_ROLE) {
         if (config.policyId == bytes32(0) || config.policyHash == bytes32(0)) revert InvalidPolicy();
         uint32 current = _policies[config.policyId].version;
-        if (current != 0 && config.version <= current) revert NonMonotonicPolicyVersion(config.policyId, current, config.version);
+        if (current != 0 && config.version <= current) {
+            revert NonMonotonicPolicyVersion(config.policyId, current, config.version);
+        }
         _policies[config.policyId] = config;
         emit PolicyConfigured(config.policyId, config.policyHash, config.version, config.active);
     }

@@ -27,7 +27,9 @@ contract DomainRegistry is AccessControl {
     error ChainKeyAlreadyBound(uint64 chainKey, bytes32 existingDomainId);
     error UnknownDomain(bytes32 domainId);
 
-    event DomainConfigured(bytes32 indexed domainId, uint64 indexed chainKey, uint256 indexed evmChainId, uint32 version, bool active);
+    event DomainConfigured(
+        bytes32 indexed domainId, uint64 indexed chainKey, uint256 indexed evmChainId, uint32 version, bool active
+    );
 
     constructor(address admin) {
         _grantRole(DEFAULT_ADMIN_ROLE, admin);

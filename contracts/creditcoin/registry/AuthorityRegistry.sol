@@ -11,7 +11,9 @@ contract AuthorityRegistry is AccessControl {
     error InvalidAuthorityKey();
     error InvalidAuthorityAddress();
 
-    event AuthorityConfigured(bytes32 indexed authorityKey, address indexed previousAuthority, address indexed newAuthority);
+    event AuthorityConfigured(
+        bytes32 indexed authorityKey, address indexed previousAuthority, address indexed newAuthority
+    );
 
     constructor(address admin) {
         _grantRole(DEFAULT_ADMIN_ROLE, admin);

@@ -31,19 +31,36 @@ contract AssetRegistry is AccessControl {
     error UnknownAssetClass(bytes32 assetClassId);
     error UnknownRepresentation(bytes32 representationId);
 
-    event AssetClassConfigured(bytes32 indexed assetClassId, bytes32 indexed denomination, uint8 accountingDecimals, bool active);
-    event RepresentationConfigured(bytes32 indexed representationId, bytes32 indexed assetClassId, bytes32 indexed domainId, address token, uint8 decimals, bool active);
+    event AssetClassConfigured(
+        bytes32 indexed assetClassId, bytes32 indexed denomination, uint8 accountingDecimals, bool active
+    );
+    event RepresentationConfigured(
+        bytes32 indexed representationId,
+        bytes32 indexed assetClassId,
+        bytes32 indexed domainId,
+        address token,
+        uint8 decimals,
+        bool active
+    );
 
     constructor(address admin) {
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(ASSET_ADMIN_ROLE, admin);
     }
 
-    function computeAssetClassId(bytes32 denomination, uint8 accountingDecimals, bytes32 policyNamespace) public pure returns (bytes32) {
+    function computeAssetClassId(bytes32 denomination, uint8 accountingDecimals, bytes32 policyNamespace)
+        public
+        pure
+        returns (bytes32)
+    {
         return keccak256(abi.encode("CLEARA_ASSET_CLASS_V1", denomination, accountingDecimals, policyNamespace));
     }
 
-    function computeRepresentationId(bytes32 assetClassId, bytes32 domainId, address token) public pure returns (bytes32) {
+    function computeRepresentationId(bytes32 assetClassId, bytes32 domainId, address token)
+        public
+        pure
+        returns (bytes32)
+    {
         return keccak256(abi.encode("CLEARA_ASSET_REPRESENTATION_V1", assetClassId, domainId, token));
     }
 
@@ -58,7 +75,9 @@ contract AssetRegistry is AccessControl {
             revert InvalidRepresentation();
         }
         _representations[config.representationId] = config;
-        emit RepresentationConfigured(config.representationId, config.assetClassId, config.domainId, config.token, config.decimals, config.active);
+        emit RepresentationConfigured(
+            config.representationId, config.assetClassId, config.domainId, config.token, config.decimals, config.active
+        );
     }
 
     function getAssetClass(bytes32 assetClassId) external view returns (AssetClass memory config) {

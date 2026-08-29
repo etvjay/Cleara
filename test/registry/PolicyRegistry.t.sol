@@ -16,9 +16,10 @@ contract PolicyRegistryTest {
         registry.configurePolicy(PolicyRegistry.PolicyRecord(id, keccak256("v2"), 2, true));
         require(registry.getPolicy(id).version == 2, "version");
 
-        (bool ok,) = address(registry).call(
-            abi.encodeCall(registry.configurePolicy, (PolicyRegistry.PolicyRecord(id, keccak256("stale"), 1, true)))
-        );
+        (bool ok,) = address(registry)
+            .call(
+                abi.encodeCall(registry.configurePolicy, (PolicyRegistry.PolicyRecord(id, keccak256("stale"), 1, true)))
+            );
         require(!ok, "stale policy version accepted");
     }
 }
