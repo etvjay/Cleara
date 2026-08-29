@@ -1,7 +1,7 @@
 # Cleara Ground Truth
 
 **Snapshot:** 29 August 2026  
-**Operational status:** M1 `VERIFIED_CLEARA`; M2-M7 `TESTED_TESTNET`; M8 `NOT_STARTED`.
+**Operational status:** M1 `VERIFIED_CLEARA`; M2-M8 `TESTED_TESTNET`; M9 `NOT_STARTED`.
 
 This document is the highest operational statement of what Cleara can currently prove. No testnet result implies production safety, mainnet readiness, legal enforceability, economic finality, or audit completion.
 
@@ -24,6 +24,9 @@ BALANCE != CAPITAL COMMITMENT
 ALLOCATION != CAPITAL COMMITMENT
 PROVEN COMMIT EVENT != PERPETUAL CURRENT COMMITMENT
 CAPITALIZED != committedAmount == target alone
+OBLIGATION != PAYMENT INSTRUCTION
+FINALIZED OBLIGATION != CLEARING ELIGIBILITY
+FINALIZED OBLIGATION != SETTLED VALUE
 ECONOMIC EQUIVALENCE != EXECUTION EQUIVALENCE
 RECIPROCITY != SETOFF AUTHORITY
 CLEARING != SETTLEMENT
@@ -36,21 +39,23 @@ Current accounting invariants:
 ```text
 activeEncumbrance <= financeableCapacity <= faceValue
 committedAmount <= allocatedAmount <= encumberedAmount <= targetAmount
+obligation.clearedAmount + obligation.settledAmount <= obligation.originalAmount
 ```
 
-Consumed encumbrance continues counting against claim capacity. Allocation cancellation does not release claim capacity. Only verified externally constrained capital may increase committed capital.
+The third invariant is structurally prepared but no M8 method can yet increase `clearedAmount` or `settledAmount`; those authorities belong to later milestones.
 
 # Milestone Status
 
 ```text
 M1 Creditcoin / Attestcoin verification substrate  VERIFIED_CLEARA
-M2 Registries                                  TESTED_TESTNET
-M3 Attested Claim Ingestion                    TESTED_TESTNET
-M4 Financeability + Encumbrance                TESTED_TESTNET
-M5 Facility + Allocation                       TESTED_TESTNET
-M6 Capital Commitment                          TESTED_TESTNET
-M7 Multiparty Capitalization Seal              TESTED_TESTNET
-M8 ObligationLedger                            NOT_STARTED
+M2 Registries                                      TESTED_TESTNET
+M3 Attested Claim Ingestion                        TESTED_TESTNET
+M4 Financeability + Encumbrance                    TESTED_TESTNET
+M5 Facility + Allocation                           TESTED_TESTNET
+M6 Capital Commitment                              TESTED_TESTNET
+M7 Multiparty Capitalization Seal                  TESTED_TESTNET
+M8 ObligationLedger                                TESTED_TESTNET
+M9 ClearingEngine / ClearingEpoch                  NOT_STARTED
 ```
 
 ## M1 — Verification Substrate
@@ -198,14 +203,7 @@ Build/property gate:
 42 tests passed
 0 failed
 0 skipped
-```
-
-Three M7 fuzz properties each passed 1,000 cases:
-
-```text
-exact three-provider splits always seal deterministically
-short-horizon member cannot mutate the seal
-duplicate membership cannot seal
+3 M7 fuzz properties x 1000 cases PASS
 ```
 
 Live source composition:
@@ -218,46 +216,148 @@ Provider C  250,000  0xA4498B69683178ab46133BEc4A140de670A0C2D2
 Target             1,000,000
 ```
 
-All three providers independently locked test ERC20 capital into the Sepolia `CapitalCommitmentVault`. Their source transactions were mined at blocks `11594330`, `11594334`, and `11594337`, then separately proven through Attestcoin and accepted on CC3.
-
-Final CC3 accounting:
+Final M7 CC3 state:
 
 ```text
+FacilityManager: 0xa9662e17409976Cc2886404394ab8714E7bC7224
+facilityId: 0x772ed1527b2137634f30da4dd62245906719b697dc7ca0bd27e11a8a2d5c7a73
 FacilityStatus: CAPITALIZED
 encumberedAmount: 1,000,000
 allocatedAmount:  1,000,000
 committedAmount:  1,000,000
 commitmentCount:  3
-sealTotal:        1,000,000
 capitalizationRoot:
 0x1ca109babcb91c33eb6124d1693b27fe6d9397cfa0730e56ce765feb3ae0f512
 capitalRequiredUntil: 1788123587
 ```
 
-Live negative paths rejected:
+Live negative paths rejected direct FacilityManager capitalization bypass, duplicate commitment set, invalid capital horizon, and reseal.
 
-```text
-direct FacilityManager capitalization bypass
-duplicate commitment set
-invalid capital horizon
-capitalization reseal
-```
-
-M7 therefore establishes:
+M7 establishes:
 
 ```text
 CAPITALIZED == validated + horizon-safe + immutable commitment composition
 ```
 
-and not merely:
+## M8 — Obligation Ledger
+
+Status: `TESTED_TESTNET`
+
+Evidence:
 
 ```text
-committedAmount == targetAmount
+Run: 33280253700
+Head exercised: 1a49c9db3897c1de52adce588fb15d1064c9f187
+Artifact: 9722789518
+SHA256: 89b53706a08a8e9af4b91be6e76c12436cd1fb4ec46a52ed7574f91bd2123c44
+Evidence: evidence/runtime/M8_OBLIGATIONS_2026-08-29.md
 ```
+
+Build/property gate:
+
+```text
+51 tests passed
+0 failed
+0 skipped
+3 M8 fuzz properties x 1000 cases PASS
+```
+
+M8 did not create a new synthetic capitalization fixture. It deployed `ObligationLedger` against the actual live M7 `FacilityManager` and rechecked the exact M7 facility, asset class, capitalization root, accounting, and unexpired capital horizon before issuing any obligation.
+
+Live deployment:
+
+```text
+ObligationLedger:
+0x8F70ef4A83eb04fa6f303F0d80031f2aA3741b39
+```
+
+M8 live vector:
+
+```text
+Provider A -> Facility sponsor  400,000
+Provider B -> Facility sponsor  350,000
+Provider C -> Facility sponsor  250,000
+                              ---------
+Finalized drawdown obligations 1,000,000
+```
+
+The providers are debtors and the M7 facility sponsor is creditor because the obligations represent drawdown rights backed by the already committed capital. M8 does not fabricate repayment obligations before drawdown.
+
+Canonical obligation identity:
+
+```text
+keccak256(
+  abi.encode(
+    "CLEARA_OBLIGATION_V1",
+    facilityId,
+    debtor,
+    creditor,
+    assetClassId,
+    obligationNonce
+  )
+)
+```
+
+Live obligations:
+
+```text
+nonce 0
+id 0x330647cb907ce83563e27d406c3c3789b2756705ff4cbb1aa8c63a65d0966129
+amount 400,000
+status FINALIZED
+
+nonce 1
+id 0xa4aeab1d0e3790b108f92dc430f9150ccf35cb0d1112abeccbe69ce18ea1f4ee
+amount 350,000
+status FINALIZED
+
+nonce 2
+id 0x3ff9156fbfbcba9bf2dcac4750f2be6950c66f5a59e57c6a4814a52dba8bee99
+amount 250,000
+status FINALIZED
+```
+
+Aggregate M8 result:
+
+```text
+obligationCount: 3
+totalRemaining: 1,000,000
+next facility nonce: 3
+clearedAmount: 0
+settledAmount: 0
+```
+
+Live negative paths rejected:
+
+```text
+wrong asset class
+self-obligation
+unknown facility
+double finalization
+```
+
+Failed issuance preserved the facility nonce.
+
+M8 executable state slice:
+
+```text
+NONE -> CREATED -> FINALIZED -> DISPUTED
+```
+
+M8 deliberately contains no authority for:
+
+```text
+FINALIZED -> ELIGIBLE_FOR_CLEARING
+clearedAmount mutation
+settledAmount mutation
+settlement execution
+```
+
+Those belong to later milestones.
 
 ## Current Evidence Boundary
 
-Cleara has separately proven on testnet:
+Cleara has proven on testnet:
 
 ```text
 M3: Sepolia claim -> Attestcoin -> VERIFIED claim
@@ -265,15 +365,15 @@ M4: VERIFIED fixture -> financeable capacity -> bounded encumbrance
 M5: encumbrance -> facility -> provider allocation
 M6: externally locked Sepolia capital -> Attestcoin -> ACTIVE commitment
 M7: three independently locked commitments -> immutable capitalization seal
+M8: live M7 seal -> three canonical FINALIZED drawdown obligations on CC3
 ```
 
-These milestones are independently evidenced. Cleara does not yet claim one uninterrupted M3 -> M7 lifecycle against one shared deployment set.
+M8 directly reuses M7 live state, so the M7 -> M8 boundary is one continuous deployed-state transition. Earlier M3-M6 milestones remain separately evidenced deployments; Cleara does not yet claim one uninterrupted M3 -> M8 deployment lifecycle.
 
 ## Not Yet Implemented / Not Yet Proven
 
 ```text
 commitment lifecycle synchronization after source consume/release/expiry
-M8 ObligationLedger
 M9 ClearingEngine / ClearingEpoch
 M10 ResidualLedger / SettlementRouter
 M11 SettlementAdapter / SettlementASC / reconciliation
@@ -291,7 +391,7 @@ Writability remains `FUTURE` and is not an MVP dependency.
 
 ## Allowed Public Claim
 
-> Cleara has testnet evidence for Attestcoin-backed claim ingestion, bounded financeability and encumbrance, facility/allocation coordination, externally constrained Sepolia capital commitments recognized on Creditcoin, and three-provider capitalization sealed into an immutable commitment composition on CC3.
+> Cleara has testnet evidence for Attestcoin-backed claim ingestion, bounded financeability and encumbrance, facility/allocation coordination, externally constrained Sepolia capital commitments recognized on Creditcoin, three-provider capitalization sealed into an immutable commitment composition on CC3, and finalized drawdown obligations issued directly against that live capitalization.
 
 Forbidden current claims include:
 
@@ -302,8 +402,9 @@ mainnet deployed
 legally enforceable receivables
 live production lenders or borrowers
 source lifecycle synchronization complete
-obligations implemented
 clearing implemented
+setoff implemented
+residual settlement implemented
 bridge reduction measured in production
 Wormhole integrated
 Credal integrated
@@ -321,7 +422,8 @@ M4  TESTED_TESTNET
 M5  TESTED_TESTNET
 M6  TESTED_TESTNET
 M7  TESTED_TESTNET
-M8  NOT_STARTED
+M8  TESTED_TESTNET
+M9  NOT_STARTED
 ```
 
 Rule:
