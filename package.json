@@ -12,6 +12,7 @@
     "bootstrap:check": "bash scripts/bootstrap/check-machine.sh"
   },
   "dependencies": {
+    "@gluwa/usc-contracts": "0.2.0",
     "@gluwa/usc-sdk": "0.18.0",
     "@openzeppelin/contracts": "5.6.1",
     "ethers": "6.17.0",
