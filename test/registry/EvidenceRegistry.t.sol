@@ -22,12 +22,13 @@ contract EvidenceRegistryTest {
         require(record.encodedTransactionHash == encodedHash, "encoded hash");
         require(!record.consumed, "premature consumption");
 
-        (bool duplicateOk,) = address(registry).call(
-            abi.encodeCall(
-                registry.registerEvidence,
-                (domainId, uint64(1), uint64(100), uint64(7), uint32(2), encodedHash, payloadHash)
-            )
-        );
+        (bool duplicateOk,) = address(registry)
+            .call(
+                abi.encodeCall(
+                    registry.registerEvidence,
+                    (domainId, uint64(1), uint64(100), uint64(7), uint32(2), encodedHash, payloadHash)
+                )
+            );
         require(!duplicateOk, "duplicate evidence accepted");
 
         registry.consumeEvidence(evidenceId);
