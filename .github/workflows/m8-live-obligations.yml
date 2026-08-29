@@ -1,0 +1,65 @@
+name: M8 Live Obligations
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/m8-live-obligations.trigger"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m8-live-obligations
+  cancel-in-progress: false
+
+jobs:
+  obligations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: testnet
+    env:
+      CREDITCOIN_RPC_HTTP: "https://rpc.cc3-testnet.creditcoin.network"
+      CC3_DEPLOYER_PRIVATE_KEY: ${{ secrets.CC3_DEPLOYER_PRIVATE_KEY }}
+      EVIDENCE_PATH: evidence/runtime/m8-obligations.json
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.19.0
+
+      - run: corepack enable
+      - run: corepack prepare pnpm@11.24.0 --activate
+      - run: pnpm install --no-frozen-lockfile
+
+      - name: Assert required testnet signer secret
+        shell: bash
+        run: |
+          test -n "$CC3_DEPLOYER_PRIVATE_KEY" || { echo "Missing CC3_DEPLOYER_PRIVATE_KEY"; exit 1; }
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1.9.1
+        with:
+          version: v1.7.1
+
+      - name: Build and property gate
+        run: |
+          forge fmt --check
+          forge build --sizes
+          forge test -vvv
+
+      - name: Execute live M8 obligations
+        run: pnpm live:m8:obligations
+
+      - name: Upload M8 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m8-obligations-${{ github.run_id }}
+          path: evidence/runtime/m8-obligations.json
+          if-no-files-found: warn
+          retention-days: 90
