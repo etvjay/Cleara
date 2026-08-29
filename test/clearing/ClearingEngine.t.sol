@@ -80,12 +80,10 @@ contract ClearingEngineTest {
         require(obligations.getObligation(ab).clearedAmount == 70, "A clear amount mismatch");
         require(obligations.getObligation(ba).clearedAmount == 70, "B clear amount mismatch");
         require(
-            obligations.getObligation(ab).status == ObligationLedger.ObligationStatus.CLEARED,
-            "A status not CLEARED"
+            obligations.getObligation(ab).status == ObligationLedger.ObligationStatus.CLEARED, "A status not CLEARED"
         );
         require(
-            obligations.getObligation(ba).status == ObligationLedger.ObligationStatus.CLEARED,
-            "B status not CLEARED"
+            obligations.getObligation(ba).status == ObligationLedger.ObligationStatus.CLEARED, "B status not CLEARED"
         );
     }
 
@@ -113,12 +111,13 @@ contract ClearingEngineTest {
     }
 
     function testMultilateralPolicyCannotBeConfiguredInM9() public {
-        (bool ok,) = address(policies).call(
-            abi.encodeCall(
-                policies.configurePolicy,
-                (assetClassId, keccak256("multilateral"), ClearingPolicyRegistry.SetoffMode.MULTILATERAL)
-            )
-        );
+        (bool ok,) = address(policies)
+            .call(
+                abi.encodeCall(
+                    policies.configurePolicy,
+                    (assetClassId, keccak256("multilateral"), ClearingPolicyRegistry.SetoffMode.MULTILATERAL)
+                )
+            );
         require(!ok, "M9 silently enabled multilateral netting");
     }
 
@@ -175,7 +174,8 @@ contract ClearingEngineTest {
         facilities.bindEncumbrance(id, encumbranceId);
         facilities.beginAllocating(id);
 
-        bytes32 allocationId = allocations.proposeAllocation(id, address(this), amount, uint64(block.timestamp + 90 days));
+        bytes32 allocationId =
+            allocations.proposeAllocation(id, address(this), amount, uint64(block.timestamp + 90 days));
         allocations.activateAllocation(allocationId);
         bytes32 commitmentId = commitments.registerActiveCommitment(
             keccak256("source-commitment"),
