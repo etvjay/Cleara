@@ -32,27 +32,26 @@ contract EncumbranceRegistryTest {
     }
 
     function testOverEncumbranceVector() public {
-        bytes32 a = encumbrances.createEncumbrance(
-            claimId, facilityA, address(0xF1), 50, uint64(block.timestamp + 7 days)
-        );
+        bytes32 a =
+            encumbrances.createEncumbrance(claimId, facilityA, address(0xF1), 50, uint64(block.timestamp + 7 days));
         EncumbranceRegistry.Encumbrance memory record = encumbrances.getEncumbrance(a);
         require(record.status == EncumbranceRegistry.EncumbranceStatus.ACTIVE, "A not active");
         require(claims.availableCapacity(claimId) == 30, "wrong remaining");
 
-        (bool ok,) = address(encumbrances).call(
-            abi.encodeCall(
-                encumbrances.createEncumbrance,
-                (claimId, facilityB, address(0xF2), uint256(40), uint64(block.timestamp + 7 days))
-            )
-        );
+        (bool ok,) = address(encumbrances)
+            .call(
+                abi.encodeCall(
+                    encumbrances.createEncumbrance,
+                    (claimId, facilityB, address(0xF2), uint256(40), uint64(block.timestamp + 7 days))
+                )
+            );
         require(!ok, "over-encumbrance accepted");
         require(claims.availableCapacity(claimId) == 30, "capacity mutated on revert");
     }
 
     function testReleaseRestoresCapacityExactlyOnce() public {
-        bytes32 id = encumbrances.createEncumbrance(
-            claimId, facilityA, address(0xF1), 50, uint64(block.timestamp + 7 days)
-        );
+        bytes32 id =
+            encumbrances.createEncumbrance(claimId, facilityA, address(0xF1), 50, uint64(block.timestamp + 7 days));
         encumbrances.releaseEncumbrance(id);
         require(claims.availableCapacity(claimId) == 80, "not restored");
 
@@ -62,20 +61,17 @@ contract EncumbranceRegistryTest {
     }
 
     function testNonceMakesSameFacilityReservationsDistinct() public {
-        bytes32 first = encumbrances.createEncumbrance(
-            claimId, facilityA, address(0xF1), 10, uint64(block.timestamp + 7 days)
-        );
+        bytes32 first =
+            encumbrances.createEncumbrance(claimId, facilityA, address(0xF1), 10, uint64(block.timestamp + 7 days));
         encumbrances.releaseEncumbrance(first);
-        bytes32 second = encumbrances.createEncumbrance(
-            claimId, facilityA, address(0xF1), 10, uint64(block.timestamp + 7 days)
-        );
+        bytes32 second =
+            encumbrances.createEncumbrance(claimId, facilityA, address(0xF1), 10, uint64(block.timestamp + 7 days));
         require(first != second, "identity reused");
     }
 
     function testCannotExpireBeforeDeadline() public {
-        bytes32 id = encumbrances.createEncumbrance(
-            claimId, facilityA, address(0xF1), 10, uint64(block.timestamp + 7 days)
-        );
+        bytes32 id =
+            encumbrances.createEncumbrance(claimId, facilityA, address(0xF1), 10, uint64(block.timestamp + 7 days));
         (bool ok,) = address(encumbrances).call(abi.encodeCall(encumbrances.expireEncumbrance, (id)));
         require(!ok, "premature expiry accepted");
         require(claims.availableCapacity(claimId) == 70, "capacity changed");
