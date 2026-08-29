@@ -54,11 +54,7 @@ contract CapitalCommitmentTest {
         claims.setFinanceableCapacity(claimId, 100, keccak256("finance-policy"), keccak256("decision"));
 
         facilityId = facilities.createFacility(
-            assetClassId,
-            100,
-            uint64(block.timestamp),
-            uint64(block.timestamp + 14 days),
-            keccak256("facility-policy")
+            assetClassId, 100, uint64(block.timestamp), uint64(block.timestamp + 14 days), keccak256("facility-policy")
         );
         facilities.verifyFacility(facilityId);
         facilities.openFacility(facilityId);
@@ -75,7 +71,8 @@ contract CapitalCommitmentTest {
 
     function testSourceCommitmentActuallyLocksTokens() public {
         uint64 expiresAt = uint64(block.timestamp + 2 days);
-        bytes32 sourceCommitmentId = vault.commit(facilityId, allocationId, assetClassId, address(token), 100, expiresAt);
+        bytes32 sourceCommitmentId =
+            vault.commit(facilityId, allocationId, assetClassId, address(token), 100, expiresAt);
 
         CapitalCommitmentVault.SourceCommitment memory source = vault.getCommitment(sourceCommitmentId);
         require(source.status == CapitalCommitmentVault.CommitmentStatus.COMMITTED, "source not committed");
@@ -113,13 +110,15 @@ contract CapitalCommitmentTest {
         );
         FacilityManager.Facility memory facility = facilities.getFacility(facilityId);
         require(facility.committedAmount == 100, "committed accounting missing");
-        require(commitments.getCommitment(commitmentId).status == CommitmentRegistry.CommitmentStatus.ACTIVE, "registry inactive");
+        require(
+            commitments.getCommitment(commitmentId).status == CommitmentRegistry.CommitmentStatus.ACTIVE,
+            "registry inactive"
+        );
     }
 
     function testCommitmentCannotMismatchAllocation() public {
-        (bool ok,) = address(allocations).call(
-            abi.encodeCall(allocations.recognizeCommitment, (allocationId, address(this), 99))
-        );
+        (bool ok,) = address(allocations)
+            .call(abi.encodeCall(allocations.recognizeCommitment, (allocationId, address(this), 99)));
         require(!ok, "mismatched amount accepted");
         require(
             allocations.getAllocation(allocationId).status == AllocationManager.AllocationStatus.ACTIVE,
@@ -129,7 +128,6 @@ contract CapitalCommitmentTest {
     }
 
     function testFacilityCannotCapitalizeWithoutFullCommitment() public {
-        allocations.grantRole(allocations.COMMITMENT_GATEWAY_ROLE(), address(this));
         facilities.beginCapitalizing(facilityId);
         (bool ok,) = address(facilities).call(abi.encodeCall(facilities.finalizeCapitalization, (facilityId)));
         require(!ok, "facility capitalized without committed target");
