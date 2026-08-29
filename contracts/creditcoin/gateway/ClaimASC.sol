@@ -3,8 +3,10 @@ pragma solidity ^0.8.30;
 
 import {EvmV1Decoder} from "@gluwa/usc-contracts/contracts/write-ability/common/EvmV1Decoder.sol";
 import {INativeQueryVerifier} from "../interfaces/INativeQueryVerifier.sol";
-import {EvidenceRegistry} from "../registry/EvidenceRegistry.sol";
 import {ClaimRegistry} from "../kernel/ClaimRegistry.sol";
+import {AssetRegistry} from "../registry/AssetRegistry.sol";
+import {DomainRegistry} from "../registry/DomainRegistry.sol";
+import {EvidenceRegistry} from "../registry/EvidenceRegistry.sol";
 
 contract ClaimASC {
     bytes32 public constant CLAIM_CREATED_SIG =
@@ -31,6 +33,8 @@ contract ClaimASC {
     }
 
     INativeQueryVerifier public immutable verifier;
+    DomainRegistry public immutable domainRegistry;
+    AssetRegistry public immutable assetRegistry;
     EvidenceRegistry public immutable evidenceRegistry;
     ClaimRegistry public immutable claimRegistry;
     uint64 public immutable sourceChainKey;
@@ -40,6 +44,8 @@ contract ClaimASC {
     mapping(bytes32 => bool) public processedQuery;
 
     error UnsupportedSource();
+    error InactiveSourceDomain();
+    error UnsupportedAssetClass(bytes32 assetClassId);
     error VerifyFailed();
     error SourceTxFailed();
     error WrongSourceContract();
@@ -52,6 +58,8 @@ contract ClaimASC {
 
     constructor(
         address verifier_,
+        address domainRegistry_,
+        address assetRegistry_,
         address evidenceRegistry_,
         address claimRegistry_,
         uint64 sourceChainKey_,
@@ -59,10 +67,13 @@ contract ClaimASC {
         address sourceClaimContract_
     ) {
         if (
-            verifier_ == address(0) || evidenceRegistry_ == address(0) || claimRegistry_ == address(0)
-                || sourceDomainId_ == bytes32(0) || sourceClaimContract_ == address(0)
+            verifier_ == address(0) || domainRegistry_ == address(0) || assetRegistry_ == address(0)
+                || evidenceRegistry_ == address(0) || claimRegistry_ == address(0) || sourceDomainId_ == bytes32(0)
+                || sourceClaimContract_ == address(0)
         ) revert UnsupportedSource();
         verifier = INativeQueryVerifier(verifier_);
+        domainRegistry = DomainRegistry(domainRegistry_);
+        assetRegistry = AssetRegistry(assetRegistry_);
         evidenceRegistry = EvidenceRegistry(evidenceRegistry_);
         claimRegistry = ClaimRegistry(claimRegistry_);
         sourceChainKey = sourceChainKey_;
@@ -71,7 +82,7 @@ contract ClaimASC {
     }
 
     function acceptAttestedClaim(Proof calldata proof) external returns (bytes32 claimId, bytes32 evidenceId) {
-        if (proof.chainKey != sourceChainKey) revert UnsupportedSource();
+        _validateSourceDomain(proof.chainKey);
 
         INativeQueryVerifier.MerkleProof memory merkleProof =
             INativeQueryVerifier.MerkleProof({root: proof.merkleRoot, siblings: proof.siblings});
@@ -81,12 +92,27 @@ contract ClaimASC {
 
         _verify(proof, merkleProof);
         VerifiedClaimFact memory fact = _decode(proof.encodedTransaction);
+        _validateAssetClass(fact.assetClassId);
 
         processedQuery[queryId] = true;
         evidenceId = _recordEvidence(proof, txIndex, fact);
         claimId = _registerClaim(fact, evidenceId);
 
         emit ClaimAccepted(claimId, evidenceId, queryId);
+    }
+
+    function _validateSourceDomain(uint64 proofChainKey) internal view {
+        if (proofChainKey != sourceChainKey) revert UnsupportedSource();
+        DomainRegistry.DomainConfig memory domain = domainRegistry.getDomain(sourceDomainId);
+        if (
+            !domain.active || !domain.readable || !domain.claim || !domain.evidence || domain.chainKey != sourceChainKey
+                || domain.domainId != sourceDomainId
+        ) revert InactiveSourceDomain();
+    }
+
+    function _validateAssetClass(bytes32 assetClassId) internal view {
+        AssetRegistry.AssetClass memory assetClass = assetRegistry.getAssetClass(assetClassId);
+        if (!assetClass.active) revert UnsupportedAssetClass(assetClassId);
     }
 
     function _verify(Proof calldata proof, INativeQueryVerifier.MerkleProof memory merkleProof) internal {
