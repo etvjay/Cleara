@@ -10,6 +10,7 @@
     "probe:blockprover": "tsx scripts/probe/block-prover.ts",
     "probe:attestcoin:gates": "tsx scripts/probe/live-attestcoin-gates.ts",
     "live:m3:claim": "tsx scripts/live/m3-claim-roundtrip.ts",
+    "live:m4:financeability": "tsx scripts/live/m4-financeability.ts",
     "bootstrap:check": "bash scripts/bootstrap/check-machine.sh"
   },
   "dependencies": {
