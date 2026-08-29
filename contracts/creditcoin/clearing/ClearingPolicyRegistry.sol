@@ -74,7 +74,9 @@ contract ClearingPolicyRegistry is AccessControl {
         ClearingPolicy storage policy = _policies[policyId];
         if (policy.policyId == bytes32(0)) revert UnknownPolicy(policyId);
         policy.active = active;
-        emit ClearingPolicyConfigured(policy.policyId, policy.assetClassId, policy.compatibilityHash, policy.mode, active);
+        emit ClearingPolicyConfigured(
+            policy.policyId, policy.assetClassId, policy.compatibilityHash, policy.mode, active
+        );
     }
 
     function getPolicy(bytes32 policyId) external view returns (ClearingPolicy memory policy) {
