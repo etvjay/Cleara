@@ -2,9 +2,6 @@ name: M6 Live Capital Commitment
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - ".github/m6-live-capital-commitment.trigger"
 
 permissions:
   contents: read
