@@ -57,9 +57,8 @@ contract FacilityAllocationFuzzTest {
 
     function testFuzzActiveAllocationNeverExceedsEncumbered(uint256 rawAmount) public {
         uint256 amount = 1 + (rawAmount % 1_000_000);
-        bytes32 allocationId = allocations.proposeAllocation(
-            facilityId, address(0xBEEF), amount, uint64(block.timestamp + 3 days)
-        );
+        bytes32 allocationId =
+            allocations.proposeAllocation(facilityId, address(0xBEEF), amount, uint64(block.timestamp + 3 days));
         allocations.activateAllocation(allocationId);
 
         FacilityManager.Facility memory facility = facilities.getFacility(facilityId);
@@ -74,14 +73,12 @@ contract FacilityAllocationFuzzTest {
         uint256 excess = 1 + (rawExcess % 1_000_000);
         uint256 second = remaining + excess;
 
-        bytes32 firstId = allocations.proposeAllocation(
-            facilityId, address(0xA1), first, uint64(block.timestamp + 3 days)
-        );
+        bytes32 firstId =
+            allocations.proposeAllocation(facilityId, address(0xA1), first, uint64(block.timestamp + 3 days));
         allocations.activateAllocation(firstId);
 
-        bytes32 secondId = allocations.proposeAllocation(
-            facilityId, address(0xA2), second, uint64(block.timestamp + 3 days)
-        );
+        bytes32 secondId =
+            allocations.proposeAllocation(facilityId, address(0xA2), second, uint64(block.timestamp + 3 days));
         (bool ok,) = address(allocations).call(abi.encodeCall(allocations.activateAllocation, (secondId)));
         require(!ok, "over-allocation accepted");
 
@@ -93,9 +90,8 @@ contract FacilityAllocationFuzzTest {
 
     function testFuzzCancelRestoresAllocationExactly(uint256 rawAmount) public {
         uint256 amount = 1 + (rawAmount % 1_000_000);
-        bytes32 allocationId = allocations.proposeAllocation(
-            facilityId, address(0xC0FFEE), amount, uint64(block.timestamp + 3 days)
-        );
+        bytes32 allocationId =
+            allocations.proposeAllocation(facilityId, address(0xC0FFEE), amount, uint64(block.timestamp + 3 days));
         allocations.activateAllocation(allocationId);
         allocations.cancelAllocation(allocationId);
 
