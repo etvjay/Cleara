@@ -1,0 +1,75 @@
+name: M3 Live Claim Round Trip
+
+on:
+  workflow_dispatch:
+    inputs:
+      sepolia_rpc_http:
+        description: "Sepolia JSON-RPC URL"
+        required: false
+        default: "https://ethereum-sepolia-rpc.publicnode.com"
+      proof_builder_url:
+        description: "Attestcoin Proof Builder URL"
+        required: false
+        default: "https://prover.cc3-testnet.creditcoin.network/"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m3-live-claim
+  cancel-in-progress: false
+
+jobs:
+  round-trip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: testnet
+    env:
+      SEPOLIA_RPC_HTTP: ${{ inputs.sepolia_rpc_http || 'https://ethereum-sepolia-rpc.publicnode.com' }}
+      CREDITCOIN_RPC_HTTP: "https://rpc.cc3-testnet.creditcoin.network"
+      ATTESTCOIN_PROOF_BUILDER_URL: ${{ inputs.proof_builder_url || 'https://prover.cc3-testnet.creditcoin.network/' }}
+      SEPOLIA_DEPLOYER_PRIVATE_KEY: ${{ secrets.SEPOLIA_DEPLOYER_PRIVATE_KEY }}
+      CC3_DEPLOYER_PRIVATE_KEY: ${{ secrets.CC3_DEPLOYER_PRIVATE_KEY }}
+      EVIDENCE_PATH: evidence/runtime/m3-claim-roundtrip.json
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.19.0
+
+      - run: corepack enable
+      - run: corepack prepare pnpm@11.24.0 --activate
+      - run: pnpm install --no-frozen-lockfile
+
+      - name: Assert required testnet signer secrets
+        shell: bash
+        run: |
+          test -n "$SEPOLIA_DEPLOYER_PRIVATE_KEY" || { echo "Missing testnet secret SEPOLIA_DEPLOYER_PRIVATE_KEY"; exit 1; }
+          test -n "$CC3_DEPLOYER_PRIVATE_KEY" || { echo "Missing testnet secret CC3_DEPLOYER_PRIVATE_KEY"; exit 1; }
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1.9.1
+        with:
+          version: v1.7.1
+
+      - name: Build audited artifacts
+        run: |
+          forge fmt --check
+          forge build --sizes
+          forge test -vvv
+
+      - name: Execute live M3 round trip
+        run: pnpm live:m3:claim
+
+      - name: Upload M3 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m3-claim-roundtrip-${{ github.run_id }}
+          path: evidence/runtime/m3-claim-roundtrip.json
+          if-no-files-found: warn
+          retention-days: 90
