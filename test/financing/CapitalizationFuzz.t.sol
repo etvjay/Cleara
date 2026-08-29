@@ -123,9 +123,10 @@ contract CapitalizationFuzzTest {
         ids[1] = commitmentA;
         ids[2] = commitmentA;
 
-        (bool ok,) = address(capitalization).call(
-            abi.encodeCall(capitalization.sealCapitalization, (facilityId, uint64(block.timestamp + 60 days), ids))
-        );
+        (bool ok,) = address(capitalization)
+            .call(
+                abi.encodeCall(capitalization.sealCapitalization, (facilityId, uint64(block.timestamp + 60 days), ids))
+            );
         require(!ok, "duplicate membership accepted");
         require(facilities.getFacility(facilityId).capitalizationRoot == bytes32(0), "duplicate wrote root");
     }
