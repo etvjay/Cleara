@@ -2,9 +2,6 @@ name: M5 Live Facility Allocation
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - ".github/m5-live-facility-allocation.trigger"
 
 permissions:
   contents: read
