@@ -79,56 +79,59 @@ contract ObligationLedgerFuzzTest {
         bool ok;
 
         if (vector == 0) {
-            (ok,) = address(obligations).call(
-                abi.encodeCall(
-                    obligations.createObligation,
-                    (
-                        facilityId,
-                        debtor,
-                        debtor,
-                        assetClassId,
-                        amount,
-                        uint64(block.timestamp + 30 days),
-                        keccak256("policy"),
-                        keccak256("terms"),
-                        ObligationLedger.ObligationKind.DRAWDOWN
+            (ok,) = address(obligations)
+                .call(
+                    abi.encodeCall(
+                        obligations.createObligation,
+                        (
+                            facilityId,
+                            debtor,
+                            debtor,
+                            assetClassId,
+                            amount,
+                            uint64(block.timestamp + 30 days),
+                            keccak256("policy"),
+                            keccak256("terms"),
+                            ObligationLedger.ObligationKind.DRAWDOWN
+                        )
                     )
-                )
-            );
+                );
         } else if (vector == 1) {
-            (ok,) = address(obligations).call(
-                abi.encodeCall(
-                    obligations.createObligation,
-                    (
-                        facilityId,
-                        debtor,
-                        creditor,
-                        keccak256("wrong-asset"),
-                        amount,
-                        uint64(block.timestamp + 30 days),
-                        keccak256("policy"),
-                        keccak256("terms"),
-                        ObligationLedger.ObligationKind.DRAWDOWN
+            (ok,) = address(obligations)
+                .call(
+                    abi.encodeCall(
+                        obligations.createObligation,
+                        (
+                            facilityId,
+                            debtor,
+                            creditor,
+                            keccak256("wrong-asset"),
+                            amount,
+                            uint64(block.timestamp + 30 days),
+                            keccak256("policy"),
+                            keccak256("terms"),
+                            ObligationLedger.ObligationKind.DRAWDOWN
+                        )
                     )
-                )
-            );
+                );
         } else {
-            (ok,) = address(obligations).call(
-                abi.encodeCall(
-                    obligations.createObligation,
-                    (
-                        uncapitalizedFacilityId,
-                        debtor,
-                        creditor,
-                        assetClassId,
-                        amount,
-                        uint64(block.timestamp + 30 days),
-                        keccak256("policy"),
-                        keccak256("terms"),
-                        ObligationLedger.ObligationKind.DRAWDOWN
+            (ok,) = address(obligations)
+                .call(
+                    abi.encodeCall(
+                        obligations.createObligation,
+                        (
+                            uncapitalizedFacilityId,
+                            debtor,
+                            creditor,
+                            assetClassId,
+                            amount,
+                            uint64(block.timestamp + 30 days),
+                            keccak256("policy"),
+                            keccak256("terms"),
+                            ObligationLedger.ObligationKind.DRAWDOWN
+                        )
                     )
-                )
-            );
+                );
         }
 
         require(!ok, "invalid issuance accepted");
@@ -201,9 +204,7 @@ contract ObligationLedgerFuzzTest {
 
         bytes32[] memory commitmentIds = new bytes32[](1);
         commitmentIds[0] = commitmentId;
-        capitalization.sealCapitalization(
-            capitalizedFacilityId, uint64(block.timestamp + 60 days), commitmentIds
-        );
+        capitalization.sealCapitalization(capitalizedFacilityId, uint64(block.timestamp + 60 days), commitmentIds);
     }
 
     function _makeAllocatingFacility(uint256 amount, uint256 salt) internal returns (bytes32 allocatingFacilityId) {
