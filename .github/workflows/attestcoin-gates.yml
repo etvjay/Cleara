@@ -24,6 +24,7 @@ on:
     paths:
       - "scripts/probe/**"
       - "package.json"
+      - "pnpm-workspace.yaml"
       - ".github/workflows/attestcoin-gates.yml"
 
 permissions:
