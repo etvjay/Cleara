@@ -82,40 +82,9 @@ contract ClaimASC {
         _verify(proof, merkleProof);
         VerifiedClaimFact memory fact = _decode(proof.encodedTransaction);
 
-        bytes32 payloadHash = keccak256(
-            abi.encode(
-                fact.sourceNonce,
-                fact.claimant,
-                fact.obligor,
-                fact.assetClassId,
-                fact.faceValue,
-                fact.maturity,
-                fact.sourceEvidenceHash
-            )
-        );
-
         processedQuery[queryId] = true;
-        evidenceId = evidenceRegistry.registerEvidence(
-            sourceDomainId,
-            proof.chainKey,
-            proof.blockHeight,
-            txIndex,
-            0,
-            keccak256(proof.encodedTransaction),
-            payloadHash
-        );
-        claimId = claimRegistry.registerVerifiedClaim(
-            sourceDomainId,
-            sourceClaimContract,
-            fact.sourceNonce,
-            fact.claimant,
-            fact.obligor,
-            fact.assetClassId,
-            fact.faceValue,
-            fact.maturity,
-            fact.sourceEvidenceHash,
-            evidenceId
-        );
+        evidenceId = _recordEvidence(proof, txIndex, fact);
+        claimId = _registerClaim(fact, evidenceId);
 
         emit ClaimAccepted(claimId, evidenceId, queryId);
     }
@@ -128,6 +97,47 @@ contract ClaimASC {
             proof.chainKey, proof.blockHeight, proof.encodedTransaction, merkleProof, continuityProof
         );
         if (!ok) revert VerifyFailed();
+    }
+
+    function _recordEvidence(Proof calldata proof, uint64 txIndex, VerifiedClaimFact memory fact)
+        internal
+        returns (bytes32)
+    {
+        bytes32 payloadHash = keccak256(
+            abi.encode(
+                fact.sourceNonce,
+                fact.claimant,
+                fact.obligor,
+                fact.assetClassId,
+                fact.faceValue,
+                fact.maturity,
+                fact.sourceEvidenceHash
+            )
+        );
+        return evidenceRegistry.registerEvidence(
+            sourceDomainId,
+            proof.chainKey,
+            proof.blockHeight,
+            txIndex,
+            0,
+            keccak256(proof.encodedTransaction),
+            payloadHash
+        );
+    }
+
+    function _registerClaim(VerifiedClaimFact memory fact, bytes32 evidenceId) internal returns (bytes32) {
+        return claimRegistry.registerVerifiedClaim(
+            sourceDomainId,
+            sourceClaimContract,
+            fact.sourceNonce,
+            fact.claimant,
+            fact.obligor,
+            fact.assetClassId,
+            fact.faceValue,
+            fact.maturity,
+            fact.sourceEvidenceHash,
+            evidenceId
+        );
     }
 
     function _decode(bytes calldata encodedTransaction) internal view returns (VerifiedClaimFact memory fact) {
