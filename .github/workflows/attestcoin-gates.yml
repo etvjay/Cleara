@@ -1,0 +1,71 @@
+name: Attestcoin G0-G3 Gates
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_chain_key:
+        description: "Attestcoin source chainKey"
+        required: false
+        default: "1"
+      source_chain_rpc_http:
+        description: "Source-chain JSON-RPC URL"
+        required: false
+        default: "https://ethereum-sepolia-rpc.publicnode.com"
+      source_chain_txn_hash:
+        description: "Optional successful source transaction hash; leave blank to auto-select from attested history"
+        required: false
+        default: ""
+      proof_builder_url:
+        description: "Attestcoin Proof Builder URL"
+        required: false
+        default: "https://prover.cc3-testnet.creditcoin.network/"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/probe/**"
+      - "package.json"
+      - ".github/workflows/attestcoin-gates.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  live-gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CREDITCOIN_CHAIN_ID: "102031"
+      CREDITCOIN_RPC_HTTP: "https://rpc.cc3-testnet.creditcoin.network"
+      SOURCE_CHAIN_KEY: ${{ inputs.source_chain_key || '1' }}
+      SOURCE_CHAIN_RPC_HTTP: ${{ inputs.source_chain_rpc_http || 'https://ethereum-sepolia-rpc.publicnode.com' }}
+      SOURCE_CHAIN_TXN_HASH: ${{ inputs.source_chain_txn_hash || '' }}
+      ATTESTCOIN_PROOF_BUILDER_URL: ${{ inputs.proof_builder_url || 'https://prover.cc3-testnet.creditcoin.network/' }}
+      EVIDENCE_PATH: evidence/runtime/attestcoin-gates.json
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.19.0
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Activate canonical pnpm
+        run: corepack prepare pnpm@11.24.0 --activate
+
+      - name: Install M1 dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: G0-G3 live Attestcoin gate
+        run: pnpm probe:attestcoin:gates
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: attestcoin-gates-${{ github.run_id }}
+          path: evidence/runtime/attestcoin-gates.json
+          if-no-files-found: error
+          retention-days: 30
