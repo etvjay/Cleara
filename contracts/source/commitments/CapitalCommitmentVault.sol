@@ -58,12 +58,11 @@ contract CapitalCommitmentVault is AccessControl {
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
     }
 
-    function computeSourceCommitmentId(
-        bytes32 facilityId,
-        bytes32 allocationId,
-        address provider,
-        uint256 nonce
-    ) public pure returns (bytes32) {
+    function computeSourceCommitmentId(bytes32 facilityId, bytes32 allocationId, address provider, uint256 nonce)
+        public
+        pure
+        returns (bytes32)
+    {
         return keccak256(abi.encode("CLEARA_SOURCE_COMMITMENT_V1", facilityId, allocationId, provider, nonce));
     }
 
@@ -76,8 +75,8 @@ contract CapitalCommitmentVault is AccessControl {
         uint64 expiresAt
     ) external returns (bytes32 sourceCommitmentId) {
         if (
-            facilityId == bytes32(0) || allocationId == bytes32(0) || assetClassId == bytes32(0)
-                || token == address(0) || amount == 0 || expiresAt <= block.timestamp
+            facilityId == bytes32(0) || allocationId == bytes32(0) || assetClassId == bytes32(0) || token == address(0)
+                || amount == 0 || expiresAt <= block.timestamp
         ) revert InvalidCommitment();
 
         uint256 nonce = nextNonceByProviderAndFacility[msg.sender][facilityId];
@@ -104,14 +103,7 @@ contract CapitalCommitmentVault is AccessControl {
         });
 
         emit CapitalCommitted(
-            sourceCommitmentId,
-            facilityId,
-            allocationId,
-            msg.sender,
-            assetClassId,
-            token,
-            amount,
-            expiresAt
+            sourceCommitmentId, facilityId, allocationId, msg.sender, assetClassId, token, amount, expiresAt
         );
     }
 
@@ -138,11 +130,7 @@ contract CapitalCommitmentVault is AccessControl {
         if (commitment.status == CommitmentStatus.NONE) revert UnknownCommitment(sourceCommitmentId);
     }
 
-    function _requireCommitted(bytes32 sourceCommitmentId)
-        internal
-        view
-        returns (SourceCommitment storage commitment)
-    {
+    function _requireCommitted(bytes32 sourceCommitmentId) internal view returns (SourceCommitment storage commitment) {
         commitment = _commitments[sourceCommitmentId];
         if (commitment.status == CommitmentStatus.NONE) revert UnknownCommitment(sourceCommitmentId);
         if (commitment.status != CommitmentStatus.COMMITTED) {
