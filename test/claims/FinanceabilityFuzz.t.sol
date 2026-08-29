@@ -48,7 +48,9 @@ contract FinanceabilityFuzzTest {
         ClaimRegistry.Claim memory claim = claims.getClaim(claimId);
         require(claim.activeEncumbrance == amount, "wrong active");
         require(claim.activeEncumbrance <= claim.financeableCapacity, "over-encumbered");
-        require(claims.availableCapacity(claimId) + claim.activeEncumbrance == claim.financeableCapacity, "not conserved");
+        require(
+            claims.availableCapacity(claimId) + claim.activeEncumbrance == claim.financeableCapacity, "not conserved"
+        );
     }
 
     function testFuzzOverReservationAlwaysReverts(uint256 rawCapacity, uint256 rawFirst, uint256 rawExcess) public {
@@ -63,12 +65,13 @@ contract FinanceabilityFuzzTest {
             claimId, keccak256("facility-a"), address(0xF1), first, uint64(block.timestamp + 1 days)
         );
 
-        (bool ok,) = address(encumbrances).call(
-            abi.encodeCall(
-                encumbrances.createEncumbrance,
-                (claimId, keccak256("facility-b"), address(0xF2), second, uint64(block.timestamp + 1 days))
-            )
-        );
+        (bool ok,) = address(encumbrances)
+            .call(
+                abi.encodeCall(
+                    encumbrances.createEncumbrance,
+                    (claimId, keccak256("facility-b"), address(0xF2), second, uint64(block.timestamp + 1 days))
+                )
+            );
         require(!ok, "over-reservation accepted");
 
         ClaimRegistry.Claim memory claim = claims.getClaim(claimId);
