@@ -11,9 +11,10 @@ contract EvidenceRegistry is AccessControl {
         bytes32 evidenceId;
         bytes32 domainId;
         uint64 chainKey;
-        uint256 blockHeight;
-        bytes32 txHash;
+        uint64 blockHeight;
+        uint64 txIndex;
         uint32 eventIndex;
+        bytes32 encodedTransactionHash;
         bytes32 payloadHash;
         address gateway;
         uint64 recordedAt;
@@ -29,10 +30,11 @@ contract EvidenceRegistry is AccessControl {
     event EvidenceRegistered(
         bytes32 indexed evidenceId,
         bytes32 indexed domainId,
-        bytes32 indexed txHash,
-        uint64 chainKey,
-        uint256 blockHeight,
+        uint64 indexed chainKey,
+        uint64 blockHeight,
+        uint64 txIndex,
         uint32 eventIndex,
+        bytes32 encodedTransactionHash,
         bytes32 payloadHash,
         address gateway
     );
@@ -47,37 +49,47 @@ contract EvidenceRegistry is AccessControl {
     function computeEvidenceId(
         bytes32 domainId,
         uint64 chainKey,
-        uint256 blockHeight,
-        bytes32 txHash,
+        uint64 blockHeight,
+        uint64 txIndex,
         uint32 eventIndex
     ) public pure returns (bytes32) {
-        return keccak256(abi.encode("CLEARA_EVIDENCE_V1", domainId, chainKey, blockHeight, txHash, eventIndex));
+        return keccak256(abi.encode("CLEARA_EVIDENCE_V2", domainId, chainKey, blockHeight, txIndex, eventIndex));
     }
 
     function registerEvidence(
         bytes32 domainId,
         uint64 chainKey,
-        uint256 blockHeight,
-        bytes32 txHash,
+        uint64 blockHeight,
+        uint64 txIndex,
         uint32 eventIndex,
+        bytes32 encodedTransactionHash,
         bytes32 payloadHash
     ) external onlyRole(GATEWAY_ROLE) returns (bytes32 evidenceId) {
-        evidenceId = computeEvidenceId(domainId, chainKey, blockHeight, txHash, eventIndex);
+        evidenceId = computeEvidenceId(domainId, chainKey, blockHeight, txIndex, eventIndex);
         if (_records[evidenceId].evidenceId != bytes32(0)) revert EvidenceAlreadyRegistered(evidenceId);
         _records[evidenceId] = EvidenceRecord({
             evidenceId: evidenceId,
             domainId: domainId,
             chainKey: chainKey,
             blockHeight: blockHeight,
-            txHash: txHash,
+            txIndex: txIndex,
             eventIndex: eventIndex,
+            encodedTransactionHash: encodedTransactionHash,
             payloadHash: payloadHash,
             gateway: msg.sender,
             recordedAt: uint64(block.timestamp),
             consumed: false
         });
         emit EvidenceRegistered(
-            evidenceId, domainId, txHash, chainKey, blockHeight, eventIndex, payloadHash, msg.sender
+            evidenceId,
+            domainId,
+            chainKey,
+            blockHeight,
+            txIndex,
+            eventIndex,
+            encodedTransactionHash,
+            payloadHash,
+            msg.sender
         );
     }
 
