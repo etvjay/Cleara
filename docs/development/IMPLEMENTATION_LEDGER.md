@@ -1,217 +1,260 @@
 # Cleara Implementation Ledger
 
+Snapshot: 29 August 2026
+
 | Component | Specification | Implementation | Tests | Live Evidence | Audit | Deployment |
 |---|---|---|---|---|---|---|
-| M0 Repository scaffold | Frozen | REMOTE_SCAFFOLD_INITIALIZED | Static only | GitHub commits recorded | Not started | GitHub main |
-| G0 Creditcoin RPC probe | Frozen | COMPLETE | Live CC3 chainId/block probe PASS | Run 33249132447 | Not started | N/A |
-| G1 ChainInfo probe | Frozen | COMPLETE | Live ChainInfo PASS | chainKey 1 Sepolia + chainKey 3 Ethereum Mainnet confirmed | Not started | N/A |
-| G2 Proof Builder probe | Frozen | COMPLETE | Real attested Sepolia tx proof generated | tx 0x8a848420854482e0978b3d6c1345b6a0dfb0263a9620df90ff1a90db18fcbcf6 | Not started | N/A |
-| G3 Block Prover verification | Frozen | COMPLETE | Valid proof accepted; tampered txBytes rejected | Run 33249132447 / artifact 9713789625 | Not started | N/A |
-| M2 Registries | Frozen design + ADR-0001 | TESTED_TESTNET | Evidence V2 + registry suite PASS | M3 deployment/run 33253029696 | Not started | CC3 testnet evidence deployment |
-| M3 Claim path | Frozen design | TESTED_TESTNET | ClaimSource/ClaimRegistry/ClaimASC positive + negative paths PASS | Run 33253029696 / artifact 9715192463 | Not started | Sepolia + CC3 testnet |
-| M3 live round-trip harness | Frozen test gate | COMPLETE | Full cross-chain round-trip PASS | `evidence/runtime/M3_CLAIM_ROUNDTRIP_2026-08-29.md` | Not started | Executed once; workflow manual-only |
-| M4 Financeability controls | Frozen design | TESTED_TESTNET | Unit + fuzz + live CC3 accounting PASS | Run 33254529904 / artifact 9715412301 | Not started | CC3 testnet evidence deployment |
-| M4 EncumbranceRegistry | Frozen design | TESTED_TESTNET | Reservation conservation, over-cap rejection, release/idempotency PASS | `evidence/runtime/M4_FINANCEABILITY_2026-08-29.md` | Not started | CC3 testnet evidence deployment |
-| M4 live accounting harness | Frozen test gate | COMPLETE | 22 tests + 3x1000 M4 fuzz cases + live negative paths PASS | Run 33254529904 | Not started | Executed once; workflow manual-only |
-| M5 FacilityManager | Frozen M5 slice | TESTED_TESTNET | Facility lifecycle slice + binding/capacity tests PASS | Run 33256911456 / artifact 9716144997 | Not started | CC3 testnet evidence deployment |
-| M5 AllocationManager | Frozen M5 slice | TESTED_TESTNET | Allocation lifecycle + over-allocation + cancellation tests PASS | `evidence/runtime/M5_FACILITY_ALLOCATION_2026-08-29.md` | Not started | CC3 testnet evidence deployment |
-| M5 encumbrance consumption | Frozen M5 slice | TESTED_TESTNET | ACTIVE -> CONSUMED without claim-capacity release PASS | Run 33256911456 | Not started | CC3 testnet evidence deployment |
-| M5 live coordination harness | Frozen test gate | COMPLETE | 30 tests + 3x1000 M5 fuzz cases + live negative paths PASS | Run 33256911456 | Not started | Executed once; workflow manual-only |
-| Canonical docs/skills mirror | Frozen | PARTIAL_REMOTE_MIRROR | Not applicable | Local canonical package exists | Not started | GitHub main partial |
+| M0 Repository scaffold | Frozen | COMPLETE | Static/bootstrap checks | GitHub main | Not started | GitHub |
+| M1 Creditcoin/Attestcoin substrate | Frozen | VERIFIED_CLEARA | G0-G3 PASS | Run 33249132447 / artifact 9713789625 | Not started | N/A |
+| M2 Registries | Frozen + ADR-0001 | TESTED_TESTNET | Registry suite PASS | Exercised in M3 | Not started | CC3 evidence deployments |
+| M3 Attested claim ingestion | Frozen | TESTED_TESTNET | Positive + negative claim paths PASS | Run 33253029696 / artifact 9715192463 | Not started | Sepolia + CC3 evidence deployments |
+| M4 Financeability/Encumbrance | Frozen | TESTED_TESTNET | Unit + 3x1000 fuzz + live PASS | Run 33254529904 / artifact 9715412301 | Not started | CC3 evidence deployments |
+| M5 Facility/Allocation | Frozen | TESTED_TESTNET | Unit + 3x1000 fuzz + live PASS | Run 33256911456 / artifact 9716144997 | Not started | CC3 evidence deployments |
+| M6 CapitalCommitmentVault | Frozen M6 slice | TESTED_TESTNET | ERC20 custody + early escape rejection PASS | Run 33261468561 / artifact 9717582867 | Not started | Sepolia evidence deployment |
+| M6 CommitmentASC/Registry | Frozen M6 slice | TESTED_TESTNET | semantic validation + replay PASS | Run 33261468561 / artifact 9717582867 | Not started | CC3 evidence deployments |
+| M6 allocation→commitment binding | Frozen M6 slice | TESTED_TESTNET | ACTIVE→COMMITTED + facility committed accounting PASS | `evidence/runtime/M6_CAPITAL_COMMITMENT_2026-08-29.md` | Not started | Sepolia + CC3 evidence deployments |
+| M7 CapitalizationManager | Frozen implementation slice | IMPLEMENTED_LOCAL | unit + 3x1000 M7 fuzz PASS | Live run 33274674575 IN_PROGRESS | Not started | Local/CI only until live pass |
+| M7 Facility capitalization seal | Frozen implementation slice | IMPLEMENTED_LOCAL | one-time authority/root/horizon/membership tests PASS | Live run 33274674575 IN_PROGRESS | Not started | Local/CI only until live pass |
+| Canonical docs/skills mirror | Frozen | PARTIAL_REMOTE_MIRROR | N/A | Local canonical package exists | Not started | GitHub main partial |
 
-## M1 Live Evidence
+## M1 — Verification substrate
 
 ```text
 Run: 33249132447
 Artifact: 9713789625
-Repository summary: evidence/runtime/ATTESTCOIN_GATES_2026-08-29.md
+SHA256: 64394abd8c2382f10c7499d1cb86122d8bd3502a241433307b8a3d1de360cf10
 ```
 
-Promoted only the external Creditcoin/Attestcoin verification substrate.
-
-## M2 Testnet Evidence
-
-M2 uses ADR-0001 proof-native evidence coordinates:
+Verified live:
 
 ```text
-(domainId, chainKey, blockHeight, txIndex, eventIndex)
+CC3 chainId 102031
+ChainInfo source chainKey 1 -> Sepolia
+ChainInfo source chainKey 3 -> Ethereum Mainnet
+real Sepolia proof generated
+valid Block Prover verification accepted
+tampered proof rejected
 ```
 
-M2 evidence deployments:
-
-```text
-DomainRegistry:    0x4fFD44f86362a767644efFf63aD34AfC35AeD005
-AssetRegistry:     0xdC0D9D3983465b9Cb8c22e3D7e656bc7C206690d
-EvidenceRegistry:  0x153e6ED2303CF5De4Dca4522f41939034e3cb2Ec
-PolicyRegistry:    0x2cd6ca928979E5E870D862ee6723f9921798c505
-AuthorityRegistry: 0xA8eD6954F0E9B7aB9ba4C71cd420F957b0b6E54B
-```
-
-## M3 Testnet Evidence
+## M3 — Attested claim ingestion
 
 ```text
 Run: 33253029696
-Artifact ID: 9715192463
+Artifact: 9715192463
 SHA256: 27f3eef3050ed96d659630a90b052e87832fbf5ad0df2cc3dcd9879433c1d488
-Repository summary: evidence/runtime/M3_CLAIM_ROUNDTRIP_2026-08-29.md
+Evidence: evidence/runtime/M3_CLAIM_ROUNDTRIP_2026-08-29.md
 ```
 
-Deployments:
+Proven boundary:
 
 ```text
-Sepolia ClaimSource: 0xdd013B3423b709bAaC7d2719fCB9d06218Dc2187
-CC3 ClaimRegistry:   0x08b3344F24E765e1F61209eEee7d428703F233e9
-CC3 ClaimASC:        0x0F6F16983856D5ef7506CFA10e6520B43495c122
-```
-
-Positive path:
-
-```text
-Sepolia ClaimCreated tx:
-0x4b253921043fc71207a4974d0f98dad1225e0ed878c3a342ed1b2772ff8b9869
-
-CC3 ClaimASC acceptance tx:
-0x6d08e19ebaf019feb9134e2219168ddd880d592a0f88895cb2b137df47efa1d6
-
-ClaimRegistry state: VERIFIED
+Sepolia ClaimCreated
+-> Attestcoin
+-> ClaimASC semantic validation
+-> ClaimRegistry VERIFIED
 ```
 
 Rejected live:
 
 ```text
-proof replay
+replay
 wrong chainKey
 wrong source contract
-receipt.status == 0 source transaction
+receipt.status == 0
 ```
 
-## M4 Testnet Evidence
+## M4 — Financeability/Encumbrance
 
 ```text
 Run: 33254529904
-Artifact ID: 9715412301
+Artifact: 9715412301
 SHA256: cb0d42256da26ba6f769b9d377dfebf830b0d44a5efafa8b8d36b345537fc940
-Repository summary: evidence/runtime/M4_FINANCEABILITY_2026-08-29.md
+Evidence: evidence/runtime/M4_FINANCEABILITY_2026-08-29.md
 ```
 
-Evidence deployments:
+Invariant:
 
 ```text
-CC3 ClaimRegistry:       0x3b12A365e9beA21035Ab811DA42F04dAfF89e1DC
-CC3 EncumbranceRegistry: 0x6B1C82122165ec351407ABa272d19daEDE9f7a44
+activeEncumbrance <= financeableCapacity <= faceValue
 ```
 
-Live vector:
+Live vector proved bounded reservation, over-reservation rejection, capacity-floor enforcement and exact-once release.
 
-```text
-face value             100,000,000
-financeable capacity    80,000,000
-reserve A               50,000,000
-available               30,000,000
-reserve B request       40,000,000 -> rejected
-release A               50,000,000
-final active                     0
-final available         80,000,000
-```
-
-Build/property gate:
-
-```text
-22 tests passed
-0 failed
-3 M4 fuzz properties x 1000 cases PASS
-```
-
-M4 used a direct VERIFIED-claim fixture; it does not replace M3 Attestcoin evidence.
-
-## M5 Testnet Evidence
+## M5 — Facility/Allocation
 
 ```text
 Run: 33256911456
-Artifact ID: 9716144997
+Artifact: 9716144997
 SHA256: 8c2a22ac36cb736c723ebf0b4f90e5309be56f7296e2b5e6135603bde3373c27
-Repository summary: evidence/runtime/M5_FACILITY_ALLOCATION_2026-08-29.md
+Evidence: evidence/runtime/M5_FACILITY_ALLOCATION_2026-08-29.md
 ```
 
-Evidence deployments:
+Invariant:
 
 ```text
-CC3 ClaimRegistry:       0x50E03d22fa67Fa1005A1cD626A04B56eaE48E591
-CC3 EncumbranceRegistry: 0x163c00f3C9A802c3fb47b46263399f491e354Ff9
-CC3 FacilityManager:     0x92ce1260E35A030580728697667f0F900D514F66
-CC3 AllocationManager:   0xDDa1DCD9273A8606fCea2b1956287618E1635f53
+allocatedAmount <= encumberedAmount <= targetAmount
 ```
 
-Live vector:
+Proven semantic boundary:
 
 ```text
-claim face value                   100,000,000
-financeable capacity                80,000,000
-facility target                     80,000,000
-bound/consumed encumbrance          60,000,000
-allocation A                        40,000,000
-allocation B request                30,000,000 -> rejected
-allocated after failed B            40,000,000
-allocated after cancelling A                 0
-facility encumbered after cancel    60,000,000
-claim active encumbrance            60,000,000
-claim available capacity            20,000,000
-```
-
-M5 semantic result:
-
-```text
-AllocationStatus.ACTIVE    = 2
-AllocationStatus.COMMITTED = 3
-observed allocation A      = 2
 ALLOCATION != CAPITAL COMMITMENT
 ```
 
-Rejected live:
+Consumed encumbrance continues counting against claim capacity; allocation cancellation does not free claim capacity.
+
+## M6 — Capital Commitment
+
+Status: `TESTED_TESTNET`
 
 ```text
-over-allocation
-failed activation mutation
-double cancellation
+Run: 33261468561
+Head exercised: b2f1fd14bbaaec7f513ff477e747e14494df7ffc
+Artifact: 9717582867
+SHA256: 07a3ca2c04c9e61d44d52ffd8d9e1b424f45f5f267a7d3521b0249c04f58f1c7
+Evidence: evidence/runtime/M6_CAPITAL_COMMITMENT_2026-08-29.md
 ```
 
-Build/property gate:
+Source evidence deployment:
 
 ```text
-30 tests passed
-0 failed
-0 skipped
-3 M5 fuzz properties x 1000 cases PASS
+MockERC20:              0x3AB76d450384017FCe4e4924f8b1f687E8341e6D
+CapitalCommitmentVault: 0x772F05EaafbddF8359CF6199842522e8436369a7
 ```
 
-M5 used a direct VERIFIED-claim fixture to isolate facility/allocation semantics. It does not replace the independent M3 Attestcoin path or M4 evidence, and it is not a claim of one uninterrupted M3->M4->M5 run.
-
-## Next Milestone
-
-M5 is complete at `TESTED_TESTNET` for the implemented facility/allocation coordination slice.
-
-Next canonical implementation milestone:
+CC3 evidence deployments:
 
 ```text
-M6 Capital Commitment
+DomainRegistry:      0xbacbFb9F2D9C836C7e4A5295E0033249181F1a44
+AssetRegistry:       0xdB3d4cD9A1d486423d75Fd85822546c418DC11bD
+EvidenceRegistry:    0x6709B3F718D5393D8e4cEA0A14B024B3Db7Fdbb1
+ClaimRegistry:       0xc3E76857E1711659Fd0b22dDB617d26172974579
+EncumbranceRegistry: 0xD5cC1Fda546C18759Ebb2892B6E568601fF1837D
+FacilityManager:     0x0945aEa515427E2DC57954F4C3d48881adDbab97
+AllocationManager:   0x950C12Ddd224F17E39953b4D70e1855aB8ffCCcF
+CommitmentRegistry:  0x435594014cFd129ae58EeafbF61e962da1123807
+CommitmentASC:       0x3C09f922E5F54f46920D548fdb39927b1B418CC9
 ```
 
-M6 must introduce:
+Live source commitment:
 
 ```text
-CapitalCommitmentVault
-CommitmentASC
-CommitmentRegistry
-allocation -> externally constrained commitment binding
-verified commitment lifecycle
-facility capitalization gate
+tx: 0x34654a3907716ab2d597783aab6cb5b48fdc89d08b501b40dd41c838f3481ef0
+block: 11592858
+amount: 1,000,000
+vault balance: 1,000,000
+source state: COMMITTED
 ```
 
-M6 must preserve:
+CC3 result:
+
+```text
+AllocationStatus: COMMITTED
+CommitmentStatus: ACTIVE
+committedAmount: 1,000,000
+thin M6 facility state: CAPITALIZED
+replay: REJECTED
+```
+
+M6 therefore proves:
 
 ```text
 BALANCE != CAPITAL COMMITMENT
 ALLOCATION != CAPITAL COMMITMENT
-PROVEN != VALID FOR THIS FACILITY
-facility capitalization cannot be inferred from provider allocation alone
+source capital constrained in vault
+-> Attestcoin proof
+-> semantic validation
+-> recognized ACTIVE commitment
 ```
+
+Limitation: the source `CapitalCommitted` event proves a lock at that historical point. It does not prove perpetual current vault state. Lifecycle synchronization remains required.
+
+## M7 — Capitalization seal
+
+Status: `IMPLEMENTED_LOCAL`; live evidence gate running.
+
+Implemented:
+
+```text
+CapitalizationManager
+FacilityManager one-time capitalization authority binding
+capitalRequiredUntil
+capitalizationRoot
+capitalizationCommitmentCount
+sealedAt/capitalizedAt metadata
+strictly ordered commitment membership
+MAX_COMMITMENTS = 10
+```
+
+Root:
+
+```text
+keccak256(abi.encode(
+  "CLEARA_CAPITALIZATION_V1",
+  facilityId,
+  assetClassId,
+  policyBundleHash,
+  capitalRequiredUntil,
+  sortedCommitmentIds
+))
+```
+
+Seal requirements:
+
+```text
+facility status == CAPITALIZING
+allocatedAmount == targetAmount
+committedAmount == targetAmount
+encumberedAmount >= targetAmount
+all commitments ACTIVE
+all commitments belong to facility
+all commitments use facility asset class
+all commitments expire >= capitalRequiredUntil
+matching allocations are COMMITTED
+matching provider + amount
+strictly ordered unique commitment IDs
+sum(commitments) == targetAmount
+```
+
+Authority:
+
+```text
+FacilityManager capitalizationManager can be bound once.
+Ordinary FACILITY_MANAGER_ROLE cannot finalize capitalization.
+CapitalizationManager is the sole finalization surface after binding.
+```
+
+Latest local CI before live evidence:
+
+```text
+Run: 33274576602
+42 tests passed
+0 failed
+0 skipped
+M7 fuzz: 3 properties x 1000 runs PASS
+```
+
+M7 live evidence run:
+
+```text
+Run: 33274674575
+Status at ledger update: IN_PROGRESS
+Design: three ephemeral Sepolia provider wallets, 400k + 350k + 250k = 1,000,000 target
+```
+
+Ephemeral provider private keys exist only in the GitHub Actions runner and are neither repository secrets nor evidence output.
+
+## Current Frontier
+
+```text
+M1 VERIFIED_CLEARA
+M2 TESTED_TESTNET
+M3 TESTED_TESTNET
+M4 TESTED_TESTNET
+M5 TESTED_TESTNET
+M6 TESTED_TESTNET
+M7 IMPLEMENTED_LOCAL / LIVE_EVIDENCE_RUNNING
+M8 NOT_STARTED
+```
+
+M8 Financial Obligations must not begin until M7's live multiparty capitalization evidence passes and Ground Truth is promoted.
