@@ -46,13 +46,11 @@ contract EvidenceRegistry is AccessControl {
         _grantRole(CONSUMER_ROLE, admin);
     }
 
-    function computeEvidenceId(
-        bytes32 domainId,
-        uint64 chainKey,
-        uint64 blockHeight,
-        uint64 txIndex,
-        uint32 eventIndex
-    ) public pure returns (bytes32) {
+    function computeEvidenceId(bytes32 domainId, uint64 chainKey, uint64 blockHeight, uint64 txIndex, uint32 eventIndex)
+        public
+        pure
+        returns (bytes32)
+    {
         return keccak256(abi.encode("CLEARA_EVIDENCE_V2", domainId, chainKey, blockHeight, txIndex, eventIndex));
     }
 
