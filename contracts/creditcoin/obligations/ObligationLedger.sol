@@ -147,17 +147,7 @@ contract ObligationLedger is AccessControl {
         });
 
         emit ObligationCreated(
-            obligationId,
-            facilityId,
-            debtor,
-            creditor,
-            assetClassId,
-            amount,
-            maturity,
-            policyId,
-            termsHash,
-            nonce,
-            kind
+            obligationId, facilityId, debtor, creditor, assetClassId, amount, maturity, policyId, termsHash, nonce, kind
         );
     }
 
