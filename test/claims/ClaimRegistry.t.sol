@@ -19,7 +19,16 @@ contract ClaimRegistryTest {
         bytes32 evidenceId = keccak256("attested");
 
         bytes32 claimId = registry.registerVerifiedClaim(
-            domain, source, 7, claimant, obligor, asset, 100, uint64(block.timestamp + 1 days), keccak256("doc"), evidenceId
+            domain,
+            source,
+            7,
+            claimant,
+            obligor,
+            asset,
+            100,
+            uint64(block.timestamp + 1 days),
+            keccak256("doc"),
+            evidenceId
         );
         ClaimRegistry.Claim memory claim = registry.getClaim(claimId);
         require(claim.state == ClaimRegistry.ClaimState.VERIFIED, "not verified");
@@ -28,12 +37,24 @@ contract ClaimRegistryTest {
         bytes32 expected = registry.computeClaimId(domain, source, claimant, obligor, asset, 7);
         require(expected == claimId, "identity mismatch");
 
-        (bool ok,) = address(registry).call(
-            abi.encodeCall(
-                registry.registerVerifiedClaim,
-                (domain, source, uint256(7), claimant, obligor, asset, uint256(100), uint64(block.timestamp + 1 days), keccak256("doc"), evidenceId)
-            )
-        );
+        (bool ok,) = address(registry)
+            .call(
+                abi.encodeCall(
+                    registry.registerVerifiedClaim,
+                    (
+                        domain,
+                        source,
+                        uint256(7),
+                        claimant,
+                        obligor,
+                        asset,
+                        uint256(100),
+                        uint64(block.timestamp + 1 days),
+                        keccak256("doc"),
+                        evidenceId
+                    )
+                )
+            );
         require(!ok, "duplicate claim accepted");
     }
 }
