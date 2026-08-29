@@ -7,9 +7,9 @@
 | G1 ChainInfo probe | Frozen | COMPLETE | Live ChainInfo PASS | chainKey 1 Sepolia + chainKey 3 Ethereum Mainnet confirmed | Not started | N/A |
 | G2 Proof Builder probe | Frozen | COMPLETE | Real attested Sepolia tx proof generated | tx 0x8a848420854482e0978b3d6c1345b6a0dfb0263a9620df90ff1a90db18fcbcf6 | Not started | N/A |
 | G3 Block Prover verification | Frozen | COMPLETE | Valid proof accepted; tampered txBytes rejected | Run 33249132447 / artifact 9713789625 | Not started | N/A |
-| M2 Registries | Frozen design | IMPLEMENTED_LOCAL | forge fmt/build/test PASS | CI run 33249320586 | Not started | Not deployed |
+| M2 Registries | Frozen design + ADR-0001 | IMPLEMENTED_LOCAL | Evidence V2 + registry suite PASS | CI run 33249858831 | Not started | Not deployed |
+| M3 Claim path | Frozen design | IMPLEMENTED_LOCAL | ClaimSource/ClaimRegistry + whole contract suite PASS | CI run 33249858831; live claim round-trip pending | Not started | Not deployed |
 | Canonical docs/skills mirror | Frozen | PARTIAL_REMOTE_MIRROR | Not applicable | Local canonical package exists | Not started | GitHub main partial |
-| M3 Claim path | Frozen design | NOT_STARTED | None | None | Not started | Not deployed |
 
 ## M1 Live Evidence
 
@@ -25,13 +25,17 @@ This promotes only the external verification substrate. It does not promote any 
 
 ## M2 Local Evidence
 
-Registry commit lineage culminates at:
+M2 was revised before deployment by `ADR-0001` to use proof-native evidence coordinates:
 
-`1950a43ffaa7a407ee4778c1dd54f4f4984cb5b4`
+```text
+(domainId, chainKey, blockHeight, txIndex, eventIndex)
+```
 
-GitHub Actions run:
+rather than trusting a caller-supplied source transaction hash as canonical onchain evidence identity.
 
-`33249320586`
+Latest validating GitHub Actions run:
+
+`33249858831`
 
 Passed:
 
@@ -41,4 +45,47 @@ forge build --sizes
 forge test -vvv
 ```
 
-M2 is therefore `IMPLEMENTED_LOCAL` only. No registry contract is deployed on CC3 testnet yet.
+M2 remains `IMPLEMENTED_LOCAL`. No registry contract is deployed on CC3 testnet yet.
+
+## M3 Local Evidence
+
+Implemented:
+
+```text
+ClaimSource
+ClaimRegistry
+ClaimASC
+INativeQueryVerifier boundary
+@gluwa/usc-contracts EvmV1Decoder integration
+```
+
+`ClaimASC` is bound to one source chainKey/domain/source contract and enforces:
+
+```text
+native proof verification
+receipt.status == 1
+exact ClaimCreated event signature
+exact source contract
+exact topic shape
+single matching ClaimCreated log
+proof-native replay identity
+```
+
+The current build requires `via_ir = true` because the current Attestcoin decoder path triggers Solidity stack-depth limits in non-IR code generation. Cleara's own acceptance function was first refactored to reduce its live stack before enabling IR.
+
+Validating GitHub Actions run:
+
+`33249858831`
+
+M3 is therefore `IMPLEMENTED_LOCAL`, not `TESTED_TESTNET`.
+
+The remaining M3 promotion gate is:
+
+```text
+Sepolia ClaimSource deployment
+-> real ClaimCreated tx
+-> Attestcoin proof
+-> CC3 ClaimASC deployment/call
+-> ClaimRegistry VERIFIED state
+-> replay/wrong-source/failed-receipt negative evidence
+```
