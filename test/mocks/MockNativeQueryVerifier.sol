@@ -15,13 +15,11 @@ contract MockNativeQueryVerifier is INativeQueryVerifier {
         txIndex = value;
     }
 
-    function verifyAndEmit(
-        uint64,
-        uint64,
-        bytes calldata,
-        MerkleProof calldata,
-        ContinuityProof calldata
-    ) external view returns (bool) {
+    function verifyAndEmit(uint64, uint64, bytes calldata, MerkleProof calldata, ContinuityProof calldata)
+        external
+        view
+        returns (bool)
+    {
         return verifyResult;
     }
 
