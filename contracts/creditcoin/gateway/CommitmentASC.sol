@@ -11,9 +11,8 @@ import {FacilityManager} from "../financing/FacilityManager.sol";
 import {CommitmentRegistry} from "../financing/CommitmentRegistry.sol";
 
 contract CommitmentASC {
-    bytes32 public constant CAPITAL_COMMITTED_SIG = keccak256(
-        "CapitalCommitted(bytes32,bytes32,bytes32,address,bytes32,address,uint256,uint64)"
-    );
+    bytes32 public constant CAPITAL_COMMITTED_SIG =
+        keccak256("CapitalCommitted(bytes32,bytes32,bytes32,address,bytes32,address,uint256,uint64)");
 
     struct Proof {
         uint64 chainKey;
@@ -64,9 +63,16 @@ contract CommitmentASC {
     event CommitmentAccepted(bytes32 indexed commitmentId, bytes32 indexed evidenceId, bytes32 indexed queryId);
 
     constructor(
-        address verifier_, address domainRegistry_, address assetRegistry_, address evidenceRegistry_,
-        address allocationManager_, address facilityManager_, address commitmentRegistry_, uint64 sourceChainKey_,
-        bytes32 sourceDomainId_, address sourceVault_
+        address verifier_,
+        address domainRegistry_,
+        address assetRegistry_,
+        address evidenceRegistry_,
+        address allocationManager_,
+        address facilityManager_,
+        address commitmentRegistry_,
+        uint64 sourceChainKey_,
+        bytes32 sourceDomainId_,
+        address sourceVault_
     ) {
         if (
             verifier_ == address(0) || domainRegistry_ == address(0) || assetRegistry_ == address(0)
@@ -85,9 +91,13 @@ contract CommitmentASC {
         sourceVault = sourceVault_;
     }
 
-    function acceptAttestedCommitment(Proof calldata proof) external returns (bytes32 commitmentId, bytes32 evidenceId) {
+    function acceptAttestedCommitment(Proof calldata proof)
+        external
+        returns (bytes32 commitmentId, bytes32 evidenceId)
+    {
         _validateDomain(proof.chainKey);
-        INativeQueryVerifier.MerkleProof memory merkleProof = INativeQueryVerifier.MerkleProof({root: proof.merkleRoot, siblings: proof.siblings});
+        INativeQueryVerifier.MerkleProof memory merkleProof =
+            INativeQueryVerifier.MerkleProof({root: proof.merkleRoot, siblings: proof.siblings});
         uint64 txIndex = verifier.calculateTxIndex(merkleProof);
         bytes32 queryId = keccak256(abi.encode(proof.chainKey, proof.blockHeight, txIndex));
         if (processedQuery[queryId]) revert AlreadyProcessed();
@@ -98,12 +108,26 @@ contract CommitmentASC {
         processedQuery[queryId] = true;
         bytes32 payloadHash = keccak256(abi.encode(fact));
         evidenceId = evidenceRegistry.registerEvidence(
-            sourceDomainId, proof.chainKey, proof.blockHeight, txIndex, 0,
-            keccak256(proof.encodedTransaction), payloadHash
+            sourceDomainId,
+            proof.chainKey,
+            proof.blockHeight,
+            txIndex,
+            0,
+            keccak256(proof.encodedTransaction),
+            payloadHash
         );
         commitmentId = commitmentRegistry.registerActiveCommitment(
-            fact.sourceCommitmentId, sourceDomainId, sourceVault, fact.facilityId, fact.allocationId,
-            fact.provider, fact.assetClassId, fact.token, fact.amount, fact.expiresAt, evidenceId
+            fact.sourceCommitmentId,
+            sourceDomainId,
+            sourceVault,
+            fact.facilityId,
+            fact.allocationId,
+            fact.provider,
+            fact.assetClassId,
+            fact.token,
+            fact.amount,
+            fact.expiresAt,
+            evidenceId
         );
         allocationManager.recognizeCommitment(fact.allocationId, fact.provider, fact.amount);
         emit CommitmentAccepted(commitmentId, evidenceId, queryId);
@@ -112,7 +136,10 @@ contract CommitmentASC {
     function _validateDomain(uint64 chainKey) internal view {
         if (chainKey != sourceChainKey) revert UnsupportedSource();
         DomainRegistry.DomainConfig memory domain = domainRegistry.getDomain(sourceDomainId);
-        if (!domain.active || !domain.readable || !domain.commitment || !domain.evidence || domain.chainKey != sourceChainKey) {
+        if (
+            !domain.active || !domain.readable || !domain.commitment || !domain.evidence
+                || domain.chainKey != sourceChainKey
+        ) {
             revert InactiveSourceDomain();
         }
     }
@@ -137,7 +164,9 @@ contract CommitmentASC {
         INativeQueryVerifier.ContinuityProof memory continuityProof = INativeQueryVerifier.ContinuityProof({
             lowerEndpointDigest: proof.lowerEndpointDigest, roots: proof.continuityRoots
         });
-        bool ok = verifier.verifyAndEmit(proof.chainKey, proof.blockHeight, proof.encodedTransaction, merkleProof, continuityProof);
+        bool ok = verifier.verifyAndEmit(
+            proof.chainKey, proof.blockHeight, proof.encodedTransaction, merkleProof, continuityProof
+        );
         if (!ok) revert VerifyFailed();
     }
 
