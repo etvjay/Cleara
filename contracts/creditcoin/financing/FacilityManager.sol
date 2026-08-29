@@ -143,7 +143,8 @@ contract FacilityManager is AccessControl {
     function finalizeCapitalization(bytes32 facilityId) external onlyRole(FACILITY_MANAGER_ROLE) {
         Facility storage facility = _requireState(facilityId, FacilityStatus.CAPITALIZING);
         if (facility.committedAmount != facility.targetAmount) revert InvalidFacility();
-        if (facility.committedAmount > facility.allocatedAmount || facility.committedAmount > facility.encumberedAmount) {
+        if (facility.committedAmount > facility.allocatedAmount || facility.committedAmount > facility.encumberedAmount)
+        {
             revert InvalidFacility();
         }
         _transition(facility, FacilityStatus.CAPITALIZED);
