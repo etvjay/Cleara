@@ -74,8 +74,11 @@ async function main(): Promise<void> {
   if (epoch.grossBefore !== 460_000n || epoch.clearingAmount !== 60_000n || epoch.grossAfter !== 340_000n) {
     throw new Error('M9 clearing economics drifted');
   }
-  if (epoch.obligationA.toLowerCase() !== DRAWDOWN_ID.toLowerCase()) throw new Error('M9 drawdown membership drifted');
-  if (epoch.obligationB.toLowerCase() !== FEE_ID.toLowerCase()) throw new Error('M9 fee membership drifted');
+  const members = [epoch.obligationA.toLowerCase(), epoch.obligationB.toLowerCase()].sort();
+  const expectedMembers = [DRAWDOWN_ID.toLowerCase(), FEE_ID.toLowerCase()].sort();
+  if (members[0] !== expectedMembers[0] || members[1] !== expectedMembers[1]) {
+    throw new Error('M9 epoch membership drifted');
+  }
 
   const drawdownBefore = await obligations.getObligation(DRAWDOWN_ID);
   const feeBefore = await obligations.getObligation(FEE_ID);
@@ -176,6 +179,8 @@ async function main(): Promise<void> {
       clearingAmount: epoch.clearingAmount,
       grossAfter: epoch.grossAfter,
       movementReduced: epoch.movementReduced,
+      epochObligationA: epoch.obligationA,
+      epochObligationB: epoch.obligationB,
       drawdownObligationId: DRAWDOWN_ID,
       feeObligationId: FEE_ID,
     },
