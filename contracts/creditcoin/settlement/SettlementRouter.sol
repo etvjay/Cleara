@@ -95,21 +95,11 @@ contract SettlementRouter is AccessControl {
 
         residualLedger.markRouted(residualId);
         emit SettlementRouted(
-            settlementId,
-            residualId,
-            adapterId,
-            settlementDomainId,
-            settlementRepresentationId,
-            routeDataHash,
-            nonce
+            settlementId, residualId, adapterId, settlementDomainId, settlementRepresentationId, routeDataHash, nonce
         );
     }
 
-    function getInstruction(bytes32 settlementId)
-        external
-        view
-        returns (SettlementInstruction memory instruction)
-    {
+    function getInstruction(bytes32 settlementId) external view returns (SettlementInstruction memory instruction) {
         instruction = _instructions[settlementId];
         if (instruction.status == RouteStatus.NONE) revert UnknownSettlementInstruction(settlementId);
     }
