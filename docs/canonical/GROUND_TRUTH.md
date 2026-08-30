@@ -1,7 +1,7 @@
 # Cleara Ground Truth
 
 **Snapshot:** 30 August 2026  
-**Operational status:** M1 `VERIFIED_CLEARA`; M2-M9 `TESTED_TESTNET`; M10 `NOT_STARTED`.
+**Operational status:** M1 `VERIFIED_CLEARA`; M2-M10 `TESTED_TESTNET`; M11 `NOT_STARTED`.
 
 This document is the highest operational statement of what Cleara can currently prove. No testnet result implies production safety, mainnet readiness, legal enforceability, economic finality, or audit completion.
 
@@ -32,6 +32,7 @@ RECIPROCITY != SETOFF AUTHORITY
 CLEARING AUTHORIZATION != CLEARING EXECUTION
 CLEARING != SETTLEMENT
 ECONOMIC RESIDUAL != SETTLEMENT INSTRUCTION
+ROUTED != SETTLED
 SETTLEMENT INITIATED != SETTLED
 DATABASE != CANONICAL FINANCIAL STATE
 ```
@@ -44,7 +45,7 @@ committedAmount <= allocatedAmount <= encumberedAmount <= targetAmount
 obligation.clearedAmount + obligation.settledAmount <= obligation.originalAmount
 ```
 
-M9 can increase `clearedAmount` only through the bound ClearingEngine after explicit clearing authorization. No current method can increase `settledAmount`; settlement authority begins in later milestones.
+M9 can increase `clearedAmount` only through the bound ClearingEngine after explicit clearing authorization. M10 can derive a residual and record a route instruction, but no current method can increase `settledAmount`; settlement execution and reconciliation begin in M11.
 
 # Milestone Status
 
@@ -58,7 +59,8 @@ M6 Capital Commitment                              TESTED_TESTNET
 M7 Multiparty Capitalization Seal                  TESTED_TESTNET
 M8 ObligationLedger                                TESTED_TESTNET
 M9 ClearingEngine / ClearingEpoch                  TESTED_TESTNET
-M10 ResidualLedger / SettlementRouter              NOT_STARTED
+M10 ResidualLedger / SettlementRouter              TESTED_TESTNET
+M11 SettlementAdapter / SettlementASC              NOT_STARTED
 ```
 
 ## M1 — Verification Substrate
@@ -364,13 +366,84 @@ CLEARING AUTHORIZATION != CLEARING EXECUTION
 CLEARING != SETTLEMENT
 ```
 
-M9 limitation:
+## M10 — Residual Ledger / Settlement Routing
+
+Status: `TESTED_TESTNET`
+
+Evidence:
 
 ```text
-The 340,000 remainder is only an economic residual.
-No ResidualLedger entry exists.
-No SettlementRouter instruction exists.
-No settlement value moved.
+Run: 33311029527
+Head exercised: 9388ec6ef5c4511f560f35b8d3c06d21f3f95985
+Artifact: 9731999552
+SHA256: 0071c3f003a6f4c1f3839cc4849ce450365f5385cf186ddeb44ba002328affc0
+Evidence: evidence/runtime/M10_RESIDUAL_ROUTING_2026-08-30.md
+```
+
+Build/property gate:
+
+```text
+72 tests passed
+0 failed
+0 skipped
+3 M10 fuzz properties x 1000 cases PASS
+```
+
+M10 reused the actual finalized M9 clearing epoch and derived the economic remainder from onchain obligation accounting. No arbitrary residual amount was supplied by the operator.
+
+Live deployments:
+
+```text
+ResidualLedger:    0xeb8f98D41ad6f626d8808F70c7b0C455Fd248384
+SettlementRouter:  0x425E8b8c38025dFD886446947209D21407dC7319
+```
+
+Derived residual:
+
+```text
+residualId: 0xb7b1905b8e4b08c9db578059492c47d6464e61b5b20c14c0c4b6c9721ccbeae6
+sourceObligationId: 0x330647cb907ce83563e27d406c3c3789b2756705ff4cbb1aa8c63a65d0966129
+debtor:   0x8766760e375bD43f600D23C40aDCeeDD62a60e2b
+creditor: 0x5ac98dc6f8408564645f36195aC0F9c5B1c0C0C8
+amount:   340,000
+status:   ROUTED
+```
+
+Route instruction:
+
+```text
+settlementId: 0x82b7b4c56e20cbb8c3ac0013282e26a4f9288dedfd9f4f8ee0091687b358f40b
+route tx: 0x9cc4dea116a9700e2f9a63e2ab4163b9f2480475292830f9406a00b0c738a5d0
+settlementNonce: 0
+status: ROUTED
+```
+
+Settlement accounting remained unchanged:
+
+```text
+drawdown settledAmount before: 0
+drawdown settledAmount after:  0
+fee settledAmount before:      0
+fee settledAmount after:       0
+```
+
+Live negative paths rejected duplicate residualization of the same epoch and duplicate routing of the same residual.
+
+M10 establishes:
+
+```text
+ECONOMIC RESIDUAL != SETTLEMENT INSTRUCTION
+ROUTED != SETTLED
+```
+
+M10 limitation:
+
+```text
+The route identifiers are test-only nonzero identifiers and are not yet authenticated against DomainRegistry / AssetRegistry.
+No settlement adapter was called.
+No value moved.
+No settlement proof was ingested.
+No settledAmount changed.
 ```
 
 ## Current Evidence Boundary
@@ -385,15 +458,15 @@ M6: externally locked Sepolia capital -> Attestcoin -> ACTIVE commitment
 M7: three independently locked commitments -> immutable capitalization seal
 M8: live M7 seal -> canonical FINALIZED drawdown obligations on CC3
 M9: explicit bilateral setoff authorization -> immutable clearing epoch -> deterministic cleared accounting
+M10: finalized M9 epoch -> canonical 340,000 residual -> one route instruction, with settlement accounting unchanged
 ```
 
-M7 -> M8 and M7 -> M9 directly reuse live deployed facility state. Earlier M3-M6 milestones remain separately evidenced deployments; Cleara does not yet claim one uninterrupted M3 -> M9 deployment lifecycle.
+M7 -> M8, M7 -> M9, and M9 -> M10 directly reuse live deployed state. Earlier M3-M6 milestones remain separately evidenced deployments; Cleara does not yet claim one uninterrupted M3 -> M10 deployment lifecycle.
 
 ## Not Yet Implemented / Not Yet Proven
 
 ```text
 commitment lifecycle synchronization after source consume/release/expiry
-M10 ResidualLedger / SettlementRouter
 M11 SettlementAdapter / SettlementASC / reconciliation
 M12 durable workers
 M13 production indexer
@@ -409,7 +482,7 @@ Writability remains `FUTURE` and is not an MVP dependency.
 
 ## Allowed Public Claim
 
-> Cleara has testnet evidence for Attestcoin-backed claim ingestion, bounded financeability and encumbrance, facility/allocation coordination, externally constrained Sepolia capital commitments recognized on Creditcoin, three-provider capitalization sealed into an immutable commitment composition on CC3, finalized financial obligations, and explicitly authorized bilateral clearing that reduced a 460,000 gross obligation pair to a 340,000 economic residual without executing settlement.
+> Cleara has testnet evidence for Attestcoin-backed claim ingestion, bounded financeability and encumbrance, facility/allocation coordination, externally constrained Sepolia capital commitments recognized on Creditcoin, three-provider capitalization sealed into an immutable commitment composition on CC3, finalized financial obligations, explicitly authorized bilateral clearing that reduced a 460,000 gross obligation pair to a 340,000 residual, and canonical residual routing metadata recorded without executing settlement.
 
 Forbidden current claims include:
 
@@ -420,8 +493,9 @@ mainnet deployed
 legally enforceable receivables or setoff
 live production lenders or borrowers
 source lifecycle synchronization complete
-residual settlement implemented
 settlement executed by Cleara
+settlement finality proven
+settlement route identifiers registry-authenticated
 bridge reduction measured in production
 Wormhole integrated
 Credal integrated
@@ -441,7 +515,8 @@ M6  TESTED_TESTNET
 M7  TESTED_TESTNET
 M8  TESTED_TESTNET
 M9  TESTED_TESTNET
-M10 NOT_STARTED
+M10 TESTED_TESTNET
+M11 NOT_STARTED
 ```
 
 Rule:
