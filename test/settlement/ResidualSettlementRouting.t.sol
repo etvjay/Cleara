@@ -57,9 +57,7 @@ contract ResidualSettlementRoutingTest {
         assetClassId = keccak256("USD");
         facilityId = _makeCapitalizedFacility(1_000_000);
         clearingPolicyId = policies.configurePolicy(
-            assetClassId,
-            keccak256("bilateral-compatible"),
-            ClearingPolicyRegistry.SetoffMode.BILATERAL
+            assetClassId, keccak256("bilateral-compatible"), ClearingPolicyRegistry.SetoffMode.BILATERAL
         );
     }
 
@@ -117,7 +115,11 @@ contract ResidualSettlementRoutingTest {
         require(instruction.settlementRepresentationId == representationId, "wrong representation");
         require(instruction.status == SettlementRouter.RouteStatus.ROUTED, "instruction not routed");
         require(residual.status == ResidualLedger.ResidualStatus.ROUTED, "residual not routed");
-        require(obligations.getObligation(instruction.residualId == residualId ? _sourceObligation(residualId) : bytes32(0)).settledAmount == 0, "routing settled value");
+        require(
+            obligations.getObligation(instruction.residualId == residualId ? _sourceObligation(residualId) : bytes32(0))
+                .settledAmount == 0,
+            "routing settled value"
+        );
     }
 
     function testResidualCannotBeRoutedTwice() public {
@@ -131,18 +133,19 @@ contract ResidualSettlementRoutingTest {
             keccak256("route-a")
         );
 
-        (bool ok,) = address(router).call(
-            abi.encodeCall(
-                router.routeResidual,
-                (
-                    residualId,
-                    keccak256("adapter-b"),
-                    keccak256("domain-b"),
-                    keccak256("representation-b"),
-                    keccak256("route-b")
+        (bool ok,) = address(router)
+            .call(
+                abi.encodeCall(
+                    router.routeResidual,
+                    (
+                        residualId,
+                        keccak256("adapter-b"),
+                        keccak256("domain-b"),
+                        keccak256("representation-b"),
+                        keccak256("route-b")
+                    )
                 )
-            )
-        );
+            );
         require(!ok, "routed residual rerouted");
     }
 
@@ -209,7 +212,8 @@ contract ResidualSettlementRoutingTest {
             encumbrances.createEncumbrance(claimId, id, address(this), amount, uint64(block.timestamp + 120 days));
         facilities.bindEncumbrance(id, encumbranceId);
         facilities.beginAllocating(id);
-        bytes32 allocationId = allocations.proposeAllocation(id, address(this), amount, uint64(block.timestamp + 90 days));
+        bytes32 allocationId =
+            allocations.proposeAllocation(id, address(this), amount, uint64(block.timestamp + 90 days));
         allocations.activateAllocation(allocationId);
         bytes32 commitmentId = commitments.registerActiveCommitment(
             keccak256("source-commitment"),
