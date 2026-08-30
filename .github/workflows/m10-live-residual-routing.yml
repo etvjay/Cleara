@@ -2,6 +2,9 @@ name: M10 Live Residual Routing
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - ".github/m10-live-residual-routing.trigger"
 
 permissions:
   contents: read
