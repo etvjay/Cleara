@@ -117,7 +117,7 @@ contract ResidualSettlementRoutingTest {
         require(residual.status == ResidualLedger.ResidualStatus.ROUTED, "residual not routed");
         require(
             obligations.getObligation(instruction.residualId == residualId ? _sourceObligation(residualId) : bytes32(0))
-                .settledAmount == 0,
+            .settledAmount == 0,
             "routing settled value"
         );
     }
