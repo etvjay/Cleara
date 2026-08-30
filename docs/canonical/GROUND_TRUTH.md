@@ -1,7 +1,7 @@
 # Cleara Ground Truth
 
-**Snapshot:** 29 August 2026  
-**Operational status:** M1 `VERIFIED_CLEARA`; M2-M8 `TESTED_TESTNET`; M9 `NOT_STARTED`.
+**Snapshot:** 30 August 2026  
+**Operational status:** M1 `VERIFIED_CLEARA`; M2-M9 `TESTED_TESTNET`; M10 `NOT_STARTED`.
 
 This document is the highest operational statement of what Cleara can currently prove. No testnet result implies production safety, mainnet readiness, legal enforceability, economic finality, or audit completion.
 
@@ -29,7 +29,9 @@ FINALIZED OBLIGATION != CLEARING ELIGIBILITY
 FINALIZED OBLIGATION != SETTLED VALUE
 ECONOMIC EQUIVALENCE != EXECUTION EQUIVALENCE
 RECIPROCITY != SETOFF AUTHORITY
+CLEARING AUTHORIZATION != CLEARING EXECUTION
 CLEARING != SETTLEMENT
+ECONOMIC RESIDUAL != SETTLEMENT INSTRUCTION
 SETTLEMENT INITIATED != SETTLED
 DATABASE != CANONICAL FINANCIAL STATE
 ```
@@ -42,7 +44,7 @@ committedAmount <= allocatedAmount <= encumberedAmount <= targetAmount
 obligation.clearedAmount + obligation.settledAmount <= obligation.originalAmount
 ```
 
-The third invariant is structurally prepared but no M8 method can yet increase `clearedAmount` or `settledAmount`; those authorities belong to later milestones.
+M9 can increase `clearedAmount` only through the bound ClearingEngine after explicit clearing authorization. No current method can increase `settledAmount`; settlement authority begins in later milestones.
 
 # Milestone Status
 
@@ -55,7 +57,8 @@ M5 Facility + Allocation                           TESTED_TESTNET
 M6 Capital Commitment                              TESTED_TESTNET
 M7 Multiparty Capitalization Seal                  TESTED_TESTNET
 M8 ObligationLedger                                TESTED_TESTNET
-M9 ClearingEngine / ClearingEpoch                  NOT_STARTED
+M9 ClearingEngine / ClearingEpoch                  TESTED_TESTNET
+M10 ResidualLedger / SettlementRouter              NOT_STARTED
 ```
 
 ## M1 — Verification Substrate
@@ -281,8 +284,6 @@ Provider C -> Facility sponsor  250,000
 Finalized drawdown obligations 1,000,000
 ```
 
-The providers are debtors and the M7 facility sponsor is creditor because the obligations represent drawdown rights backed by the already committed capital. M8 does not fabricate repayment obligations before drawdown.
-
 Canonical obligation identity:
 
 ```text
@@ -298,62 +299,79 @@ keccak256(
 )
 ```
 
-Live obligations:
+Live negative paths rejected wrong asset class, self-obligation, unknown facility, and double finalization. Failed issuance preserved the facility nonce.
+
+## M9 — Bilateral Clearing
+
+Status: `TESTED_TESTNET`
+
+Evidence:
 
 ```text
-nonce 0
-id 0x330647cb907ce83563e27d406c3c3789b2756705ff4cbb1aa8c63a65d0966129
-amount 400,000
-status FINALIZED
-
-nonce 1
-id 0xa4aeab1d0e3790b108f92dc430f9150ccf35cb0d1112abeccbe69ce18ea1f4ee
-amount 350,000
-status FINALIZED
-
-nonce 2
-id 0x3ff9156fbfbcba9bf2dcac4750f2be6950c66f5a59e57c6a4814a52dba8bee99
-amount 250,000
-status FINALIZED
+Run: 33280768286
+Head exercised: f7205170d7d709921f8572dae7a9c01ec693ec13
+Artifact: 9722957475
+SHA256: 3aede24e78500b998a9438d62be969eda200adf7040d792449902a0041f6be12
+Evidence: evidence/runtime/M9_BILATERAL_CLEARING_2026-08-29.md
 ```
 
-Aggregate M8 result:
+Build/property gate:
 
 ```text
-obligationCount: 3
-totalRemaining: 1,000,000
-next facility nonce: 3
-clearedAmount: 0
-settledAmount: 0
+59 tests passed
+0 failed
+0 skipped
+3 M9 fuzz properties x 1000 cases PASS
 ```
 
-Live negative paths rejected:
+M9 reused the actual M7 capitalization and deployed a new M9-capable obligation ledger rather than pretending the immutable M8 deployment was upgradeable.
+
+Live deployments:
 
 ```text
-wrong asset class
-self-obligation
-unknown facility
-double finalization
+ObligationLedger V2:    0xCe29e08e9668aa0c3CE3A2C9E29774a2233abB86
+ClearingPolicyRegistry: 0xE376fe50c831DB797d9168289A01Bce02Cc4c997
+ClearingEngine:         0xe87835B72e49EEBe4778c8769A0546a216A71f69
 ```
 
-Failed issuance preserved the facility nonce.
-
-M8 executable state slice:
+Live vector:
 
 ```text
-NONE -> CREATED -> FINALIZED -> DISPUTED
+Provider A -> Sponsor drawdown  400,000
+Sponsor -> Provider A fee        60,000
+                              ---------
+grossBefore                     460,000
+bilateral clearing amount        60,000
+grossAfter                      340,000
+movementReduced                 120,000
 ```
 
-M8 deliberately contains no authority for:
+Finalized clearing epoch:
 
 ```text
-FINALIZED -> ELIGIBLE_FOR_CLEARING
-clearedAmount mutation
-settledAmount mutation
-settlement execution
+epochId: 0xb16d67f3a82e4e79409c344f012565125e77fbd2293be85404a7de10abf1f8c2
+inputRoot: 0xa75b8beb36648c8f1103deee1f123c7ab4114dbf54af9981ca631ba851aa1e62
+status: FINALIZED
 ```
 
-Those belong to later milestones.
+Live negative paths rejected reciprocity without explicit authorization, MULTILATERAL policy configuration, and epoch reseal.
+
+M9 establishes:
+
+```text
+RECIPROCITY != SETOFF AUTHORITY
+CLEARING AUTHORIZATION != CLEARING EXECUTION
+CLEARING != SETTLEMENT
+```
+
+M9 limitation:
+
+```text
+The 340,000 remainder is only an economic residual.
+No ResidualLedger entry exists.
+No SettlementRouter instruction exists.
+No settlement value moved.
+```
 
 ## Current Evidence Boundary
 
@@ -365,16 +383,16 @@ M4: VERIFIED fixture -> financeable capacity -> bounded encumbrance
 M5: encumbrance -> facility -> provider allocation
 M6: externally locked Sepolia capital -> Attestcoin -> ACTIVE commitment
 M7: three independently locked commitments -> immutable capitalization seal
-M8: live M7 seal -> three canonical FINALIZED drawdown obligations on CC3
+M8: live M7 seal -> canonical FINALIZED drawdown obligations on CC3
+M9: explicit bilateral setoff authorization -> immutable clearing epoch -> deterministic cleared accounting
 ```
 
-M8 directly reuses M7 live state, so the M7 -> M8 boundary is one continuous deployed-state transition. Earlier M3-M6 milestones remain separately evidenced deployments; Cleara does not yet claim one uninterrupted M3 -> M8 deployment lifecycle.
+M7 -> M8 and M7 -> M9 directly reuse live deployed facility state. Earlier M3-M6 milestones remain separately evidenced deployments; Cleara does not yet claim one uninterrupted M3 -> M9 deployment lifecycle.
 
 ## Not Yet Implemented / Not Yet Proven
 
 ```text
 commitment lifecycle synchronization after source consume/release/expiry
-M9 ClearingEngine / ClearingEpoch
 M10 ResidualLedger / SettlementRouter
 M11 SettlementAdapter / SettlementASC / reconciliation
 M12 durable workers
@@ -391,7 +409,7 @@ Writability remains `FUTURE` and is not an MVP dependency.
 
 ## Allowed Public Claim
 
-> Cleara has testnet evidence for Attestcoin-backed claim ingestion, bounded financeability and encumbrance, facility/allocation coordination, externally constrained Sepolia capital commitments recognized on Creditcoin, three-provider capitalization sealed into an immutable commitment composition on CC3, and finalized drawdown obligations issued directly against that live capitalization.
+> Cleara has testnet evidence for Attestcoin-backed claim ingestion, bounded financeability and encumbrance, facility/allocation coordination, externally constrained Sepolia capital commitments recognized on Creditcoin, three-provider capitalization sealed into an immutable commitment composition on CC3, finalized financial obligations, and explicitly authorized bilateral clearing that reduced a 460,000 gross obligation pair to a 340,000 economic residual without executing settlement.
 
 Forbidden current claims include:
 
@@ -399,12 +417,11 @@ Forbidden current claims include:
 production ready
 audited
 mainnet deployed
-legally enforceable receivables
+legally enforceable receivables or setoff
 live production lenders or borrowers
 source lifecycle synchronization complete
-clearing implemented
-setoff implemented
 residual settlement implemented
+settlement executed by Cleara
 bridge reduction measured in production
 Wormhole integrated
 Credal integrated
@@ -423,7 +440,8 @@ M5  TESTED_TESTNET
 M6  TESTED_TESTNET
 M7  TESTED_TESTNET
 M8  TESTED_TESTNET
-M9  NOT_STARTED
+M9  TESTED_TESTNET
+M10 NOT_STARTED
 ```
 
 Rule:
