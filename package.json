@@ -16,6 +16,7 @@
     "live:m7:capitalization": "tsx scripts/live/m7-capitalization.ts",
     "live:m8:obligations": "tsx scripts/live/m8-obligations.ts",
     "live:m9:clearing": "tsx scripts/live/m9-clearing.ts",
+    "live:m10:residual-routing": "tsx scripts/live/m10-residual-routing.ts",
     "bootstrap:check": "bash scripts/bootstrap/check-machine.sh"
   },
   "dependencies": {
