@@ -1,6 +1,6 @@
 # Cleara Implementation Ledger
 
-Snapshot: 29 August 2026
+Snapshot: 30 August 2026
 
 | Component | Specification | Implementation | Tests | Live Evidence | Audit | Deployment |
 |---|---|---|---|---|---|---|
@@ -17,6 +17,9 @@ Snapshot: 29 August 2026
 | M7 Facility capitalization seal | Frozen M7 slice | TESTED_TESTNET | Authority/root/horizon/membership + live negatives PASS | `evidence/runtime/M7_MULTIPARTY_CAPITALIZATION_2026-08-29.md` | Not started | Sepolia + CC3 evidence deployments |
 | M8 ObligationLedger | Frozen M8 slice | TESTED_TESTNET | Unit + 3x1000 M8 fuzz PASS | Run 33280253700 / artifact 9722789518 | Not started | CC3 evidence deployment |
 | M8 live M7→M8 continuity | Frozen evidence gate | TESTED_TESTNET | Existing M7 seal preflight + 3 finalized drawdown obligations + negatives PASS | `evidence/runtime/M8_OBLIGATIONS_2026-08-29.md` | Not started | Existing M7 facility + new CC3 ObligationLedger |
+| M9 ClearingPolicyRegistry / ClearingEngine | Frozen M9 bilateral slice | TESTED_TESTNET | Unit + 3x1000 M9 fuzz + live PASS | Run 33280768286 / artifact 9722957475 | Not started | CC3 evidence deployments |
+| M9 bilateral clearing epoch | Frozen evidence gate | TESTED_TESTNET | Authorization split + reciprocity + conservation + reseal negatives PASS | `evidence/runtime/M9_BILATERAL_CLEARING_2026-08-29.md` | Not started | Existing M7 facility + new CC3 M9 stack |
+| M10 ResidualLedger / SettlementRouter | Frozen architecture; implementation slice pending | NOT_STARTED | Not started | None | Not started | None |
 | Canonical docs/skills mirror | Frozen | PARTIAL_REMOTE_MIRROR | N/A | Canonical docs tracked on main | Not started | GitHub main |
 
 ## M1 — Verification substrate
@@ -50,13 +53,8 @@ Evidence: evidence/runtime/M3_CLAIM_ROUNDTRIP_2026-08-29.md
 Proven boundary:
 
 ```text
-Sepolia ClaimCreated
--> Attestcoin
--> ClaimASC semantic validation
--> ClaimRegistry VERIFIED
+Sepolia ClaimCreated -> Attestcoin -> ClaimASC semantic validation -> ClaimRegistry VERIFIED
 ```
-
-Rejected live: replay, wrong chainKey, wrong source contract, and `receipt.status == 0`.
 
 ## M4 — Financeability/Encumbrance
 
@@ -64,14 +62,9 @@ Rejected live: replay, wrong chainKey, wrong source contract, and `receipt.statu
 Run: 33254529904
 Artifact: 9715412301
 SHA256: cb0d42256da26ba6f769b9d377dfebf830b0d44a5efafa8b8d36b345537fc940
-Evidence: evidence/runtime/M4_FINANCEABILITY_2026-08-29.md
 ```
 
-Invariant:
-
-```text
-activeEncumbrance <= financeableCapacity <= faceValue
-```
+Invariant: `activeEncumbrance <= financeableCapacity <= faceValue`.
 
 ## M5 — Facility/Allocation
 
@@ -79,70 +72,31 @@ activeEncumbrance <= financeableCapacity <= faceValue
 Run: 33256911456
 Artifact: 9716144997
 SHA256: 8c2a22ac36cb736c723ebf0b4f90e5309be56f7296e2b5e6135603bde3373c27
-Evidence: evidence/runtime/M5_FACILITY_ALLOCATION_2026-08-29.md
 ```
 
-Invariant:
-
-```text
-allocatedAmount <= encumberedAmount <= targetAmount
-```
-
-Proven boundary:
-
-```text
-ALLOCATION != CAPITAL COMMITMENT
-```
+Boundary: `ALLOCATION != CAPITAL COMMITMENT`.
 
 ## M6 — Capital Commitment
-
-Status: `TESTED_TESTNET`
 
 ```text
 Run: 33261468561
 Artifact: 9717582867
 SHA256: 07a3ca2c04c9e61d44d52ffd8d9e1b424f45f5f267a7d3521b0249c04f58f1c7
-Evidence: evidence/runtime/M6_CAPITAL_COMMITMENT_2026-08-29.md
 ```
 
-Proven boundary:
-
-```text
-source capital constrained in CapitalCommitmentVault
--> Attestcoin proof
--> CommitmentASC semantic validation
--> ACTIVE commitment
--> COMMITTED allocation
-```
-
-Limitation: historical `CapitalCommitted` evidence does not prove perpetual source state.
+Boundary: source capital constrained -> Attestcoin -> ACTIVE commitment -> COMMITTED allocation.
 
 ## M7 — Multiparty Capitalization
 
-Status: `TESTED_TESTNET`
-
 ```text
 Run: 33274674575
-Head: e869ae45688fcfd0a09d5c92038323491b3cf8ba
 Artifact: 9721384433
 SHA256: 76d92928df25c366faf03165764b94ecf2c82e8a45f80643996d79b20a6731a2
-Evidence: evidence/runtime/M7_MULTIPARTY_CAPITALIZATION_2026-08-29.md
 ```
 
-Property gate:
+Property gate: 42 tests + 3x1000 M7 fuzz PASS.
 
-```text
-42 tests passed
-3 M7 fuzz properties x 1000 PASS
-```
-
-Live composition:
-
-```text
-400,000 + 350,000 + 250,000 = 1,000,000
-```
-
-Live sealed state:
+Live seal:
 
 ```text
 FacilityManager: 0xa9662e17409976Cc2886404394ab8714E7bC7224
@@ -152,77 +106,21 @@ capitalRequiredUntil: 1788123587
 status: CAPITALIZED
 ```
 
-Rejected live:
-
-```text
-direct FacilityManager bypass
-duplicate membership
-invalid horizon
-reseal
-```
-
-Proven boundary:
-
-```text
-CAPITALIZED != committedAmount == target alone
-CAPITALIZED == validated + horizon-safe + immutable commitment composition
-```
-
 ## M8 — Obligation Ledger
-
-Status: `TESTED_TESTNET`
 
 ```text
 Run: 33280253700
-Head: 1a49c9db3897c1de52adce588fb15d1064c9f187
 Artifact: 9722789518
 SHA256: 89b53706a08a8e9af4b91be6e76c12436cd1fb4ec46a52ed7574f91bd2123c44
-Evidence: evidence/runtime/M8_OBLIGATIONS_2026-08-29.md
 ```
 
-Property gate:
+Property gate: 51 tests + 3x1000 M8 fuzz PASS.
 
-```text
-51 tests passed
-3 M8 fuzz properties x 1000 PASS
-```
-
-M8 reused the actual M7 deployed state and revalidated:
-
-```text
-facility status == CAPITALIZED
-assetClassId unchanged
-capitalizationRoot unchanged
-capitalRequiredUntil > CC3 block timestamp
-encumbered == allocated == committed == 1,000,000
-```
-
-Live M8 deployment:
+Live deployment:
 
 ```text
 ObligationLedger: 0x8F70ef4A83eb04fa6f303F0d80031f2aA3741b39
 ```
-
-Live finalized drawdown obligations:
-
-```text
-0x330647cb907ce83563e27d406c3c3789b2756705ff4cbb1aa8c63a65d0966129  400,000
-0xa4aeab1d0e3790b108f92dc430f9150ccf35cb0d1112abeccbe69ce18ea1f4ee  350,000
-0x3ff9156fbfbcba9bf2dcac4750f2be6950c66f5a59e57c6a4814a52dba8bee99  250,000
-                                                                         ---------
-aggregate remaining                                                     1,000,000
-```
-
-Rejected live:
-
-```text
-wrong asset
-self-obligation
-unknown facility
-double finalization
-```
-
-Failed issuance preserved the per-facility obligation nonce.
 
 M8 boundary:
 
@@ -232,7 +130,69 @@ FINALIZED != ELIGIBLE_FOR_CLEARING
 FINALIZED != SETTLED
 ```
 
-The existing M8 deployment has no clearing mutation authority. M9 must not pretend it is upgradeable.
+## M9 — Bilateral Clearing
+
+Status: `TESTED_TESTNET`
+
+```text
+Run: 33280768286
+Head: f7205170d7d709921f8572dae7a9c01ec693ec13
+Artifact: 9722957475
+SHA256: 3aede24e78500b998a9438d62be969eda200adf7040d792449902a0041f6be12
+Evidence: evidence/runtime/M9_BILATERAL_CLEARING_2026-08-29.md
+```
+
+Property gate:
+
+```text
+59 tests passed
+3 M9 fuzz properties x 1000 PASS
+```
+
+Live deployments:
+
+```text
+ObligationLedger V2:    0xCe29e08e9668aa0c3CE3A2C9E29774a2233abB86
+ClearingPolicyRegistry: 0xE376fe50c831DB797d9168289A01Bce02Cc4c997
+ClearingEngine:         0xe87835B72e49EEBe4778c8769A0546a216A71f69
+```
+
+Live bilateral vector:
+
+```text
+400,000 drawdown
+ 60,000 reciprocal financing fee
+-------
+460,000 gross before
+120,000 gross movement eliminated
+340,000 economic residual
+```
+
+Epoch:
+
+```text
+epochId: 0xb16d67f3a82e4e79409c344f012565125e77fbd2293be85404a7de10abf1f8c2
+inputRoot: 0xa75b8beb36648c8f1103deee1f123c7ab4114dbf54af9981ca631ba851aa1e62
+status: FINALIZED
+```
+
+Rejected live:
+
+```text
+reciprocity without authorization
+MULTILATERAL policy configuration
+epoch reseal
+```
+
+M9 boundary:
+
+```text
+RECIPROCITY != SETOFF AUTHORITY
+CLEARING AUTHORIZATION != CLEARING EXECUTION
+CLEARING != SETTLEMENT
+```
+
+No residual ledger entry or settlement instruction exists yet.
 
 ## Current Frontier
 
@@ -245,21 +205,22 @@ M5 TESTED_TESTNET
 M6 TESTED_TESTNET
 M7 TESTED_TESTNET
 M8 TESTED_TESTNET
-M9 NOT_STARTED
+M9 TESTED_TESTNET
+M10 NOT_STARTED
 ```
 
 Next canonical milestone:
 
 ```text
-M9 ClearingEngine / ClearingEpoch
+M10 ResidualLedger / SettlementRouter
 ```
 
-M9 must preserve:
+M10 must preserve:
 
 ```text
-RECIPROCITY != SETOFF AUTHORITY
-FINALIZED != ELIGIBLE_FOR_CLEARING
-same symbol/decimals != same clearing asset
-clearing authorization != clearing execution
+ECONOMIC RESIDUAL != SETTLEMENT INSTRUCTION
 CLEARING != SETTLEMENT
+ROUTED != SETTLED
+settlement rail selection != settlement proof
+asset representation must remain network-qualified
 ```
