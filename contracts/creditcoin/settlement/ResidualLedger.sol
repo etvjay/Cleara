@@ -74,12 +74,11 @@ contract ResidualLedger is AccessControl {
         emit SettlementRouterBound(router);
     }
 
-    function computeResidualId(
-        bytes32 epochId,
-        address debtor,
-        address creditor,
-        uint256 residualIndex
-    ) public pure returns (bytes32) {
+    function computeResidualId(bytes32 epochId, address debtor, address creditor, uint256 residualIndex)
+        public
+        pure
+        returns (bytes32)
+    {
         return keccak256(abi.encode("CLEARA_RESIDUAL_V1", epochId, debtor, creditor, residualIndex));
     }
 
