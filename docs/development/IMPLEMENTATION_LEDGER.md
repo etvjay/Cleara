@@ -19,7 +19,9 @@ Snapshot: 30 August 2026
 | M8 live M7→M8 continuity | Frozen evidence gate | TESTED_TESTNET | Existing M7 seal preflight + 3 finalized drawdown obligations + negatives PASS | `evidence/runtime/M8_OBLIGATIONS_2026-08-29.md` | Not started | Existing M7 facility + new CC3 ObligationLedger |
 | M9 ClearingPolicyRegistry / ClearingEngine | Frozen M9 bilateral slice | TESTED_TESTNET | Unit + 3x1000 M9 fuzz + live PASS | Run 33280768286 / artifact 9722957475 | Not started | CC3 evidence deployments |
 | M9 bilateral clearing epoch | Frozen evidence gate | TESTED_TESTNET | Authorization split + reciprocity + conservation + reseal negatives PASS | `evidence/runtime/M9_BILATERAL_CLEARING_2026-08-29.md` | Not started | Existing M7 facility + new CC3 M9 stack |
-| M10 ResidualLedger / SettlementRouter | Frozen architecture; implementation slice pending | NOT_STARTED | Not started | None | Not started | None |
+| M10 ResidualLedger | Frozen M10 slice | TESTED_TESTNET | Unit + 3x1000 M10 fuzz + live PASS | Run 33311029527 / artifact 9731999552 | Not started | CC3 evidence deployment bound to M9 engine |
+| M10 SettlementRouter | Frozen metadata-routing slice | TESTED_TESTNET | Route/duplicate/non-settlement invariants PASS | `evidence/runtime/M10_RESIDUAL_ROUTING_2026-08-30.md` | Not started | CC3 evidence deployment |
+| M11 SettlementAdapter / SettlementASC / reconciliation | Frozen architecture; implementation slice pending | NOT_STARTED | Not started | None | Not started | None |
 | Canonical docs/skills mirror | Frozen | PARTIAL_REMOTE_MIRROR | N/A | Canonical docs tracked on main | Not started | GitHub main |
 
 ## M1 — Verification substrate
@@ -168,31 +170,84 @@ Live bilateral vector:
 340,000 economic residual
 ```
 
-Epoch:
+## M10 — Residual Routing
+
+Status: `TESTED_TESTNET`
 
 ```text
-epochId: 0xb16d67f3a82e4e79409c344f012565125e77fbd2293be85404a7de10abf1f8c2
-inputRoot: 0xa75b8beb36648c8f1103deee1f123c7ab4114dbf54af9981ca631ba851aa1e62
-status: FINALIZED
+Run: 33311029527
+Head: 9388ec6ef5c4511f560f35b8d3c06d21f3f95985
+Artifact: 9731999552
+SHA256: 0071c3f003a6f4c1f3839cc4849ce450365f5385cf186ddeb44ba002328affc0
+Evidence: evidence/runtime/M10_RESIDUAL_ROUTING_2026-08-30.md
 ```
+
+Property gate:
+
+```text
+72 tests passed
+3 M10 fuzz properties x 1000 PASS
+```
+
+Live deployments:
+
+```text
+ResidualLedger:   0xeb8f98D41ad6f626d8808F70c7b0C455Fd248384
+SettlementRouter: 0x425E8b8c38025dFD886446947209D21407dC7319
+```
+
+Direct M9 -> M10 continuity:
+
+```text
+FINALIZED M9 epoch
+460,000 gross
+-120,000 gross movement removed by clearing
+=340,000 economic residual
+-> ResidualLedger residual 340,000
+-> one SettlementRouter instruction
+```
+
+Residual:
+
+```text
+residualId: 0xb7b1905b8e4b08c9db578059492c47d6464e61b5b20c14c0c4b6c9721ccbeae6
+source obligation: 0x330647cb907ce83563e27d406c3c3789b2756705ff4cbb1aa8c63a65d0966129
+amount: 340,000
+status: ROUTED
+```
+
+Route:
+
+```text
+settlementId: 0x82b7b4c56e20cbb8c3ac0013282e26a4f9288dedfd9f4f8ee0091687b358f40b
+route tx: 0x9cc4dea116a9700e2f9a63e2ab4163b9f2480475292830f9406a00b0c738a5d0
+status: ROUTED
+```
+
+Settlement accounting remained zero before and after routing.
 
 Rejected live:
 
 ```text
-reciprocity without authorization
-MULTILATERAL policy configuration
-epoch reseal
+duplicate residualization
+duplicate routing
 ```
 
-M9 boundary:
+M10 boundary:
 
 ```text
-RECIPROCITY != SETOFF AUTHORITY
-CLEARING AUTHORIZATION != CLEARING EXECUTION
-CLEARING != SETTLEMENT
+ECONOMIC RESIDUAL != SETTLEMENT INSTRUCTION
+ROUTED != SETTLED
 ```
 
-No residual ledger entry or settlement instruction exists yet.
+Known limitation:
+
+```text
+route domain / representation IDs are test-only and not yet authenticated against DomainRegistry / AssetRegistry
+no adapter call
+no value movement
+no settlement proof
+```
 
 ## Current Frontier
 
@@ -206,21 +261,23 @@ M6 TESTED_TESTNET
 M7 TESTED_TESTNET
 M8 TESTED_TESTNET
 M9 TESTED_TESTNET
-M10 NOT_STARTED
+M10 TESTED_TESTNET
+M11 NOT_STARTED
 ```
 
 Next canonical milestone:
 
 ```text
-M10 ResidualLedger / SettlementRouter
+M11 SettlementAdapter / SettlementASC / reconciliation
 ```
 
-M10 must preserve:
+M11 must preserve:
 
 ```text
-ECONOMIC RESIDUAL != SETTLEMENT INSTRUCTION
-CLEARING != SETTLEMENT
 ROUTED != SETTLED
-settlement rail selection != settlement proof
-asset representation must remain network-qualified
+SETTLEMENT EXECUTION != SETTLEMENT PROOF
+PROVEN SETTLEMENT TX != VALID SETTLEMENT FOR THIS RESIDUAL
+settledAmount changes only from authenticated settlement evidence
+receipt.status == 1 remains mandatory for external settlement proof
+route domain / representation must be registry-authenticated before production claim
 ```
