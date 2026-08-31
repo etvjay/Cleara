@@ -1,6 +1,6 @@
 # Cleara Implementation Ledger
 
-Snapshot: 30 August 2026
+Snapshot: 31 August 2026
 
 | Component | Specification | Implementation | Tests | Live Evidence | Audit | Deployment |
 |---|---|---|---|---|---|---|
@@ -21,7 +21,11 @@ Snapshot: 30 August 2026
 | M9 bilateral clearing epoch | Frozen evidence gate | TESTED_TESTNET | Authorization split + reciprocity + conservation + reseal negatives PASS | `evidence/runtime/M9_BILATERAL_CLEARING_2026-08-29.md` | Not started | Existing M7 facility + new CC3 M9 stack |
 | M10 ResidualLedger | Frozen M10 slice | TESTED_TESTNET | Unit + 3x1000 M10 fuzz + live PASS | Run 33311029527 / artifact 9731999552 | Not started | CC3 evidence deployment bound to M9 engine |
 | M10 SettlementRouter | Frozen metadata-routing slice | TESTED_TESTNET | Route/duplicate/non-settlement invariants PASS | `evidence/runtime/M10_RESIDUAL_ROUTING_2026-08-30.md` | Not started | CC3 evidence deployment |
-| M11 SettlementAdapter / SettlementASC / reconciliation | Frozen architecture; implementation slice pending | NOT_STARTED | Not started | None | Not started | None |
+| M11 authenticated settlement routing | Frozen M11 slice | IMPLEMENTED_LOCAL | Authenticated route + fuzz regression PASS | None | Not started | Not deployed |
+| M11 SettlementAdapter | Frozen M11 slice | IMPLEMENTED_LOCAL | Exact ERC20 movement + failed-transfer path PASS | None | Not started | Not deployed |
+| M11 SettlementASC | Frozen M11 slice | IMPLEMENTED_LOCAL | Compile/property gate PASS; live receipt decoding pending | None | Not started | Not deployed |
+| M11 SettlementReconciler | Frozen M11 slice | IMPLEMENTED_LOCAL | Exact residual, partial/wrong-party/replay/authority negatives PASS | None | Not started | Not deployed |
+| M11 future Writability boundary | ADR-0002 | DESIGNED_FUTURE | N/A | None | Not started | Not deployed |
 | Canonical docs/skills mirror | Frozen | PARTIAL_REMOTE_MIRROR | N/A | Canonical docs tracked on main | Not started | GitHub main |
 
 ## M1 — Verification substrate
@@ -240,14 +244,85 @@ ECONOMIC RESIDUAL != SETTLEMENT INSTRUCTION
 ROUTED != SETTLED
 ```
 
-Known limitation:
+Historical M10 deployment limitation:
 
 ```text
-route domain / representation IDs are test-only and not yet authenticated against DomainRegistry / AssetRegistry
-no adapter call
-no value movement
-no settlement proof
+The immutable M10 live SettlementRouter accepted nonzero route domain / representation IDs without registry authentication.
+That historical deployment remains unchanged.
+No adapter call, value movement, settlement proof, or settledAmount mutation occurred in M10.
 ```
+
+Closed in the M11 implementation:
+
+```text
+route requires an active readable settlement/evidence domain
+adapter must be registered for that domain
+representation must be active in that domain
+representation.assetClassId must match residual.assetClassId
+routing still cannot mutate settledAmount
+```
+
+## M11 — Attested Settlement Reconciliation
+
+Status: `IMPLEMENTED_LOCAL`
+
+Local evidence gate:
+
+```text
+Contracts workflow run: 33389202524
+Head: 48735f9ab7a8645bef9745aebeb5be558c40e307
+forge fmt --check: PASS
+forge build --sizes: PASS
+forge test -vvv: PASS
+```
+
+Implemented boundary:
+
+```text
+ROUTED residual
+-> source SettlementAdapter ERC20 execution
+-> SettlementExecuted metadata event
+-> Attestcoin proof
+-> SettlementASC
+-> SettlementReconciler
+-> SETTLEMENT_PENDING
+-> SETTLED
+```
+
+M11 proof acceptance requires all of:
+
+```text
+Block Prover inclusion verification
+receipt.status == 1
+exact SettlementExecuted event from the configured source adapter
+active settlement domain
+registered adapter for that domain
+active asset representation matching the residual asset class
+exact routeDataHash
+exact ERC20 Transfer log for routed token
+Transfer payer from topics[1] == residual debtor
+Transfer recipient from topics[2] == residual creditor
+Transfer amount == full residual amount
+single-use query/evidence/settlement reconciliation
+```
+
+`tx.from` is not treated as the ERC20 payer. This is required because a gas payer can differ from the economic payer in router, relayer, multisig, smart-account, and delegated execution flows.
+
+Full-residual settlement only is enabled in the M11 slice. Partial settlement facts revert atomically.
+
+Creditcoin testnet script compatibility:
+
+```text
+foundry.toml: bypass_prevrandao = true
+```
+
+Future Writability is not an M11 dependency. ADR-0002 freezes a transport-independent future boundary:
+
+```text
+Inbox -> ClearaMessageReceiver -> application adapter
+```
+
+No current claim is made that Attestcoin Writability, Inbox/Outbox delivery, message ordering, or relayer sponsorship is live.
 
 ## Current Frontier
 
@@ -262,22 +337,19 @@ M7 TESTED_TESTNET
 M8 TESTED_TESTNET
 M9 TESTED_TESTNET
 M10 TESTED_TESTNET
-M11 NOT_STARTED
+M11 IMPLEMENTED_LOCAL
 ```
 
-Next canonical milestone:
+Next evidence gate:
 
 ```text
-M11 SettlementAdapter / SettlementASC / reconciliation
+Sepolia settlement execution
+-> wait for Attestcoin attestation
+-> build proof
+-> submit SettlementASC on CC3
+-> verify evidence consumed
+-> verify residual SETTLED
+-> verify source obligation SETTLED with remainingAmount == 0
 ```
 
-M11 must preserve:
-
-```text
-ROUTED != SETTLED
-SETTLEMENT EXECUTION != SETTLEMENT PROOF
-PROVEN SETTLEMENT TX != VALID SETTLEMENT FOR THIS RESIDUAL
-settledAmount changes only from authenticated settlement evidence
-receipt.status == 1 remains mandatory for external settlement proof
-route domain / representation must be registry-authenticated before production claim
-```
+Until that live gate passes, Cleara must not claim M11 `TESTED_TESTNET`, live attested settlement, or settlement reconciliation proven on CC3.
