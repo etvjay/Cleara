@@ -3,7 +3,6 @@ pragma solidity ^0.8.30;
 
 import {ResidualSettlementRoutingTest} from "./ResidualSettlementRouting.t.sol";
 import {ResidualLedger} from "../../contracts/creditcoin/settlement/ResidualLedger.sol";
-import {SettlementRouter} from "../../contracts/creditcoin/settlement/SettlementRouter.sol";
 import {SettlementReconciler} from "../../contracts/creditcoin/settlement/SettlementReconciler.sol";
 import {EvidenceRegistry} from "../../contracts/creditcoin/registry/EvidenceRegistry.sol";
 import {ObligationLedger} from "../../contracts/creditcoin/obligations/ObligationLedger.sol";
@@ -66,19 +65,20 @@ contract SettlementReconciliationTest is ResidualSettlementRoutingTest {
         (bytes32 settlementId, bytes32 residualId, bytes32 sourceObligationId, bytes32 evidenceId) = _routed340();
         ResidualLedger.Residual memory residual = residuals.getResidual(residualId);
 
-        (bool ok,) = address(reconciler).call(
-            abi.encodeCall(
-                reconciler.reconcile,
-                (
-                    settlementId,
-                    evidenceId,
-                    residual.debtor,
-                    residual.creditor,
-                    residual.assetClassId,
-                    residual.amount - 1
+        (bool ok,) = address(reconciler)
+            .call(
+                abi.encodeCall(
+                    reconciler.reconcile,
+                    (
+                        settlementId,
+                        evidenceId,
+                        residual.debtor,
+                        residual.creditor,
+                        residual.assetClassId,
+                        residual.amount - 1
+                    )
                 )
-            )
-        );
+            );
 
         require(!ok, "partial settlement accepted");
         require(residuals.getResidual(residualId).status == ResidualLedger.ResidualStatus.ROUTED, "residual mutated");
@@ -93,19 +93,13 @@ contract SettlementReconciliationTest is ResidualSettlementRoutingTest {
         (bytes32 settlementId, bytes32 residualId, bytes32 sourceObligationId, bytes32 evidenceId) = _routed340();
         ResidualLedger.Residual memory residual = residuals.getResidual(residualId);
 
-        (bool ok,) = address(reconciler).call(
-            abi.encodeCall(
-                reconciler.reconcile,
-                (
-                    settlementId,
-                    evidenceId,
-                    residual.debtor,
-                    address(0xBAD),
-                    residual.assetClassId,
-                    residual.amount
+        (bool ok,) = address(reconciler)
+            .call(
+                abi.encodeCall(
+                    reconciler.reconcile,
+                    (settlementId, evidenceId, residual.debtor, address(0xBAD), residual.assetClassId, residual.amount)
                 )
-            )
-        );
+            );
 
         require(!ok, "wrong creditor accepted");
         require(residuals.getResidual(residualId).status == ResidualLedger.ResidualStatus.ROUTED, "residual mutated");
@@ -118,20 +112,21 @@ contract SettlementReconciliationTest is ResidualSettlementRoutingTest {
         ResidualLedger.Residual memory residual = residuals.getResidual(residualId);
         UnauthorizedSettlementCaller caller = new UnauthorizedSettlementCaller();
 
-        (bool ok,) = address(caller).call(
-            abi.encodeCall(
-                caller.reconcile,
-                (
-                    reconciler,
-                    settlementId,
-                    evidenceId,
-                    residual.debtor,
-                    residual.creditor,
-                    residual.assetClassId,
-                    residual.amount
+        (bool ok,) = address(caller)
+            .call(
+                abi.encodeCall(
+                    caller.reconcile,
+                    (
+                        reconciler,
+                        settlementId,
+                        evidenceId,
+                        residual.debtor,
+                        residual.creditor,
+                        residual.assetClassId,
+                        residual.amount
+                    )
                 )
-            )
-        );
+            );
 
         require(!ok, "unauthorized caller reconciled");
         require(residuals.getResidual(residualId).status == ResidualLedger.ResidualStatus.ROUTED, "residual mutated");
@@ -143,29 +138,27 @@ contract SettlementReconciliationTest is ResidualSettlementRoutingTest {
         ResidualLedger.Residual memory residual = residuals.getResidual(residualId);
 
         reconciler.reconcile(
-            settlementId,
-            evidenceId,
-            residual.debtor,
-            residual.creditor,
-            residual.assetClassId,
-            residual.amount
+            settlementId, evidenceId, residual.debtor, residual.creditor, residual.assetClassId, residual.amount
         );
 
-        (bool ok,) = address(reconciler).call(
-            abi.encodeCall(
-                reconciler.reconcile,
-                (
-                    settlementId,
-                    evidenceId,
-                    residual.debtor,
-                    residual.creditor,
-                    residual.assetClassId,
-                    residual.amount
+        (bool ok,) = address(reconciler)
+            .call(
+                abi.encodeCall(
+                    reconciler.reconcile,
+                    (
+                        settlementId,
+                        evidenceId,
+                        residual.debtor,
+                        residual.creditor,
+                        residual.assetClassId,
+                        residual.amount
+                    )
                 )
-            )
-        );
+            );
         require(!ok, "settlement reconciled twice");
-        require(residuals.getResidual(residualId).status == ResidualLedger.ResidualStatus.SETTLED, "settled state drifted");
+        require(
+            residuals.getResidual(residualId).status == ResidualLedger.ResidualStatus.SETTLED, "settled state drifted"
+        );
     }
 
     function _routed340()
@@ -187,11 +180,7 @@ contract SettlementReconciliationTest is ResidualSettlementRoutingTest {
             )
         );
         settlementId = router.routeResidual(
-            residualId,
-            settlementAdapterId,
-            settlementDomainId,
-            settlementRepresentationId,
-            routeDataHash
+            residualId, settlementAdapterId, settlementDomainId, settlementRepresentationId, routeDataHash
         );
         evidenceId = evidence.registerEvidence(
             settlementDomainId,
