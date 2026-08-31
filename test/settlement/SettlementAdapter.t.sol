@@ -21,12 +21,7 @@ contract SettlementAdapterTest {
         uint256 creditorBefore = token.balanceOf(creditor);
 
         adapter.executeSettlement(
-            keccak256("settlement"),
-            keccak256("residual"),
-            creditor,
-            keccak256("USD"),
-            address(token),
-            340_000
+            keccak256("settlement"), keccak256("residual"), creditor, keccak256("USD"), address(token), 340_000
         );
 
         require(token.balanceOf(address(this)) == debtorBefore - 340_000, "debtor balance mismatch");
@@ -36,19 +31,20 @@ contract SettlementAdapterTest {
     function testFailedTransferCannotEmitSuccessfulEconomicEffect() public {
         MockERC20 emptyToken = new MockERC20();
         emptyToken.approve(address(adapter), type(uint256).max);
-        (bool ok,) = address(adapter).call(
-            abi.encodeCall(
-                adapter.executeSettlement,
-                (
-                    keccak256("settlement"),
-                    keccak256("residual"),
-                    creditor,
-                    keccak256("USD"),
-                    address(emptyToken),
-                    340_000
+        (bool ok,) = address(adapter)
+            .call(
+                abi.encodeCall(
+                    adapter.executeSettlement,
+                    (
+                        keccak256("settlement"),
+                        keccak256("residual"),
+                        creditor,
+                        keccak256("USD"),
+                        address(emptyToken),
+                        340_000
+                    )
                 )
-            )
-        );
+            );
         require(!ok, "unfunded settlement succeeded");
         require(emptyToken.balanceOf(creditor) == 0, "failed settlement moved value");
     }
