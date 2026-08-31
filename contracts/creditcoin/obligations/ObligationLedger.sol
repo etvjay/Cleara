@@ -55,6 +55,7 @@ contract ObligationLedger is AccessControl {
 
     FacilityManager public immutable facilityManager;
     address public clearingEngine;
+    address public settlementReconciler;
 
     mapping(bytes32 => Obligation) private _obligations;
     mapping(bytes32 => uint256) public nextNonceByFacility;
@@ -68,6 +69,9 @@ contract ObligationLedger is AccessControl {
     error ClearingEngineAlreadySet(address currentEngine);
     error UnauthorizedClearingEngine(address caller);
     error ClearingAmountExceeded(bytes32 obligationId, uint256 requested, uint256 remaining);
+    error SettlementReconcilerAlreadySet(address currentReconciler);
+    error UnauthorizedSettlementReconciler(address caller);
+    error SettlementAmountMismatch(bytes32 obligationId, uint256 requested, uint256 remaining);
 
     event ObligationCreated(
         bytes32 indexed obligationId,
@@ -88,6 +92,9 @@ contract ObligationLedger is AccessControl {
     event ClearingAuthorized(bytes32 indexed obligationId, bytes32 indexed clearingPolicyId);
     event ObligationEnteredClearing(bytes32 indexed obligationId, bytes32 indexed clearingEpochId);
     event ClearingApplied(bytes32 indexed obligationId, bytes32 indexed clearingEpochId, uint256 amount);
+    event SettlementReconcilerBound(address indexed settlementReconciler);
+    event ObligationSettlementPending(bytes32 indexed obligationId, bytes32 indexed settlementId);
+    event SettlementApplied(bytes32 indexed obligationId, bytes32 indexed settlementId, uint256 amount);
 
     constructor(address admin, FacilityManager facilityManager_) {
         if (admin == address(0) || address(facilityManager_) == address(0)) revert InvalidObligation();
@@ -102,6 +109,13 @@ contract ObligationLedger is AccessControl {
         if (clearingEngine != address(0)) revert ClearingEngineAlreadySet(clearingEngine);
         clearingEngine = engine;
         emit ClearingEngineBound(engine);
+    }
+
+    function bindSettlementReconciler(address reconciler) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (reconciler == address(0)) revert InvalidObligation();
+        if (settlementReconciler != address(0)) revert SettlementReconcilerAlreadySet(settlementReconciler);
+        settlementReconciler = reconciler;
+        emit SettlementReconcilerBound(reconciler);
     }
 
     function computeObligationId(
@@ -215,6 +229,27 @@ contract ObligationLedger is AccessControl {
         emit ClearingApplied(obligationId, clearingEpochId, amount);
     }
 
+    function markSettlementPending(bytes32 obligationId, bytes32 settlementId) external {
+        _onlySettlementReconciler();
+        if (settlementId == bytes32(0)) revert InvalidObligation();
+        Obligation storage obligation = _requireState(obligationId, ObligationStatus.CLEARED);
+        uint256 remaining = obligation.originalAmount - obligation.clearedAmount - obligation.settledAmount;
+        if (remaining == 0) revert SettlementAmountMismatch(obligationId, 0, remaining);
+        obligation.status = ObligationStatus.SETTLEMENT_PENDING;
+        emit ObligationSettlementPending(obligationId, settlementId);
+    }
+
+    function applySettlement(bytes32 obligationId, bytes32 settlementId, uint256 amount) external {
+        _onlySettlementReconciler();
+        if (settlementId == bytes32(0) || amount == 0) revert InvalidObligation();
+        Obligation storage obligation = _requireState(obligationId, ObligationStatus.SETTLEMENT_PENDING);
+        uint256 remaining = obligation.originalAmount - obligation.clearedAmount - obligation.settledAmount;
+        if (amount != remaining) revert SettlementAmountMismatch(obligationId, amount, remaining);
+        obligation.settledAmount += amount;
+        obligation.status = ObligationStatus.SETTLED;
+        emit SettlementApplied(obligationId, settlementId, amount);
+    }
+
     function remainingAmount(bytes32 obligationId) external view returns (uint256) {
         Obligation memory obligation = getObligation(obligationId);
         return obligation.originalAmount - obligation.clearedAmount - obligation.settledAmount;
@@ -227,6 +262,10 @@ contract ObligationLedger is AccessControl {
 
     function _onlyClearingEngine() internal view {
         if (msg.sender != clearingEngine) revert UnauthorizedClearingEngine(msg.sender);
+    }
+
+    function _onlySettlementReconciler() internal view {
+        if (msg.sender != settlementReconciler) revert UnauthorizedSettlementReconciler(msg.sender);
     }
 
     function _requireState(bytes32 obligationId, ObligationStatus expected)
