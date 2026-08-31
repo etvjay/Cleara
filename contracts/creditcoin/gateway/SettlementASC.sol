@@ -73,8 +73,8 @@ contract SettlementASC {
     ) {
         if (
             verifier_ == address(0) || domainRegistry_ == address(0) || assetRegistry_ == address(0)
-                || evidenceRegistry_ == address(0) || settlementRouter_ == address(0) || settlementReconciler_ == address(0)
-                || sourceDomainId_ == bytes32(0) || sourceAdapter_ == address(0)
+                || evidenceRegistry_ == address(0) || settlementRouter_ == address(0)
+                || settlementReconciler_ == address(0) || sourceDomainId_ == bytes32(0) || sourceAdapter_ == address(0)
         ) revert UnsupportedSource();
         verifier = INativeQueryVerifier(verifier_);
         domainRegistry = DomainRegistry(domainRegistry_);
@@ -87,7 +87,10 @@ contract SettlementASC {
         sourceAdapter = sourceAdapter_;
     }
 
-    function acceptAttestedSettlement(Proof calldata proof) external returns (bytes32 settlementId, bytes32 evidenceId) {
+    function acceptAttestedSettlement(Proof calldata proof)
+        external
+        returns (bytes32 settlementId, bytes32 evidenceId)
+    {
         _validateDomain(proof.chainKey);
         INativeQueryVerifier.MerkleProof memory merkleProof =
             INativeQueryVerifier.MerkleProof({root: proof.merkleRoot, siblings: proof.siblings});
@@ -111,12 +114,7 @@ contract SettlementASC {
             payloadHash
         );
         settlementReconciler.reconcile(
-            fact.settlementId,
-            evidenceId,
-            fact.debtor,
-            fact.creditor,
-            fact.assetClassId,
-            fact.amount
+            fact.settlementId, evidenceId, fact.debtor, fact.creditor, fact.assetClassId, fact.amount
         );
         settlementId = fact.settlementId;
         emit SettlementAccepted(settlementId, evidenceId, queryId);
@@ -151,14 +149,7 @@ contract SettlementASC {
         ) revert UnsupportedRepresentation();
 
         bytes32 expectedRouteDataHash = keccak256(
-            abi.encode(
-                "CLEARA_ROUTE_V1",
-                fact.debtor,
-                fact.creditor,
-                fact.assetClassId,
-                fact.token,
-                fact.amount
-            )
+            abi.encode("CLEARA_ROUTE_V1", fact.debtor, fact.creditor, fact.assetClassId, fact.token, fact.amount)
         );
         if (instruction.routeDataHash != expectedRouteDataHash) revert InvalidSettlementFact();
     }
@@ -168,11 +159,7 @@ contract SettlementASC {
             lowerEndpointDigest: proof.lowerEndpointDigest, roots: proof.continuityRoots
         });
         bool ok = verifier.verifyAndEmit(
-            proof.chainKey,
-            proof.blockHeight,
-            proof.encodedTransaction,
-            merkleProof,
-            continuityProof
+            proof.chainKey, proof.blockHeight, proof.encodedTransaction, merkleProof, continuityProof
         );
         if (!ok) revert VerifyFailed();
     }
