@@ -28,7 +28,7 @@ contract SettlementAdapterTest {
         require(token.balanceOf(creditor) == creditorBefore + 340_000, "creditor balance mismatch");
     }
 
-    function testFailedTransferCannotEmitSuccessfulEconomicEffect() public {
+    function testUnfundedSettlementCannotProduceEconomicEffect() public {
         MockERC20 emptyToken = new MockERC20();
         emptyToken.approve(address(adapter), type(uint256).max);
         (bool ok,) = address(adapter)
