@@ -37,9 +37,9 @@ contract ResidualSettlementRoutingFuzzTest is ResidualSettlementRoutingTest {
 
         router.routeResidual(
             residualId,
-            keccak256(abi.encode("adapter", rawX, rawY)),
-            keccak256(abi.encode("domain", rawX)),
-            keccak256(abi.encode("representation", rawY)),
+            settlementAdapterId,
+            settlementDomainId,
+            settlementRepresentationId,
             keccak256(abi.encode("route", rawX, rawY))
         );
 
