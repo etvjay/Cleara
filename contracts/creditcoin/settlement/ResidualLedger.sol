@@ -33,6 +33,7 @@ contract ResidualLedger is AccessControl {
     ClearingEngine public immutable clearingEngine;
     ObligationLedger public immutable obligationLedger;
     address public settlementRouter;
+    address public settlementReconciler;
 
     mapping(bytes32 => Residual) private _residuals;
     mapping(bytes32 => bool) public epochResidualized;
@@ -44,6 +45,8 @@ contract ResidualLedger is AccessControl {
     error BilateralResidualAmbiguous(uint256 remainingA, uint256 remainingB);
     error SettlementRouterAlreadySet(address currentRouter);
     error UnauthorizedSettlementRouter(address caller);
+    error SettlementReconcilerAlreadySet(address currentReconciler);
+    error UnauthorizedSettlementReconciler(address caller);
     error InvalidResidualState(bytes32 residualId, ResidualStatus status);
 
     event ResidualCreated(
@@ -57,7 +60,10 @@ contract ResidualLedger is AccessControl {
         uint256 residualIndex
     );
     event SettlementRouterBound(address indexed settlementRouter);
+    event SettlementReconcilerBound(address indexed settlementReconciler);
     event ResidualRouted(bytes32 indexed residualId);
+    event ResidualSettlementPending(bytes32 indexed residualId, bytes32 indexed settlementId);
+    event ResidualSettled(bytes32 indexed residualId, bytes32 indexed settlementId);
 
     constructor(address admin, ClearingEngine clearingEngine_) {
         if (admin == address(0) || address(clearingEngine_) == address(0)) revert InvalidResidual();
@@ -72,6 +78,13 @@ contract ResidualLedger is AccessControl {
         if (settlementRouter != address(0)) revert SettlementRouterAlreadySet(settlementRouter);
         settlementRouter = router;
         emit SettlementRouterBound(router);
+    }
+
+    function bindSettlementReconciler(address reconciler) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (reconciler == address(0)) revert InvalidResidual();
+        if (settlementReconciler != address(0)) revert SettlementReconcilerAlreadySet(settlementReconciler);
+        settlementReconciler = reconciler;
+        emit SettlementReconcilerBound(reconciler);
     }
 
     function computeResidualId(bytes32 epochId, address debtor, address creditor, uint256 residualIndex)
@@ -143,9 +156,29 @@ contract ResidualLedger is AccessControl {
         emit ResidualRouted(residualId);
     }
 
+    function markSettlementPending(bytes32 residualId, bytes32 settlementId) external {
+        _onlySettlementReconciler();
+        if (settlementId == bytes32(0)) revert InvalidResidual();
+        Residual storage residual = _requireState(residualId, ResidualStatus.ROUTED);
+        residual.status = ResidualStatus.SETTLEMENT_PENDING;
+        emit ResidualSettlementPending(residualId, settlementId);
+    }
+
+    function markSettled(bytes32 residualId, bytes32 settlementId) external {
+        _onlySettlementReconciler();
+        if (settlementId == bytes32(0)) revert InvalidResidual();
+        Residual storage residual = _requireState(residualId, ResidualStatus.SETTLEMENT_PENDING);
+        residual.status = ResidualStatus.SETTLED;
+        emit ResidualSettled(residualId, settlementId);
+    }
+
     function getResidual(bytes32 residualId) public view returns (Residual memory residual) {
         residual = _residuals[residualId];
         if (residual.status == ResidualStatus.NONE) revert UnknownResidual(residualId);
+    }
+
+    function _onlySettlementReconciler() internal view {
+        if (msg.sender != settlementReconciler) revert UnauthorizedSettlementReconciler(msg.sender);
     }
 
     function _requireState(bytes32 residualId, ResidualStatus expected)
