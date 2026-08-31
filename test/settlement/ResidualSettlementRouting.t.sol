@@ -151,11 +151,7 @@ contract ResidualSettlementRoutingTest {
         bytes32 routeDataHash = keccak256("recipient-and-amount");
 
         bytes32 settlementId = router.routeResidual(
-            residualId,
-            settlementAdapterId,
-            settlementDomainId,
-            settlementRepresentationId,
-            routeDataHash
+            residualId, settlementAdapterId, settlementDomainId, settlementRepresentationId, routeDataHash
         );
         SettlementRouter.SettlementInstruction memory instruction = router.getInstruction(settlementId);
         ResidualLedger.Residual memory residual = residuals.getResidual(residualId);
@@ -172,45 +168,45 @@ contract ResidualSettlementRoutingTest {
     function testRejectsUnregisteredAdapter() public {
         (bytes32 epochId,,) = _finalizedEpoch(400_000, 60_000);
         bytes32 residualId = residuals.createBilateralResidual(epochId);
-        (bool ok,) = address(router).call(
-            abi.encodeCall(
-                router.routeResidual,
-                (
-                    residualId,
-                    keccak256("unregistered-adapter"),
-                    settlementDomainId,
-                    settlementRepresentationId,
-                    keccak256("route")
+        (bool ok,) = address(router)
+            .call(
+                abi.encodeCall(
+                    router.routeResidual,
+                    (
+                        residualId,
+                        keccak256("unregistered-adapter"),
+                        settlementDomainId,
+                        settlementRepresentationId,
+                        keccak256("route")
+                    )
                 )
-            )
-        );
+            );
         require(!ok, "unregistered adapter accepted");
-        require(residuals.getResidual(residualId).status == ResidualLedger.ResidualStatus.CREATED, "failed route mutated");
+        require(
+            residuals.getResidual(residualId).status == ResidualLedger.ResidualStatus.CREATED, "failed route mutated"
+        );
     }
 
     function testResidualCannotBeRoutedTwice() public {
         (bytes32 epochId,,) = _finalizedEpoch(400_000, 60_000);
         bytes32 residualId = residuals.createBilateralResidual(epochId);
         router.routeResidual(
-            residualId,
-            settlementAdapterId,
-            settlementDomainId,
-            settlementRepresentationId,
-            keccak256("route-a")
+            residualId, settlementAdapterId, settlementDomainId, settlementRepresentationId, keccak256("route-a")
         );
 
-        (bool ok,) = address(router).call(
-            abi.encodeCall(
-                router.routeResidual,
-                (
-                    residualId,
-                    settlementAdapterId,
-                    settlementDomainId,
-                    settlementRepresentationId,
-                    keccak256("route-b")
+        (bool ok,) = address(router)
+            .call(
+                abi.encodeCall(
+                    router.routeResidual,
+                    (
+                        residualId,
+                        settlementAdapterId,
+                        settlementDomainId,
+                        settlementRepresentationId,
+                        keccak256("route-b")
+                    )
                 )
-            )
-        );
+            );
         require(!ok, "routed residual rerouted");
     }
 
@@ -277,7 +273,8 @@ contract ResidualSettlementRoutingTest {
             encumbrances.createEncumbrance(claimId, id, address(this), amount, uint64(block.timestamp + 120 days));
         facilities.bindEncumbrance(id, encumbranceId);
         facilities.beginAllocating(id);
-        bytes32 allocationId = allocations.proposeAllocation(id, address(this), amount, uint64(block.timestamp + 90 days));
+        bytes32 allocationId =
+            allocations.proposeAllocation(id, address(this), amount, uint64(block.timestamp + 90 days));
         allocations.activateAllocation(allocationId);
         bytes32 commitmentId = commitments.registerActiveCommitment(
             keccak256("source-commitment"),
