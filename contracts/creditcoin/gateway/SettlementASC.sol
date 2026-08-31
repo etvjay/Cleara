@@ -12,6 +12,7 @@ import {SettlementReconciler} from "../settlement/SettlementReconciler.sol";
 contract SettlementASC {
     bytes32 public constant SETTLEMENT_EXECUTED_SIG =
         keccak256("SettlementExecuted(bytes32,bytes32,address,address,bytes32,address,uint256)");
+    bytes32 public constant ERC20_TRANSFER_SIG = keccak256("Transfer(address,address,uint256)");
 
     struct Proof {
         uint64 chainKey;
@@ -52,11 +53,14 @@ contract SettlementASC {
     error WrongSourceContract();
     error MissingSettlementExecuted();
     error AmbiguousSettlementExecuted();
+    error MissingTokenTransfer();
+    error AmbiguousTokenTransfer();
     error InvalidTopics();
     error AlreadyProcessed();
     error InvalidSettlementFact();
     error UnsupportedRepresentation();
     error WrongSettlementAdapter();
+    error TransferFactMismatch();
 
     event SettlementAccepted(bytes32 indexed settlementId, bytes32 indexed evidenceId, bytes32 indexed queryId);
 
@@ -170,17 +174,36 @@ contract SettlementASC {
         EvmV1Decoder.ReceiptFields memory receipt = EvmV1Decoder.decodeReceiptFields(encodedTransaction);
         if (receipt.receiptStatus != 1) revert SourceTxFailed();
 
-        EvmV1Decoder.LogEntry[] memory logs = EvmV1Decoder.getLogsByEventSignature(receipt, SETTLEMENT_EXECUTED_SIG);
-        if (logs.length == 0) revert MissingSettlementExecuted();
-        if (logs.length != 1) revert AmbiguousSettlementExecuted();
-        EvmV1Decoder.LogEntry memory log = logs[0];
-        if (log.address_ != sourceAdapter) revert WrongSourceContract();
-        if (log.topics.length != 4) revert InvalidTopics();
+        EvmV1Decoder.LogEntry[] memory settlementLogs =
+            EvmV1Decoder.getLogsByEventSignature(receipt, SETTLEMENT_EXECUTED_SIG);
+        if (settlementLogs.length == 0) revert MissingSettlementExecuted();
+        if (settlementLogs.length != 1) revert AmbiguousSettlementExecuted();
+        EvmV1Decoder.LogEntry memory settlementLog = settlementLogs[0];
+        if (settlementLog.address_ != sourceAdapter) revert WrongSourceContract();
+        if (settlementLog.topics.length != 4) revert InvalidTopics();
 
-        fact.settlementId = log.topics[1];
-        fact.residualId = log.topics[2];
-        fact.debtor = address(uint160(uint256(log.topics[3])));
+        fact.settlementId = settlementLog.topics[1];
+        fact.residualId = settlementLog.topics[2];
+        fact.debtor = address(uint160(uint256(settlementLog.topics[3])));
         (fact.creditor, fact.assetClassId, fact.token, fact.amount) =
-            abi.decode(log.data, (address, bytes32, address, uint256));
+            abi.decode(settlementLog.data, (address, bytes32, address, uint256));
+
+        EvmV1Decoder.LogEntry[] memory transferLogs =
+            EvmV1Decoder.getLogsByEventSignature(receipt, ERC20_TRANSFER_SIG);
+        uint256 matchingTransfers;
+        for (uint256 i = 0; i < transferLogs.length; i++) {
+            EvmV1Decoder.LogEntry memory transferLog = transferLogs[i];
+            if (transferLog.address_ != fact.token || transferLog.topics.length != 3) continue;
+
+            address payer = address(uint160(uint256(transferLog.topics[1])));
+            address recipient = address(uint160(uint256(transferLog.topics[2])));
+            uint256 amount = abi.decode(transferLog.data, (uint256));
+            if (payer == fact.debtor && recipient == fact.creditor && amount == fact.amount) {
+                matchingTransfers++;
+            }
+        }
+
+        if (matchingTransfers == 0) revert MissingTokenTransfer();
+        if (matchingTransfers != 1) revert AmbiguousTokenTransfer();
     }
 }
