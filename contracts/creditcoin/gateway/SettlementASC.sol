@@ -60,7 +60,6 @@ contract SettlementASC {
     error InvalidSettlementFact();
     error UnsupportedRepresentation();
     error WrongSettlementAdapter();
-    error TransferFactMismatch();
 
     event SettlementAccepted(bytes32 indexed settlementId, bytes32 indexed evidenceId, bytes32 indexed queryId);
 
@@ -188,8 +187,7 @@ contract SettlementASC {
         (fact.creditor, fact.assetClassId, fact.token, fact.amount) =
             abi.decode(settlementLog.data, (address, bytes32, address, uint256));
 
-        EvmV1Decoder.LogEntry[] memory transferLogs =
-            EvmV1Decoder.getLogsByEventSignature(receipt, ERC20_TRANSFER_SIG);
+        EvmV1Decoder.LogEntry[] memory transferLogs = EvmV1Decoder.getLogsByEventSignature(receipt, ERC20_TRANSFER_SIG);
         uint256 matchingTransfers;
         for (uint256 i = 0; i < transferLogs.length; i++) {
             EvmV1Decoder.LogEntry memory transferLog = transferLogs[i];
