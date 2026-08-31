@@ -10,6 +10,8 @@ import {CapitalizationManager} from "../../contracts/creditcoin/financing/Capita
 import {ObligationLedger} from "../../contracts/creditcoin/obligations/ObligationLedger.sol";
 import {ClearingPolicyRegistry} from "../../contracts/creditcoin/clearing/ClearingPolicyRegistry.sol";
 import {ClearingEngine} from "../../contracts/creditcoin/clearing/ClearingEngine.sol";
+import {DomainRegistry} from "../../contracts/creditcoin/registry/DomainRegistry.sol";
+import {AssetRegistry} from "../../contracts/creditcoin/registry/AssetRegistry.sol";
 import {ResidualLedger} from "../../contracts/creditcoin/settlement/ResidualLedger.sol";
 import {SettlementRouter} from "../../contracts/creditcoin/settlement/SettlementRouter.sol";
 
@@ -23,12 +25,19 @@ contract ResidualSettlementRoutingTest {
     ObligationLedger internal obligations;
     ClearingPolicyRegistry internal policies;
     ClearingEngine internal clearing;
+    DomainRegistry internal domains;
+    AssetRegistry internal assets;
     ResidualLedger internal residuals;
     SettlementRouter internal router;
 
     bytes32 internal assetClassId;
     bytes32 internal facilityId;
     bytes32 internal clearingPolicyId;
+    bytes32 internal settlementDomainId;
+    bytes32 internal settlementRepresentationId;
+    bytes32 internal settlementAdapterId;
+    address internal settlementAdapter = address(0xADAD);
+    address internal settlementToken = address(0xCAFE);
     address internal a = address(0xA11CE);
     address internal b = address(0xB0B);
 
@@ -42,8 +51,10 @@ contract ResidualSettlementRoutingTest {
         obligations = new ObligationLedger(address(this), facilities);
         policies = new ClearingPolicyRegistry(address(this));
         clearing = new ClearingEngine(address(this), obligations, policies);
+        domains = new DomainRegistry(address(this));
+        assets = new AssetRegistry(address(this));
         residuals = new ResidualLedger(address(this), clearing);
-        router = new SettlementRouter(address(this), residuals);
+        router = new SettlementRouter(address(this), residuals, domains, assets);
 
         claims.grantRole(claims.ENCUMBRANCE_ROLE(), address(encumbrances));
         encumbrances.grantRole(encumbrances.FACILITY_ROLE(), address(facilities));
@@ -55,6 +66,44 @@ contract ResidualSettlementRoutingTest {
         residuals.bindSettlementRouter(address(router));
 
         assetClassId = keccak256("USD");
+        settlementDomainId = keccak256("sepolia-domain");
+        domains.configureDomain(
+            DomainRegistry.DomainConfig({
+                domainId: settlementDomainId,
+                chainKey: 1,
+                evmChainId: 11155111,
+                readable: true,
+                writable: false,
+                settlement: true,
+                claim: false,
+                commitment: false,
+                evidence: true,
+                version: 1,
+                active: true
+            })
+        );
+        assets.configureAssetClass(
+            AssetRegistry.AssetClass({
+                assetClassId: assetClassId,
+                denomination: bytes32("USD"),
+                accountingDecimals: 18,
+                policyNamespace: keccak256("settlement-policy"),
+                active: true
+            })
+        );
+        settlementRepresentationId = assets.computeRepresentationId(assetClassId, settlementDomainId, settlementToken);
+        assets.configureRepresentation(
+            AssetRegistry.Representation({
+                representationId: settlementRepresentationId,
+                assetClassId: assetClassId,
+                domainId: settlementDomainId,
+                token: settlementToken,
+                decimals: 18,
+                active: true
+            })
+        );
+        settlementAdapterId = router.configureAdapter(settlementDomainId, settlementAdapter, true);
+
         facilityId = _makeCapitalizedFacility(1_000_000);
         clearingPolicyId = policies.configurePolicy(
             assetClassId, keccak256("bilateral-compatible"), ClearingPolicyRegistry.SetoffMode.BILATERAL
@@ -99,27 +148,44 @@ contract ResidualSettlementRoutingTest {
     function testRoutingRecordsInstructionButDoesNotSettle() public {
         (bytes32 epochId,,) = _finalizedEpoch(400_000, 60_000);
         bytes32 residualId = residuals.createBilateralResidual(epochId);
-        bytes32 adapterId = keccak256("manual-testnet-adapter");
-        bytes32 settlementDomainId = keccak256("sepolia-domain");
-        bytes32 representationId = keccak256("sepolia-usdc-representation");
         bytes32 routeDataHash = keccak256("recipient-and-amount");
 
-        bytes32 settlementId =
-            router.routeResidual(residualId, adapterId, settlementDomainId, representationId, routeDataHash);
+        bytes32 settlementId = router.routeResidual(
+            residualId,
+            settlementAdapterId,
+            settlementDomainId,
+            settlementRepresentationId,
+            routeDataHash
+        );
         SettlementRouter.SettlementInstruction memory instruction = router.getInstruction(settlementId);
         ResidualLedger.Residual memory residual = residuals.getResidual(residualId);
 
         require(instruction.residualId == residualId, "wrong residual link");
-        require(instruction.adapterId == adapterId, "wrong adapter");
+        require(instruction.adapterId == settlementAdapterId, "wrong adapter");
         require(instruction.settlementDomainId == settlementDomainId, "wrong settlement domain");
-        require(instruction.settlementRepresentationId == representationId, "wrong representation");
+        require(instruction.settlementRepresentationId == settlementRepresentationId, "wrong representation");
         require(instruction.status == SettlementRouter.RouteStatus.ROUTED, "instruction not routed");
         require(residual.status == ResidualLedger.ResidualStatus.ROUTED, "residual not routed");
-        require(
-            obligations.getObligation(instruction.residualId == residualId ? _sourceObligation(residualId) : bytes32(0))
-            .settledAmount == 0,
-            "routing settled value"
+        require(obligations.getObligation(_sourceObligation(residualId)).settledAmount == 0, "routing settled value");
+    }
+
+    function testRejectsUnregisteredAdapter() public {
+        (bytes32 epochId,,) = _finalizedEpoch(400_000, 60_000);
+        bytes32 residualId = residuals.createBilateralResidual(epochId);
+        (bool ok,) = address(router).call(
+            abi.encodeCall(
+                router.routeResidual,
+                (
+                    residualId,
+                    keccak256("unregistered-adapter"),
+                    settlementDomainId,
+                    settlementRepresentationId,
+                    keccak256("route")
+                )
+            )
         );
+        require(!ok, "unregistered adapter accepted");
+        require(residuals.getResidual(residualId).status == ResidualLedger.ResidualStatus.CREATED, "failed route mutated");
     }
 
     function testResidualCannotBeRoutedTwice() public {
@@ -127,25 +193,24 @@ contract ResidualSettlementRoutingTest {
         bytes32 residualId = residuals.createBilateralResidual(epochId);
         router.routeResidual(
             residualId,
-            keccak256("adapter-a"),
-            keccak256("domain-a"),
-            keccak256("representation-a"),
+            settlementAdapterId,
+            settlementDomainId,
+            settlementRepresentationId,
             keccak256("route-a")
         );
 
-        (bool ok,) = address(router)
-            .call(
-                abi.encodeCall(
-                    router.routeResidual,
-                    (
-                        residualId,
-                        keccak256("adapter-b"),
-                        keccak256("domain-b"),
-                        keccak256("representation-b"),
-                        keccak256("route-b")
-                    )
+        (bool ok,) = address(router).call(
+            abi.encodeCall(
+                router.routeResidual,
+                (
+                    residualId,
+                    settlementAdapterId,
+                    settlementDomainId,
+                    settlementRepresentationId,
+                    keccak256("route-b")
                 )
-            );
+            )
+        );
         require(!ok, "routed residual rerouted");
     }
 
@@ -212,8 +277,7 @@ contract ResidualSettlementRoutingTest {
             encumbrances.createEncumbrance(claimId, id, address(this), amount, uint64(block.timestamp + 120 days));
         facilities.bindEncumbrance(id, encumbranceId);
         facilities.beginAllocating(id);
-        bytes32 allocationId =
-            allocations.proposeAllocation(id, address(this), amount, uint64(block.timestamp + 90 days));
+        bytes32 allocationId = allocations.proposeAllocation(id, address(this), amount, uint64(block.timestamp + 90 days));
         allocations.activateAllocation(allocationId);
         bytes32 commitmentId = commitments.registerActiveCommitment(
             keccak256("source-commitment"),
