@@ -41,7 +41,7 @@ contract ResidualSettlementRoutingTest {
     address internal a = address(0xA11CE);
     address internal b = address(0xB0B);
 
-    function setUp() public {
+    function setUp() public virtual {
         claims = new ClaimRegistry(address(this));
         encumbrances = new EncumbranceRegistry(address(this), claims);
         facilities = new FacilityManager(address(this), encumbrances);
