@@ -56,6 +56,9 @@ jobs:
       - name: Execute live M11 settlement roundtrip
         run: pnpm live:m11:settlement
 
+      - name: Independently verify source ERC20 Transfer payer
+        run: pnpm exec tsx scripts/evidence/validate-m11-source-transfer.ts
+
       - name: Upload M11 evidence
         if: always()
         uses: actions/upload-artifact@v4
