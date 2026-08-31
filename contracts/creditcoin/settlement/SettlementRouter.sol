@@ -50,7 +50,9 @@ contract SettlementRouter is AccessControl {
     error InactiveSettlementDomain(bytes32 domainId);
     error UnsupportedSettlementRepresentation(bytes32 representationId);
 
-    event SettlementAdapterConfigured(bytes32 indexed adapterId, bytes32 indexed domainId, address indexed adapter, bool active);
+    event SettlementAdapterConfigured(
+        bytes32 indexed adapterId, bytes32 indexed domainId, address indexed adapter, bool active
+    );
     event SettlementRouted(
         bytes32 indexed settlementId,
         bytes32 indexed residualId,
@@ -88,7 +90,9 @@ contract SettlementRouter is AccessControl {
         onlyRole(ADAPTER_ADMIN_ROLE)
         returns (bytes32 adapterId)
     {
-        if (domainId == bytes32(0) || adapter == address(0)) revert InvalidSettlementInstruction();
+        if (domainId == bytes32(0) || adapter == address(0)) {
+            revert InvalidSettlementInstruction();
+        }
         DomainRegistry.DomainConfig memory domain = domainRegistry.getDomain(domainId);
         if (!domain.active || !domain.readable || !domain.settlement || !domain.evidence) {
             revert InactiveSettlementDomain(domainId);
