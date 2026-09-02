@@ -186,8 +186,8 @@ contract CommitmentLifecycleASC {
             lowerEndpointDigest: proof.lowerEndpointDigest, roots: proof.continuityRoots
         });
         if (!verifier.verifyAndEmit(
-            proof.chainKey, proof.blockHeight, proof.encodedTransaction, merkleProof, continuityProof
-        )) revert VerifyFailed();
+                proof.chainKey, proof.blockHeight, proof.encodedTransaction, merkleProof, continuityProof
+            )) revert VerifyFailed();
     }
 
     function _decode(bytes calldata encodedTransaction) internal view returns (Fact memory fact) {
