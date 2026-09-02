@@ -109,17 +109,15 @@ contract CommitmentLifecycleTest {
         );
         facilities.bindEncumbrance(facilityId, encumbranceId);
         facilities.beginAllocating(facilityId);
-        allocationId = allocations.proposeAllocation(
-            facilityId, address(this), AMOUNT, uint64(block.timestamp + 3 days)
-        );
+        allocationId =
+            allocations.proposeAllocation(facilityId, address(this), AMOUNT, uint64(block.timestamp + 3 days));
         allocations.activateAllocation(allocationId);
 
         token.mint(address(this), AMOUNT);
         token.approve(address(vault), AMOUNT);
         sourceExpiresAt = uint64(block.timestamp + 2 days);
-        sourceCommitmentId = vault.commit(
-            facilityId, allocationId, ASSET_CLASS_ID, address(token), AMOUNT, sourceExpiresAt
-        );
+        sourceCommitmentId =
+            vault.commit(facilityId, allocationId, ASSET_CLASS_ID, address(token), AMOUNT, sourceExpiresAt);
 
         commitmentId = commitments.registerActiveCommitment(
             sourceCommitmentId,
@@ -161,8 +159,14 @@ contract CommitmentLifecycleTest {
         (bytes32 acceptedId, bytes32 evidenceId) = lifecycle.acceptAttestedCommitmentLifecycle(proof);
 
         require(acceptedId == commitmentId, "wrong commitment id");
-        require(commitments.getCommitment(commitmentId).status == CommitmentRegistry.CommitmentStatus.CONSUMED, "registry not consumed");
-        require(allocations.getAllocation(allocationId).status == AllocationManager.AllocationStatus.CONSUMED, "allocation not consumed");
+        require(
+            commitments.getCommitment(commitmentId).status == CommitmentRegistry.CommitmentStatus.CONSUMED,
+            "registry not consumed"
+        );
+        require(
+            allocations.getAllocation(allocationId).status == AllocationManager.AllocationStatus.CONSUMED,
+            "allocation not consumed"
+        );
         FacilityManager.Facility memory facility = facilities.getFacility(facilityId);
         require(facility.committedAmount == AMOUNT, "gross committed amount drifted");
         require(facility.consumedAmount == AMOUNT && facility.expiredAmount == 0, "terminal accounting mismatch");
@@ -175,11 +179,18 @@ contract CommitmentLifecycleTest {
         vm.warp(uint256(sourceExpiresAt) + 1);
         vault.expire(sourceCommitmentId);
 
-        CommitmentLifecycleASC.Proof memory proof = _proof(_encodedEvent(false, address(this), AMOUNT, 2, address(vault)));
+        CommitmentLifecycleASC.Proof memory proof =
+            _proof(_encodedEvent(false, address(this), AMOUNT, 2, address(vault)));
         lifecycle.acceptAttestedCommitmentLifecycle(proof);
 
-        require(commitments.getCommitment(commitmentId).status == CommitmentRegistry.CommitmentStatus.EXPIRED, "registry not expired");
-        require(allocations.getAllocation(allocationId).status == AllocationManager.AllocationStatus.EXPIRED, "allocation not expired");
+        require(
+            commitments.getCommitment(commitmentId).status == CommitmentRegistry.CommitmentStatus.EXPIRED,
+            "registry not expired"
+        );
+        require(
+            allocations.getAllocation(allocationId).status == AllocationManager.AllocationStatus.EXPIRED,
+            "allocation not expired"
+        );
         FacilityManager.Facility memory facility = facilities.getFacility(facilityId);
         require(facility.committedAmount == AMOUNT, "gross capitalization input changed");
         require(facility.consumedAmount == 0 && facility.expiredAmount == AMOUNT, "expiry accounting mismatch");
@@ -196,61 +207,96 @@ contract CommitmentLifecycleTest {
 
         (bool ok,) = address(lifecycle).call(abi.encodeCall(lifecycle.acceptAttestedCommitmentLifecycle, (proof)));
         require(!ok, "lifecycle replay accepted");
-        require(commitments.getCommitment(commitmentId).status == CommitmentRegistry.CommitmentStatus.CONSUMED, "replay drifted registry");
-        require(allocations.getAllocation(allocationId).status == AllocationManager.AllocationStatus.CONSUMED, "replay drifted allocation");
+        require(
+            commitments.getCommitment(commitmentId).status == CommitmentRegistry.CommitmentStatus.CONSUMED,
+            "replay drifted registry"
+        );
+        require(
+            allocations.getAllocation(allocationId).status == AllocationManager.AllocationStatus.CONSUMED,
+            "replay drifted allocation"
+        );
     }
 
     function testWrongChainFailsBeforeVerification() public {
         verifier.setVerifyResult(false);
-        CommitmentLifecycleASC.Proof memory proof = _proof(_encodedEvent(true, address(0xB0B), AMOUNT, 1, address(vault)));
+        CommitmentLifecycleASC.Proof memory proof =
+            _proof(_encodedEvent(true, address(0xB0B), AMOUNT, 1, address(vault)));
         proof.chainKey = CHAIN_KEY + 1;
         (bool ok,) = address(lifecycle).call(abi.encodeCall(lifecycle.acceptAttestedCommitmentLifecycle, (proof)));
         require(!ok, "wrong chain accepted");
-        require(commitments.getCommitment(commitmentId).status == CommitmentRegistry.CommitmentStatus.ACTIVE, "wrong chain mutated registry");
+        require(
+            commitments.getCommitment(commitmentId).status == CommitmentRegistry.CommitmentStatus.ACTIVE,
+            "wrong chain mutated registry"
+        );
     }
 
     function testFailedReceiptCannotMutateState() public {
-        CommitmentLifecycleASC.Proof memory proof = _proof(_encodedEvent(true, address(0xB0B), AMOUNT, 0, address(vault)));
+        CommitmentLifecycleASC.Proof memory proof =
+            _proof(_encodedEvent(true, address(0xB0B), AMOUNT, 0, address(vault)));
         (bool ok,) = address(lifecycle).call(abi.encodeCall(lifecycle.acceptAttestedCommitmentLifecycle, (proof)));
         require(!ok, "failed source receipt accepted");
-        require(commitments.getCommitment(commitmentId).status == CommitmentRegistry.CommitmentStatus.ACTIVE, "failed receipt mutated registry");
-        require(allocations.getAllocation(allocationId).status == AllocationManager.AllocationStatus.COMMITTED, "failed receipt mutated allocation");
+        require(
+            commitments.getCommitment(commitmentId).status == CommitmentRegistry.CommitmentStatus.ACTIVE,
+            "failed receipt mutated registry"
+        );
+        require(
+            allocations.getAllocation(allocationId).status == AllocationManager.AllocationStatus.COMMITTED,
+            "failed receipt mutated allocation"
+        );
         require(facilities.getFacility(facilityId).consumedAmount == 0, "failed receipt mutated facility");
     }
 
     function testWrongSourceContractCannotMutateState() public {
-        CommitmentLifecycleASC.Proof memory proof = _proof(_encodedEvent(true, address(0xB0B), AMOUNT, 1, address(0xCAFE)));
+        CommitmentLifecycleASC.Proof memory proof =
+            _proof(_encodedEvent(true, address(0xB0B), AMOUNT, 1, address(0xCAFE)));
         (bool ok,) = address(lifecycle).call(abi.encodeCall(lifecycle.acceptAttestedCommitmentLifecycle, (proof)));
         require(!ok, "wrong source contract accepted");
-        require(commitments.getCommitment(commitmentId).status == CommitmentRegistry.CommitmentStatus.ACTIVE, "wrong source mutated registry");
+        require(
+            commitments.getCommitment(commitmentId).status == CommitmentRegistry.CommitmentStatus.ACTIVE,
+            "wrong source mutated registry"
+        );
     }
 
     function testAmbiguousLifecycleEventsCannotMutateState() public {
         CommitmentLifecycleASC.Proof memory proof = _proof(_encodedTwoEvents());
         (bool ok,) = address(lifecycle).call(abi.encodeCall(lifecycle.acceptAttestedCommitmentLifecycle, (proof)));
         require(!ok, "ambiguous lifecycle accepted");
-        require(commitments.getCommitment(commitmentId).status == CommitmentRegistry.CommitmentStatus.ACTIVE, "ambiguous event mutated registry");
-        require(!lifecycle.processedQuery(keccak256(abi.encode(CHAIN_KEY, uint64(100), uint64(7)))), "failed proof replay-locked");
+        require(
+            commitments.getCommitment(commitmentId).status == CommitmentRegistry.CommitmentStatus.ACTIVE,
+            "ambiguous event mutated registry"
+        );
+        require(
+            !lifecycle.processedQuery(keccak256(abi.encode(CHAIN_KEY, uint64(100), uint64(7)))),
+            "failed proof replay-locked"
+        );
     }
 
     function testExpiredEventMustNameProvider() public {
-        CommitmentLifecycleASC.Proof memory proof = _proof(_encodedEvent(false, address(0xBAD), AMOUNT, 1, address(vault)));
+        CommitmentLifecycleASC.Proof memory proof =
+            _proof(_encodedEvent(false, address(0xBAD), AMOUNT, 1, address(vault)));
         (bool ok,) = address(lifecycle).call(abi.encodeCall(lifecycle.acceptAttestedCommitmentLifecycle, (proof)));
         require(!ok, "wrong expiry actor accepted");
-        require(commitments.getCommitment(commitmentId).status == CommitmentRegistry.CommitmentStatus.ACTIVE, "wrong expiry actor mutated registry");
+        require(
+            commitments.getCommitment(commitmentId).status == CommitmentRegistry.CommitmentStatus.ACTIVE,
+            "wrong expiry actor mutated registry"
+        );
         require(facilities.activeCommittedAmount(facilityId) == AMOUNT, "wrong expiry actor changed accounting");
     }
 
     function testLifecycleTransitionsRequireDedicatedRoles() public {
-        (bool registryOk,) = address(commitments).call(
-            abi.encodeCall(commitments.markExpired, (commitmentId, keccak256("evidence"), AMOUNT))
-        );
-        (bool allocationOk,) = address(allocations).call(
-            abi.encodeCall(allocations.markCommitmentExpired, (allocationId, address(this), AMOUNT))
-        );
+        (bool registryOk,) = address(commitments)
+            .call(abi.encodeCall(commitments.markExpired, (commitmentId, keccak256("evidence"), AMOUNT)));
+        (bool allocationOk,) = address(allocations)
+            .call(abi.encodeCall(allocations.markCommitmentExpired, (allocationId, address(this), AMOUNT)));
         require(!registryOk && !allocationOk, "lifecycle authority bypassed");
-        require(commitments.getCommitment(commitmentId).status == CommitmentRegistry.CommitmentStatus.ACTIVE, "unauthorized registry mutation");
-        require(allocations.getAllocation(allocationId).status == AllocationManager.AllocationStatus.COMMITTED, "unauthorized allocation mutation");
+        require(
+            commitments.getCommitment(commitmentId).status == CommitmentRegistry.CommitmentStatus.ACTIVE,
+            "unauthorized registry mutation"
+        );
+        require(
+            allocations.getAllocation(allocationId).status == AllocationManager.AllocationStatus.COMMITTED,
+            "unauthorized allocation mutation"
+        );
     }
 
     function _proof(bytes memory encodedTransaction) internal pure returns (CommitmentLifecycleASC.Proof memory proof) {
@@ -291,8 +337,10 @@ contract CommitmentLifecycleTest {
         expiredTopics[0] = lifecycle.CAPITAL_EXPIRED_SIG();
         expiredTopics[1] = sourceCommitmentId;
         expiredTopics[2] = bytes32(uint256(uint160(address(this))));
-        logs[0] = EvmV1Decoder.LogEntryTuple({address_: address(vault), topics: consumedTopics, data: abi.encode(AMOUNT)});
-        logs[1] = EvmV1Decoder.LogEntryTuple({address_: address(vault), topics: expiredTopics, data: abi.encode(AMOUNT)});
+        logs[0] =
+            EvmV1Decoder.LogEntryTuple({address_: address(vault), topics: consumedTopics, data: abi.encode(AMOUNT)});
+        logs[1] =
+            EvmV1Decoder.LogEntryTuple({address_: address(vault), topics: expiredTopics, data: abi.encode(AMOUNT)});
         return _encodedReceipt(logs, 1);
     }
 
@@ -302,7 +350,8 @@ contract CommitmentLifecycleTest {
         returns (bytes memory encoded)
     {
         bytes[] memory chunks = new bytes[](3);
-        chunks[0] = abi.encode(uint64(0), uint64(21_000), address(0xA11CE), false, address(0xB0B), uint256(0), bytes("") );
+        chunks[0] =
+            abi.encode(uint64(0), uint64(21_000), address(0xA11CE), false, address(0xB0B), uint256(0), bytes(""));
         chunks[1] = abi.encode(uint128(1), uint256(0), bytes32(0), bytes32(0));
         chunks[2] = abi.encode(receiptStatus, uint64(21_000), logs, bytes(""));
         encoded = abi.encode(uint8(0), chunks);

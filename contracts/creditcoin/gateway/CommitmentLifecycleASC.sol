@@ -14,10 +14,8 @@ import {CommitmentRegistry} from "../financing/CommitmentRegistry.sol";
 ///      Financial state changes happen only after the exact source event and
 ///      all Creditcoin identities have been semantically validated.
 contract CommitmentLifecycleASC {
-    bytes32 public constant CAPITAL_CONSUMED_SIG =
-        keccak256("CapitalConsumed(bytes32,address,uint256)");
-    bytes32 public constant CAPITAL_EXPIRED_SIG =
-        keccak256("CapitalExpired(bytes32,address,uint256)");
+    bytes32 public constant CAPITAL_CONSUMED_SIG = keccak256("CapitalConsumed(bytes32,address,uint256)");
+    bytes32 public constant CAPITAL_EXPIRED_SIG = keccak256("CapitalExpired(bytes32,address,uint256)");
 
     uint8 public constant ACTION_CONSUMED = 1;
     uint8 public constant ACTION_EXPIRED = 2;
@@ -185,14 +183,11 @@ contract CommitmentLifecycleASC {
 
     function _verify(Proof calldata proof, INativeQueryVerifier.MerkleProof memory merkleProof) internal {
         INativeQueryVerifier.ContinuityProof memory continuityProof = INativeQueryVerifier.ContinuityProof({
-            lowerEndpointDigest: proof.lowerEndpointDigest,
-            roots: proof.continuityRoots
+            lowerEndpointDigest: proof.lowerEndpointDigest, roots: proof.continuityRoots
         });
-        if (
-            !verifier.verifyAndEmit(
-                proof.chainKey, proof.blockHeight, proof.encodedTransaction, merkleProof, continuityProof
-            )
-        ) revert VerifyFailed();
+        if (!verifier.verifyAndEmit(
+            proof.chainKey, proof.blockHeight, proof.encodedTransaction, merkleProof, continuityProof
+        )) revert VerifyFailed();
     }
 
     function _decode(bytes calldata encodedTransaction) internal view returns (Fact memory fact) {

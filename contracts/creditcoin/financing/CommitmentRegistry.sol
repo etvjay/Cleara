@@ -60,7 +60,9 @@ contract CommitmentRegistry is AccessControl {
     event CommitmentConsumed(
         bytes32 indexed commitmentId, bytes32 indexed evidenceId, address indexed recipient, uint256 amount
     );
-    event CommitmentExpired(bytes32 indexed commitmentId, bytes32 indexed evidenceId, address indexed provider, uint256 amount);
+    event CommitmentExpired(
+        bytes32 indexed commitmentId, bytes32 indexed evidenceId, address indexed provider, uint256 amount
+    );
 
     constructor(address admin) {
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
