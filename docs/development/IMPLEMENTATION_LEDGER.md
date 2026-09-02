@@ -1,6 +1,6 @@
 # Cleara Implementation Ledger
 
-Snapshot: 31 August 2026
+Snapshot: 2 September 2026
 
 | Component | Specification | Implementation | Tests | Live Evidence | Audit | Deployment |
 |---|---|---|---|---|---|---|
@@ -21,10 +21,10 @@ Snapshot: 31 August 2026
 | M9 bilateral clearing epoch | Frozen evidence gate | TESTED_TESTNET | Authorization split + reciprocity + conservation + reseal negatives PASS | `evidence/runtime/M9_BILATERAL_CLEARING_2026-08-29.md` | Not started | Existing M7 facility + new CC3 M9 stack |
 | M10 ResidualLedger | Frozen M10 slice | TESTED_TESTNET | Unit + 3x1000 M10 fuzz + live PASS | Run 33311029527 / artifact 9731999552 | Not started | CC3 evidence deployment bound to M9 engine |
 | M10 SettlementRouter | Frozen metadata-routing slice | TESTED_TESTNET | Route/duplicate/non-settlement invariants PASS | `evidence/runtime/M10_RESIDUAL_ROUTING_2026-08-30.md` | Not started | CC3 evidence deployment |
-| M11 authenticated settlement routing | Frozen M11 slice | IMPLEMENTED_LOCAL | Authenticated route + fuzz regression PASS | None | Not started | Not deployed |
-| M11 SettlementAdapter | Frozen M11 slice | IMPLEMENTED_LOCAL | Exact ERC20 movement + failed-transfer path PASS | None | Not started | Not deployed |
-| M11 SettlementASC | Frozen M11 slice | IMPLEMENTED_LOCAL | Compile/property gate PASS; live receipt decoding pending | None | Not started | Not deployed |
-| M11 SettlementReconciler | Frozen M11 slice | IMPLEMENTED_LOCAL | Exact residual, partial/wrong-party/replay/authority negatives PASS | None | Not started | Not deployed |
+| M11 authenticated settlement routing | Frozen M11 slice | IMPLEMENTED_LOCAL | Authenticated route + fuzz regression PASS | Historical run 33349834574 at `8e6788e`; current-head rerun pending | Not started | Historical ephemeral Sepolia + CC3 deployment |
+| M11 SettlementAdapter | Frozen M11 slice | IMPLEMENTED_LOCAL | Exact ERC20 movement + failed-transfer path PASS | Historical run 33349834574 at `8e6788e`; current-head rerun pending | Not started | Historical ephemeral Sepolia deployment |
+| M11 SettlementASC | Frozen M11 slice | IMPLEMENTED_LOCAL | Compile/property gate PASS; historical live receipt decoding PASS; current payer-hardening live check pending | Historical run 33349834574 at `8e6788e`; current-head rerun pending | Not started | Historical ephemeral CC3 deployment |
+| M11 SettlementReconciler | Frozen M11 slice | IMPLEMENTED_LOCAL | Exact residual, partial/wrong-party/replay/authority negatives PASS | Historical run 33349834574 at `8e6788e`; current-head rerun pending | Not started | Historical ephemeral CC3 deployment |
 | M11 future Writability boundary | ADR-0002 | DESIGNED_FUTURE | N/A | None | Not started | Not deployed |
 | Canonical docs/skills mirror | Frozen | PARTIAL_REMOTE_MIRROR | N/A | Canonical docs tracked on main | Not started | GitHub main |
 
@@ -324,6 +324,18 @@ Inbox -> ClearaMessageReceiver -> application adapter
 
 No current claim is made that Attestcoin Writability, Inbox/Outbox delivery, message ordering, or relayer sponsorship is live.
 
+Historical live M11 evidence:
+
+```text
+Workflow run: 33349834574
+Head exercised: 8e6788e7e82f80f3da2a8212baec79be6b66ca90
+Artifact: 9744064841
+Artifact SHA256: 4402faf1ff2dc265643339e7bb5caffda0c91df2bd80fbaec1d8baf32fa85ab0
+Evidence: evidence/runtime/M11_ATTESTED_SETTLEMENT_2026-08-31.md
+```
+
+The run proved the historical M11 roundtrip through `SETTLED`. It predates the current exact `Transfer` payer check in `SettlementASC` and the independent source-receipt validator, so those current-head changes still require live revalidation.
+
 ## Current Frontier
 
 ```text
@@ -352,4 +364,4 @@ Sepolia settlement execution
 -> verify source obligation SETTLED with remainingAmount == 0
 ```
 
-Until that live gate passes, Cleara must not claim M11 `TESTED_TESTNET`, live attested settlement, or settlement reconciliation proven on CC3.
+The historical run is evidence of the exercised commit, but until the current-head gate passes, Cleara must not claim the latest M11 implementation is `TESTED_TESTNET` or current-head settlement reconciliation is proven on CC3.
