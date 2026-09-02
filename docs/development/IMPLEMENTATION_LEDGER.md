@@ -21,10 +21,10 @@ Snapshot: 2 September 2026
 | M9 bilateral clearing epoch | Frozen evidence gate | TESTED_TESTNET | Authorization split + reciprocity + conservation + reseal negatives PASS | `evidence/runtime/M9_BILATERAL_CLEARING_2026-08-29.md` | Not started | Existing M7 facility + new CC3 M9 stack |
 | M10 ResidualLedger | Frozen M10 slice | TESTED_TESTNET | Unit + 3x1000 M10 fuzz + live PASS | Run 33311029527 / artifact 9731999552 | Not started | CC3 evidence deployment bound to M9 engine |
 | M10 SettlementRouter | Frozen metadata-routing slice | TESTED_TESTNET | Route/duplicate/non-settlement invariants PASS | `evidence/runtime/M10_RESIDUAL_ROUTING_2026-08-30.md` | Not started | CC3 evidence deployment |
-| M11 authenticated settlement routing | Frozen M11 slice | IMPLEMENTED_LOCAL | Authenticated route + fuzz regression PASS | Historical run 33349834574 at `8e6788e`; current-head rerun pending | Not started | Historical ephemeral Sepolia + CC3 deployment |
-| M11 SettlementAdapter | Frozen M11 slice | IMPLEMENTED_LOCAL | Exact ERC20 movement + failed-transfer path PASS | Historical run 33349834574 at `8e6788e`; current-head rerun pending | Not started | Historical ephemeral Sepolia deployment |
-| M11 SettlementASC | Frozen M11 slice | IMPLEMENTED_LOCAL | Compile/property gate PASS; historical live receipt decoding PASS; current payer-hardening live check pending | Historical run 33349834574 at `8e6788e`; current-head rerun pending | Not started | Historical ephemeral CC3 deployment |
-| M11 SettlementReconciler | Frozen M11 slice | IMPLEMENTED_LOCAL | Exact residual, partial/wrong-party/replay/authority negatives PASS | Historical run 33349834574 at `8e6788e`; current-head rerun pending | Not started | Historical ephemeral CC3 deployment |
+| M11 authenticated settlement routing | Frozen M11 slice | TESTED_TESTNET | Authenticated route + fuzz regression + current-head live PASS | Run 33614782209 / artifact 9841386218 | Not started | Current ephemeral Sepolia + CC3 deployment |
+| M11 SettlementAdapter | Frozen M11 slice | TESTED_TESTNET | Exact ERC20 movement + failed-transfer path + current-head live PASS | Run 33614782209 / artifact 9841386218 | Not started | Current ephemeral Sepolia deployment |
+| M11 SettlementASC | Frozen M11 slice | TESTED_TESTNET | Compile/property gate + exact Transfer payer check + independent validator PASS | Run 33614782209 / artifact 9841386218 | Not started | Current ephemeral CC3 deployment |
+| M11 SettlementReconciler | Frozen M11 slice | TESTED_TESTNET | Exact residual, partial/wrong-party/replay/authority negatives + current-head live PASS | Run 33614782209 / artifact 9841386218 | Not started | Current ephemeral CC3 deployment |
 | M11 future Writability boundary | ADR-0002 | DESIGNED_FUTURE | N/A | None | Not started | Not deployed |
 | Canonical docs/skills mirror | Frozen | PARTIAL_REMOTE_MIRROR | N/A | Canonical docs tracked on main | Not started | GitHub main |
 
@@ -264,7 +264,7 @@ routing still cannot mutate settledAmount
 
 ## M11 — Attested Settlement Reconciliation
 
-Status: `IMPLEMENTED_LOCAL`
+Status: `TESTED_TESTNET`
 
 Local evidence gate:
 
@@ -324,7 +324,19 @@ Inbox -> ClearaMessageReceiver -> application adapter
 
 No current claim is made that Attestcoin Writability, Inbox/Outbox delivery, message ordering, or relayer sponsorship is live.
 
-Historical live M11 evidence:
+Current-head live M11 evidence:
+
+```text
+Workflow run: 33614782209
+Head: c5f8eecd39602aeb6b4a0d91c4071f520d583beb
+Artifact: 9841386218
+Artifact SHA256: 873c7238dc6441b4a486677c884b6a55f0a3dfb095126821dcdb8faee4da94ff
+Evidence: evidence/runtime/M11_ATTESTED_SETTLEMENT_2026-09-02.md
+```
+
+The current-head run passed the build/property gate, live Sepolia settlement, independent ERC20 payer validation, Attestcoin proof acceptance and consumption, exact full-residual reconciliation, replay rejection, and wrong-chain rejection.
+
+Historical live M11 evidence retained:
 
 ```text
 Workflow run: 33349834574
@@ -334,7 +346,7 @@ Artifact SHA256: 4402faf1ff2dc265643339e7bb5caffda0c91df2bd80fbaec1d8baf32fa85ab
 Evidence: evidence/runtime/M11_ATTESTED_SETTLEMENT_2026-08-31.md
 ```
 
-The run proved the historical M11 roundtrip through `SETTLED`. It predates the current exact `Transfer` payer check in `SettlementASC` and the independent source-receipt validator, so those current-head changes still require live revalidation.
+The historical run remains evidence for its exercised commit. The current-head run now covers the exact `Transfer` payer check in `SettlementASC` and the independent source-receipt validator.
 
 ## Current Frontier
 
@@ -349,19 +361,17 @@ M7 TESTED_TESTNET
 M8 TESTED_TESTNET
 M9 TESTED_TESTNET
 M10 TESTED_TESTNET
-M11 IMPLEMENTED_LOCAL
+M11 TESTED_TESTNET
 ```
 
-Next evidence gate:
+Next evidence gate (separate lifecycle slice):
 
 ```text
-Sepolia settlement execution
--> wait for Attestcoin attestation
--> build proof
--> submit SettlementASC on CC3
--> verify evidence consumed
--> verify residual SETTLED
--> verify source obligation SETTLED with remainingAmount == 0
+CapitalConsumed / CapitalExpired source lifecycle event
+-> Attestcoin proof
+-> Creditcoin commitment lifecycle synchronization
+-> accounting reconciliation
+-> indexed read model
 ```
 
-The historical run is evidence of the exercised commit, but until the current-head gate passes, Cleara must not claim the latest M11 implementation is `TESTED_TESTNET` or current-head settlement reconciliation is proven on CC3.
+M11 promotion does not claim commitment lifecycle synchronization, accounting reconciliation for source commitment consumption/expiry, or an indexed read model.
