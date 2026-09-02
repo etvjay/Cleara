@@ -230,7 +230,7 @@ contract CommitmentLifecycleTest {
         );
     }
 
-    function testFailedReceiptCannotMutateState() public {
+    function testReceiptFailureCannotMutateState() public {
         CommitmentLifecycleASC.Proof memory proof =
             _proof(_encodedEvent(true, address(0xB0B), AMOUNT, 0, address(vault)));
         (bool ok,) = address(lifecycle).call(abi.encodeCall(lifecycle.acceptAttestedCommitmentLifecycle, (proof)));
