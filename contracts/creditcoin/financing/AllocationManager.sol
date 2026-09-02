@@ -7,6 +7,7 @@ import {FacilityManager} from "./FacilityManager.sol";
 contract AllocationManager is AccessControl {
     bytes32 public constant ALLOCATION_MANAGER_ROLE = keccak256("ALLOCATION_MANAGER_ROLE");
     bytes32 public constant COMMITMENT_GATEWAY_ROLE = keccak256("COMMITMENT_GATEWAY_ROLE");
+    bytes32 public constant COMMITMENT_LIFECYCLE_ROLE = keccak256("COMMITMENT_LIFECYCLE_ROLE");
 
     enum AllocationStatus {
         NONE,
@@ -118,6 +119,24 @@ contract AllocationManager is AccessControl {
         _transition(allocation, AllocationStatus.COMMITTED);
     }
 
+    function markCommitmentConsumed(bytes32 allocationId, address provider, uint256 amount)
+        external
+        onlyRole(COMMITMENT_LIFECYCLE_ROLE)
+    {
+        Allocation storage allocation = _requireCommitted(allocationId, provider, amount);
+        facilityManager.recordConsumedAmount(allocation.facilityId, amount);
+        _transition(allocation, AllocationStatus.CONSUMED);
+    }
+
+    function markCommitmentExpired(bytes32 allocationId, address provider, uint256 amount)
+        external
+        onlyRole(COMMITMENT_LIFECYCLE_ROLE)
+    {
+        Allocation storage allocation = _requireCommitted(allocationId, provider, amount);
+        facilityManager.recordExpiredAmount(allocation.facilityId, amount);
+        _transition(allocation, AllocationStatus.EXPIRED);
+    }
+
     function cancelAllocation(bytes32 allocationId) external onlyRole(ALLOCATION_MANAGER_ROLE) {
         Allocation storage allocation = _allocations[allocationId];
         if (allocation.status == AllocationStatus.NONE) revert UnknownAllocation(allocationId);
@@ -168,6 +187,17 @@ contract AllocationManager is AccessControl {
         allocation = _allocations[allocationId];
         if (allocation.status == AllocationStatus.NONE) revert UnknownAllocation(allocationId);
         if (allocation.status != expected) revert InvalidAllocationState(allocationId, allocation.status);
+    }
+
+    function _requireCommitted(bytes32 allocationId, address provider, uint256 amount)
+        internal
+        view
+        returns (Allocation storage allocation)
+    {
+        allocation = _requireState(allocationId, AllocationStatus.COMMITTED);
+        if (allocation.provider != provider || allocation.amount != amount) {
+            revert CommitmentMismatch(allocationId, provider, amount);
+        }
     }
 
     function _transition(Allocation storage allocation, AllocationStatus next) internal {

@@ -18,6 +18,8 @@
     "live:m9:clearing": "tsx scripts/live/m9-clearing.ts",
     "live:m10:residual-routing": "tsx scripts/live/m10-residual-routing.ts",
     "live:m11:settlement": "tsx scripts/live/m11-settlement.ts",
+    "live:m11:lifecycle": "tsx scripts/live/m11-lifecycle.ts",
+    "validate:m11:lifecycle": "tsx scripts/evidence/validate-m11-lifecycle.ts",
     "bootstrap:check": "bash scripts/bootstrap/check-machine.sh"
   },
   "dependencies": {

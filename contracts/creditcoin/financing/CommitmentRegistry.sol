@@ -5,6 +5,7 @@ import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 
 contract CommitmentRegistry is AccessControl {
     bytes32 public constant COMMITMENT_GATEWAY_ROLE = keccak256("COMMITMENT_GATEWAY_ROLE");
+    bytes32 public constant COMMITMENT_LIFECYCLE_ROLE = keccak256("COMMITMENT_LIFECYCLE_ROLE");
 
     enum CommitmentStatus {
         NONE,
@@ -31,6 +32,9 @@ contract CommitmentRegistry is AccessControl {
         uint64 expiresAt;
         bytes32 evidenceId;
         CommitmentStatus status;
+        bytes32 lifecycleEvidenceId;
+        address lifecycleActor;
+        uint64 lifecycleAt;
     }
 
     mapping(bytes32 => Commitment) private _commitments;
@@ -38,6 +42,8 @@ contract CommitmentRegistry is AccessControl {
     error InvalidCommitment();
     error CommitmentAlreadyExists(bytes32 commitmentId);
     error UnknownCommitment(bytes32 commitmentId);
+    error InvalidCommitmentState(bytes32 commitmentId, CommitmentStatus status);
+    error InvalidLifecycleFact();
 
     event CommitmentRegistered(
         bytes32 indexed commitmentId,
@@ -51,6 +57,10 @@ contract CommitmentRegistry is AccessControl {
         uint64 expiresAt,
         bytes32 evidenceId
     );
+    event CommitmentConsumed(
+        bytes32 indexed commitmentId, bytes32 indexed evidenceId, address indexed recipient, uint256 amount
+    );
+    event CommitmentExpired(bytes32 indexed commitmentId, bytes32 indexed evidenceId, address indexed provider, uint256 amount);
 
     constructor(address admin) {
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
@@ -100,7 +110,10 @@ contract CommitmentRegistry is AccessControl {
             amount: amount,
             expiresAt: expiresAt,
             evidenceId: evidenceId,
-            status: CommitmentStatus.ACTIVE
+            status: CommitmentStatus.ACTIVE,
+            lifecycleEvidenceId: bytes32(0),
+            lifecycleActor: address(0),
+            lifecycleAt: 0
         });
 
         emit CommitmentRegistered(
@@ -120,5 +133,43 @@ contract CommitmentRegistry is AccessControl {
     function getCommitment(bytes32 commitmentId) external view returns (Commitment memory commitment) {
         commitment = _commitments[commitmentId];
         if (commitment.status == CommitmentStatus.NONE) revert UnknownCommitment(commitmentId);
+    }
+
+    function markConsumed(bytes32 commitmentId, bytes32 evidenceId, address recipient, uint256 amount)
+        external
+        onlyRole(COMMITMENT_LIFECYCLE_ROLE)
+    {
+        Commitment storage commitment = _requireActive(commitmentId);
+        if (evidenceId == bytes32(0) || recipient == address(0) || amount != commitment.amount) {
+            revert InvalidLifecycleFact();
+        }
+
+        commitment.status = CommitmentStatus.CONSUMED;
+        commitment.lifecycleEvidenceId = evidenceId;
+        commitment.lifecycleActor = recipient;
+        commitment.lifecycleAt = uint64(block.timestamp);
+        emit CommitmentConsumed(commitmentId, evidenceId, recipient, amount);
+    }
+
+    function markExpired(bytes32 commitmentId, bytes32 evidenceId, uint256 amount)
+        external
+        onlyRole(COMMITMENT_LIFECYCLE_ROLE)
+    {
+        Commitment storage commitment = _requireActive(commitmentId);
+        if (evidenceId == bytes32(0) || amount != commitment.amount) revert InvalidLifecycleFact();
+
+        commitment.status = CommitmentStatus.EXPIRED;
+        commitment.lifecycleEvidenceId = evidenceId;
+        commitment.lifecycleActor = commitment.provider;
+        commitment.lifecycleAt = uint64(block.timestamp);
+        emit CommitmentExpired(commitmentId, evidenceId, commitment.provider, amount);
+    }
+
+    function _requireActive(bytes32 commitmentId) internal view returns (Commitment storage commitment) {
+        commitment = _commitments[commitmentId];
+        if (commitment.status == CommitmentStatus.NONE) revert UnknownCommitment(commitmentId);
+        if (commitment.status != CommitmentStatus.ACTIVE) {
+            revert InvalidCommitmentState(commitmentId, commitment.status);
+        }
     }
 }

@@ -1,7 +1,7 @@
 # Cleara Ground Truth
 
 **Snapshot:** 2 September 2026
-**Operational status:** M1 `VERIFIED_CLEARA`; M2-M11 `TESTED_TESTNET`; current-head M11 live revalidation passed in run `33614782209` at commit `c5f8eecd39602aeb6b4a0d91c4071f520d583beb`.
+**Operational status:** M1 `VERIFIED_CLEARA`; M2-M11 `TESTED_TESTNET`; M11-Lifecycle `IMPLEMENTED_LOCAL`; current-head M11 live revalidation passed in run `33614782209` at commit `c5f8eecd39602aeb6b4a0d91c4071f520d583beb`.
 
 This document is the highest operational statement of what Cleara can currently prove. Historical M11 evidence is tied to its exercised commit and does not automatically validate later hardening. No testnet result implies production safety, mainnet readiness, legal enforceability, economic finality, or audit completion.
 
@@ -42,6 +42,7 @@ Current accounting invariants:
 ```text
 activeEncumbrance <= financeableCapacity <= faceValue
 committedAmount <= allocatedAmount <= encumberedAmount <= targetAmount
+activeCommittedAmount = committedAmount - consumedAmount - expiredAmount
 obligation.clearedAmount + obligation.settledAmount <= obligation.originalAmount
 ```
 
@@ -61,6 +62,7 @@ M8 ObligationLedger                                TESTED_TESTNET
 M9 ClearingEngine / ClearingEpoch                  TESTED_TESTNET
 M10 ResidualLedger / SettlementRouter              TESTED_TESTNET
 M11 SettlementAdapter / SettlementASC              TESTED_TESTNET
+M11-Lifecycle CommitmentLifecycleASC               IMPLEMENTED_LOCAL
 ```
 
 ## M1 — Verification Substrate
@@ -518,6 +520,7 @@ M8: live M7 seal -> canonical FINALIZED drawdown obligations on CC3
 M9: explicit bilateral setoff authorization -> immutable clearing epoch -> deterministic cleared accounting
 M10: finalized M9 epoch -> canonical 340,000 residual -> one route instruction, with settlement accounting unchanged
 M11 (current head): source mock-token settlement -> Attestcoin -> SettlementASC -> reconciliation -> SETTLED
+M11-Lifecycle (local): CapitalConsumed / CapitalExpired -> Attestcoin -> CommitmentLifecycleASC -> terminal commitment/allocation state
 ```
 
 M7 -> M8, M7 -> M9, and M9 -> M10 directly reuse live deployed state. Earlier M3-M6 milestones remain separately evidenced deployments; Cleara does not yet claim one uninterrupted M3 -> M10 deployment lifecycle.
@@ -525,8 +528,6 @@ M7 -> M8, M7 -> M9, and M9 -> M10 directly reuse live deployed state. Earlier M3
 ## Not Yet Implemented / Not Yet Proven
 
 ```text
-commitment lifecycle synchronization after source consume/release/expiry
-CapitalConsumed / CapitalExpired Attestcoin proof and lifecycle accounting
 indexed read model
 M12 durable workers
 M13 production indexer
@@ -542,7 +543,7 @@ Writability remains `FUTURE` and is not an MVP dependency.
 
 ## Allowed Public Claim
 
-> Cleara has testnet evidence for Attestcoin-backed claim ingestion, bounded financeability and encumbrance, facility/allocation coordination, externally constrained Sepolia capital commitments recognized on Creditcoin, three-provider capitalization sealed into an immutable commitment composition on CC3, finalized financial obligations, explicitly authorized bilateral clearing that reduced a 460,000 gross obligation pair to a 340,000 residual, canonical residual routing, and a current-head M11 mock-token settlement roundtrip that was independently payer-validated, Attestcoin-verified, and reconciled on CC3 to `SETTLED`. This does not include source commitment lifecycle synchronization or an indexed read model.
+> Cleara has testnet evidence for Attestcoin-backed claim ingestion, bounded financeability and encumbrance, facility/allocation coordination, externally constrained Sepolia capital commitments recognized on Creditcoin, three-provider capitalization sealed into an immutable commitment composition on CC3, finalized financial obligations, explicitly authorized bilateral clearing that reduced a 460,000 gross obligation pair to a 340,000 residual, canonical residual routing, and a current-head M11 mock-token settlement roundtrip that was independently payer-validated, Attestcoin-verified, and reconciled on CC3 to `SETTLED`. The local M11-Lifecycle implementation is not yet testnet evidence and does not upgrade that claim or include an indexed read model.
 
 Forbidden current claims include:
 
@@ -552,8 +553,6 @@ audited
 mainnet deployed
 legally enforceable receivables or setoff
 live production lenders or borrowers
-source lifecycle synchronization complete
-CapitalConsumed / CapitalExpired lifecycle synchronization complete
 indexed read model complete
 production settlement operation
 settlement finality proven
@@ -579,6 +578,7 @@ M8  TESTED_TESTNET
 M9  TESTED_TESTNET
 M10 TESTED_TESTNET
 M11 TESTED_TESTNET
+M11-Lifecycle IMPLEMENTED_LOCAL
 ```
 
 Rule:

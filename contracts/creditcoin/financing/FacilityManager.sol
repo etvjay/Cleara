@@ -6,6 +6,8 @@ import {EncumbranceRegistry} from "../kernel/EncumbranceRegistry.sol";
 
 contract FacilityManager is AccessControl {
     bytes32 public constant FACILITY_MANAGER_ROLE = keccak256("FACILITY_MANAGER_ROLE");
+    uint8 public constant TERMINAL_CONSUMED = 1;
+    uint8 public constant TERMINAL_EXPIRED = 2;
 
     enum FacilityStatus {
         NONE,
@@ -32,6 +34,8 @@ contract FacilityManager is AccessControl {
         uint256 encumberedAmount;
         uint256 allocatedAmount;
         uint256 committedAmount;
+        uint256 consumedAmount;
+        uint256 expiredAmount;
         uint64 opensAt;
         uint64 closesAt;
         bytes32 policyBundleHash;
@@ -74,6 +78,9 @@ contract FacilityManager is AccessControl {
     event EncumbranceBound(bytes32 indexed facilityId, bytes32 indexed encumbranceId, uint256 amount);
     event AllocatedAmountChanged(bytes32 indexed facilityId, uint256 previousAmount, uint256 newAmount);
     event CommittedAmountChanged(bytes32 indexed facilityId, uint256 previousAmount, uint256 newAmount);
+    event TerminalCommittedAmountChanged(
+        bytes32 indexed facilityId, uint8 indexed terminalKind, uint256 previousAmount, uint256 newAmount
+    );
     event CapitalizationManagerBound(address indexed capitalizationManager);
     event CapitalizationSealed(
         bytes32 indexed facilityId,
@@ -130,6 +137,8 @@ contract FacilityManager is AccessControl {
             encumberedAmount: 0,
             allocatedAmount: 0,
             committedAmount: 0,
+            consumedAmount: 0,
+            expiredAmount: 0,
             opensAt: opensAt,
             closesAt: closesAt,
             policyBundleHash: policyBundleHash,
@@ -263,6 +272,20 @@ contract FacilityManager is AccessControl {
         emit CommittedAmountChanged(facilityId, previous, nextCommitted);
     }
 
+    function recordConsumedAmount(bytes32 facilityId, uint256 amount) external onlyRole(FACILITY_MANAGER_ROLE) {
+        _recordTerminalAmount(facilityId, amount, true);
+    }
+
+    function recordExpiredAmount(bytes32 facilityId, uint256 amount) external onlyRole(FACILITY_MANAGER_ROLE) {
+        _recordTerminalAmount(facilityId, amount, false);
+    }
+
+    function activeCommittedAmount(bytes32 facilityId) external view returns (uint256) {
+        Facility memory facility = _facilities[facilityId];
+        if (facility.status == FacilityStatus.NONE) revert UnknownFacility(facilityId);
+        return facility.committedAmount - facility.consumedAmount - facility.expiredAmount;
+    }
+
     function getFacility(bytes32 facilityId) external view returns (Facility memory facility) {
         facility = _facilities[facilityId];
         if (facility.status == FacilityStatus.NONE) revert UnknownFacility(facilityId);
@@ -282,5 +305,25 @@ contract FacilityManager is AccessControl {
         FacilityStatus previous = facility.status;
         facility.status = next;
         emit FacilityStatusChanged(facility.facilityId, previous, next);
+    }
+
+    function _recordTerminalAmount(bytes32 facilityId, uint256 amount, bool consumed) internal {
+        Facility storage facility = _facilities[facilityId];
+        if (facility.status == FacilityStatus.NONE) revert UnknownFacility(facilityId);
+        if (amount == 0 || facility.consumedAmount + facility.expiredAmount + amount > facility.committedAmount) {
+            revert InvalidFacility();
+        }
+
+        if (consumed) {
+            uint256 previousConsumed = facility.consumedAmount;
+            facility.consumedAmount = previousConsumed + amount;
+            emit TerminalCommittedAmountChanged(
+                facilityId, TERMINAL_CONSUMED, previousConsumed, facility.consumedAmount
+            );
+        } else {
+            uint256 previousExpired = facility.expiredAmount;
+            facility.expiredAmount = previousExpired + amount;
+            emit TerminalCommittedAmountChanged(facilityId, TERMINAL_EXPIRED, previousExpired, facility.expiredAmount);
+        }
     }
 }

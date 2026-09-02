@@ -26,6 +26,8 @@ Snapshot: 2 September 2026
 | M11 SettlementASC | Frozen M11 slice | TESTED_TESTNET | Compile/property gate + exact Transfer payer check + independent validator PASS | Run 33614782209 / artifact 9841386218 | Not started | Current ephemeral CC3 deployment |
 | M11 SettlementReconciler | Frozen M11 slice | TESTED_TESTNET | Exact residual, partial/wrong-party/replay/authority negatives + current-head live PASS | Run 33614782209 / artifact 9841386218 | Not started | Current ephemeral CC3 deployment |
 | M11 future Writability boundary | ADR-0002 | DESIGNED_FUTURE | N/A | None | Not started | Not deployed |
+| M11-Lifecycle CommitmentLifecycleASC | docs/development/M11_LIFECYCLE.md | IMPLEMENTED_LOCAL | Exact consume/expire receipt gate + atomic evidence/state transition tests | None | Not started | Not deployed |
+| M11-Lifecycle terminal accounting | docs/development/M11_LIFECYCLE.md | IMPLEMENTED_LOCAL | Gross commitment preservation + consumed/expired/active invariant tests | None | Not started | Not deployed |
 | Canonical docs/skills mirror | Frozen | PARTIAL_REMOTE_MIRROR | N/A | Canonical docs tracked on main | Not started | GitHub main |
 
 ## M1 — Verification substrate
@@ -362,9 +364,10 @@ M8 TESTED_TESTNET
 M9 TESTED_TESTNET
 M10 TESTED_TESTNET
 M11 TESTED_TESTNET
+M11-Lifecycle IMPLEMENTED_LOCAL
 ```
 
-Next evidence gate (separate lifecycle slice):
+M11-Lifecycle local implementation (testnet evidence gate pending):
 
 ```text
 CapitalConsumed / CapitalExpired source lifecycle event
@@ -374,4 +377,4 @@ CapitalConsumed / CapitalExpired source lifecycle event
 -> indexed read model
 ```
 
-M11 promotion does not claim commitment lifecycle synchronization, accounting reconciliation for source commitment consumption/expiry, or an indexed read model.
+M11 promotion does not claim commitment lifecycle synchronization, accounting reconciliation for source commitment consumption/expiry, or an indexed read model. M11-Lifecycle remains `IMPLEMENTED_LOCAL` until a fresh current-head consume and expiry workflow passes with independent validation.
