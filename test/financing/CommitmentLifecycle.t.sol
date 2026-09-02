@@ -180,7 +180,7 @@ contract CommitmentLifecycleTest {
         vault.expire(sourceCommitmentId);
 
         CommitmentLifecycleASC.Proof memory proof =
-            _proof(_encodedEvent(false, address(this), AMOUNT, 2, address(vault)));
+            _proof(_encodedEvent(false, address(this), AMOUNT, 1, address(vault)));
         lifecycle.acceptAttestedCommitmentLifecycle(proof);
 
         require(
