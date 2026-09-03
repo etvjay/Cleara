@@ -1,6 +1,6 @@
 # M11-Lifecycle — Source Commitment Terminal State
 
-Status: `IMPLEMENTED_LOCAL` (testnet evidence gate pending)
+Status: `TESTED_TESTNET`
 
 M11-Lifecycle is the follow-on protocol slice to the tested M11 settlement
 round-trip. It synchronizes a source-chain `CapitalConsumed` or
@@ -69,7 +69,7 @@ making active versus terminal source capital auditable.
 
 ## Promotion gate
 
-Promotion to `TESTED_TESTNET` requires a fresh workflow on the current head
+Promotion to `TESTED_TESTNET` required a fresh workflow on the current head
 with both a consume fixture and an expiry fixture. Each artifact must show:
 
 * native source receipt and Attestcoin proof accepted;
@@ -79,8 +79,13 @@ with both a consume fixture and an expiry fixture. Each artifact must show:
 * replay and semantic negative cases rejected; and
 * an independent validator result of `PASS`.
 
-Until that gate passes, M11-Lifecycle remains local implementation only and
-does not change the M11 testnet claim.
+The gate passed in workflow run `33699324988` at head
+`57cc061972ddaa1b308b13e722a4ad0f9b62bf43`, with artifact `9873864767`.
+The independent validator passed for both consume and expire fixtures, and
+the evidence showed gross committed `200000`, consumed `100000`, expired
+`100000`, active `0`, and an empty source vault. This is testnet/mock-token
+evidence; it does not claim production capital, writability, or a production
+indexer.
 
 The live fixture may create the matching ACTIVE Creditcoin commitments directly
 as a prerequisite; M6 remains the separately evidenced gate for

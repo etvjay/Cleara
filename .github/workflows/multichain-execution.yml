@@ -1,0 +1,42 @@
+name: Multichain Execution Projection
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "workers/multichain-execution/**"
+      - "package.json"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/multichain-execution.yml"
+  pull_request:
+    paths:
+      - "workers/multichain-execution/**"
+      - "package.json"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/multichain-execution.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: multichain-execution-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  projection:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.19.0
+
+      - run: corepack enable
+      - run: corepack prepare pnpm@11.24.0 --activate
+      - run: pnpm install --no-frozen-lockfile
+      - run: pnpm --filter @cleara/multichain-execution typecheck
+      - run: pnpm --filter @cleara/multichain-execution test
