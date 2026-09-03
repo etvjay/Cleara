@@ -1,7 +1,7 @@
 # Cleara Ground Truth
 
 **Snapshot:** 3 September 2026
-**Operational status:** M1 `VERIFIED_CLEARA`; M2-M11 `TESTED_TESTNET`; M11-Lifecycle `TESTED_TESTNET`; current-head M11 and M11-Lifecycle live revalidation passed in runs `33614782209` and `33699324988`.
+**Operational status:** M1 `VERIFIED_CLEARA`; M2-M11 and M11-Lifecycle `TESTED_TESTNET`; indexed read-model projection core `IMPLEMENTED_LOCAL`; current-head M11 and M11-Lifecycle live revalidation passed in runs `33614782209` and `33699324988`.
 
 This document is the highest operational statement of what Cleara can currently prove. Historical M11 evidence is tied to its exercised commit and does not automatically validate later hardening. No testnet result implies production safety, mainnet readiness, legal enforceability, economic finality, or audit completion.
 
@@ -63,6 +63,7 @@ M9 ClearingEngine / ClearingEpoch                  TESTED_TESTNET
 M10 ResidualLedger / SettlementRouter              TESTED_TESTNET
 M11 SettlementAdapter / SettlementASC              TESTED_TESTNET
 M11-Lifecycle CommitmentLifecycleASC               TESTED_TESTNET
+Indexed read-model projection core                IMPLEMENTED_LOCAL
 ```
 
 ## M1 — Verification Substrate
@@ -521,6 +522,7 @@ M9: explicit bilateral setoff authorization -> immutable clearing epoch -> deter
 M10: finalized M9 epoch -> canonical 340,000 residual -> one route instruction, with settlement accounting unchanged
 M11 (current head): source mock-token settlement -> Attestcoin -> SettlementASC -> reconciliation -> SETTLED
 M11-Lifecycle (current head): CapitalConsumed / CapitalExpired -> Attestcoin -> CommitmentLifecycleASC -> terminal commitment/allocation state
+Indexed read-model projection core (local): observed source/Creditcoin events -> deterministic read-only projection -> JSON checkpoint
 ```
 
 M7 -> M8, M7 -> M9, and M9 -> M10 directly reuse live deployed state. Earlier M3-M6 milestones remain separately evidenced deployments; Cleara does not yet claim one uninterrupted M3 -> M10 deployment lifecycle.
@@ -541,7 +543,11 @@ Artifact name: m11-lifecycle-33699324988
 Evidence status: PASS
 ```
 
-The current-head run passed the build/property gate, fresh Sepolia and CC3 fixture deployment, independent source-receipt validation, Attestcoin proof acceptance and consumption for both lifecycle events, exact terminal commitment/allocation transitions, gross-versus-terminal accounting reconciliation, replay rejection, and wrong-chain rejection.
+The current-head run passed the build/property gate, fresh Sepolia and CC3
+fixture deployment, independent source-receipt validation, Attestcoin proof
+acceptance and consumption for both lifecycle events, exact terminal
+commitment/allocation transitions, gross-versus-terminal accounting
+reconciliation, replay rejection, and wrong-chain rejection.
 
 Observed lifecycle accounting:
 
@@ -554,12 +560,13 @@ source vault:          0
 gross = terminal + active: true
 ```
 
-This is testnet evidence using the documented mock-token fixture. It does not prove production capital, Attestcoin writability, or an indexed read model.
+This is testnet evidence using the documented mock-token fixture. It does not
+prove production capital, Attestcoin writability, or an indexed read model.
 
 ## Not Yet Implemented / Not Yet Proven
 
 ```text
-indexed read model
+indexed read model (production integration)
 M12 durable workers
 M13 production indexer
 M14 application API
@@ -574,7 +581,7 @@ Writability remains `FUTURE` and is not an MVP dependency.
 
 ## Allowed Public Claim
 
-> Cleara has testnet evidence for Attestcoin-backed claim ingestion, bounded financeability and encumbrance, facility/allocation coordination, externally constrained Sepolia capital commitments recognized on Creditcoin, three-provider capitalization sealed into an immutable commitment composition on CC3, finalized financial obligations, explicitly authorized bilateral clearing that reduced a 460,000 gross obligation pair to a 340,000 residual, canonical residual routing, and a current-head M11 mock-token settlement roundtrip that was independently payer-validated, Attestcoin-verified, and reconciled on CC3 to `SETTLED`. The local M11-Lifecycle implementation is not yet testnet evidence and does not upgrade that claim or include an indexed read model.
+> Cleara has testnet evidence for Attestcoin-backed claim ingestion, bounded financeability and encumbrance, facility/allocation coordination, externally constrained Sepolia capital commitments recognized on Creditcoin, three-provider capitalization sealed into an immutable commitment composition on CC3, finalized financial obligations, explicitly authorized bilateral clearing that reduced a 460,000 gross obligation pair to a 340,000 residual, canonical residual routing, a current-head M11 mock-token settlement roundtrip that was independently payer-validated, Attestcoin-verified, and reconciled on CC3 to `SETTLED`, and current-head M11-Lifecycle consume/expire synchronization with reconciled terminal accounting. The indexed read-model projection core is local scaffolding and is not testnet evidence.
 
 Forbidden current claims include:
 
@@ -610,6 +617,7 @@ M9  TESTED_TESTNET
 M10 TESTED_TESTNET
 M11 TESTED_TESTNET
 M11-Lifecycle TESTED_TESTNET
+Indexed read-model projection core IMPLEMENTED_LOCAL
 ```
 
 Rule:

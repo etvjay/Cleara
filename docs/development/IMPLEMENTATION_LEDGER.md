@@ -1,6 +1,6 @@
 # Cleara Implementation Ledger
 
-Snapshot: 2 September 2026
+Snapshot: 3 September 2026
 
 | Component | Specification | Implementation | Tests | Live Evidence | Audit | Deployment |
 |---|---|---|---|---|---|---|
@@ -28,6 +28,7 @@ Snapshot: 2 September 2026
 | M11 future Writability boundary | ADR-0002 | DESIGNED_FUTURE | N/A | None | Not started | Not deployed |
 | M11-Lifecycle CommitmentLifecycleASC | docs/development/M11_LIFECYCLE.md | TESTED_TESTNET | Exact consume/expire receipt gate + atomic evidence/state transition tests + current-head live PASS | Run 33699324988 / artifact 9873864767 | Not started | Fresh ephemeral Sepolia + CC3 deployment |
 | M11-Lifecycle terminal accounting | docs/development/M11_LIFECYCLE.md | TESTED_TESTNET | Gross commitment preservation + consumed/expired/active invariant tests + current-head live PASS | Run 33699324988 / artifact 9873864767 | Not started | Fresh ephemeral Sepolia + CC3 deployment |
+| Indexed read-model projection core | docs/development/INDEXED_READ_MODEL.md | IMPLEMENTED_LOCAL | Strict TypeScript + deterministic projection/reorg/accounting tests | None | Not started | Not deployed |
 | Canonical docs/skills mirror | Frozen | PARTIAL_REMOTE_MIRROR | N/A | Canonical docs tracked on main | Not started | GitHub main |
 
 ## M1 — Verification substrate
@@ -365,6 +366,7 @@ M9 TESTED_TESTNET
 M10 TESTED_TESTNET
 M11 TESTED_TESTNET
 M11-Lifecycle TESTED_TESTNET
+Indexed read-model projection core IMPLEMENTED_LOCAL
 ```
 
 M11-Lifecycle current-head testnet evidence:
@@ -376,4 +378,12 @@ CapitalConsumed / CapitalExpired source lifecycle event
 -> accounting reconciliation
 ```
 
-M11-Lifecycle promotion proves commitment lifecycle synchronization and accounting reconciliation for source commitment consumption/expiry. It does not claim an indexed read model, durable workers, production capital, or production readiness.
+Indexed read-model projection core (local, no chain evidence claim):
+
+```text
+observed source / Creditcoin events
+-> deterministic read-only projection
+-> JSON checkpoint
+```
+
+M11-Lifecycle promotion proves commitment lifecycle synchronization and accounting reconciliation for source commitment consumption/expiry. It does not claim an indexed read model, durable workers, production capital, or production readiness. The projection core is local scaffolding only.
