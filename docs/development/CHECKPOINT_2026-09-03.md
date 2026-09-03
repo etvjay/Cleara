@@ -10,9 +10,9 @@ is a proposal; it does not change Cleara's canonical product or evidence status.
 
 ```text
 Repository: etvjay/Cleara
-Remote main: 6a1996cb273136c7d48d415606b5c9b4f8406eb1
+Remote main: fc5a68c2f1df86f4d949642ade6d543771bcdf94
 Remote code slice: 549d54ed6f3bb733159b9ad9e58068248f8f3ee9
-Local mirror commit: 732acac
+Local mirror commit: 2aeb353
 ```
 
 The repository currently contains the protocol contracts, live evidence
