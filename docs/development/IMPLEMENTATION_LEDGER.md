@@ -26,8 +26,8 @@ Snapshot: 2 September 2026
 | M11 SettlementASC | Frozen M11 slice | TESTED_TESTNET | Compile/property gate + exact Transfer payer check + independent validator PASS | Run 33614782209 / artifact 9841386218 | Not started | Current ephemeral CC3 deployment |
 | M11 SettlementReconciler | Frozen M11 slice | TESTED_TESTNET | Exact residual, partial/wrong-party/replay/authority negatives + current-head live PASS | Run 33614782209 / artifact 9841386218 | Not started | Current ephemeral CC3 deployment |
 | M11 future Writability boundary | ADR-0002 | DESIGNED_FUTURE | N/A | None | Not started | Not deployed |
-| M11-Lifecycle CommitmentLifecycleASC | docs/development/M11_LIFECYCLE.md | IMPLEMENTED_LOCAL | Exact consume/expire receipt gate + atomic evidence/state transition tests | None | Not started | Not deployed |
-| M11-Lifecycle terminal accounting | docs/development/M11_LIFECYCLE.md | IMPLEMENTED_LOCAL | Gross commitment preservation + consumed/expired/active invariant tests | None | Not started | Not deployed |
+| M11-Lifecycle CommitmentLifecycleASC | docs/development/M11_LIFECYCLE.md | TESTED_TESTNET | Exact consume/expire receipt gate + atomic evidence/state transition tests + current-head live PASS | Run 33699324988 / artifact 9873864767 | Not started | Fresh ephemeral Sepolia + CC3 deployment |
+| M11-Lifecycle terminal accounting | docs/development/M11_LIFECYCLE.md | TESTED_TESTNET | Gross commitment preservation + consumed/expired/active invariant tests + current-head live PASS | Run 33699324988 / artifact 9873864767 | Not started | Fresh ephemeral Sepolia + CC3 deployment |
 | Canonical docs/skills mirror | Frozen | PARTIAL_REMOTE_MIRROR | N/A | Canonical docs tracked on main | Not started | GitHub main |
 
 ## M1 — Verification substrate
@@ -364,17 +364,16 @@ M8 TESTED_TESTNET
 M9 TESTED_TESTNET
 M10 TESTED_TESTNET
 M11 TESTED_TESTNET
-M11-Lifecycle IMPLEMENTED_LOCAL
+M11-Lifecycle TESTED_TESTNET
 ```
 
-M11-Lifecycle local implementation (testnet evidence gate pending):
+M11-Lifecycle current-head testnet evidence:
 
 ```text
 CapitalConsumed / CapitalExpired source lifecycle event
 -> Attestcoin proof
 -> Creditcoin commitment lifecycle synchronization
 -> accounting reconciliation
--> indexed read model
 ```
 
-M11 promotion does not claim commitment lifecycle synchronization, accounting reconciliation for source commitment consumption/expiry, or an indexed read model. M11-Lifecycle remains `IMPLEMENTED_LOCAL` until a fresh current-head consume and expiry workflow passes with independent validation.
+M11-Lifecycle promotion proves commitment lifecycle synchronization and accounting reconciliation for source commitment consumption/expiry. It does not claim an indexed read model, durable workers, production capital, or production readiness.

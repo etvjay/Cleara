@@ -1,7 +1,7 @@
 # Cleara Ground Truth
 
-**Snapshot:** 2 September 2026
-**Operational status:** M1 `VERIFIED_CLEARA`; M2-M11 `TESTED_TESTNET`; M11-Lifecycle `IMPLEMENTED_LOCAL`; current-head M11 live revalidation passed in run `33614782209` at commit `c5f8eecd39602aeb6b4a0d91c4071f520d583beb`.
+**Snapshot:** 3 September 2026
+**Operational status:** M1 `VERIFIED_CLEARA`; M2-M11 `TESTED_TESTNET`; M11-Lifecycle `TESTED_TESTNET`; current-head M11 and M11-Lifecycle live revalidation passed in runs `33614782209` and `33699324988`.
 
 This document is the highest operational statement of what Cleara can currently prove. Historical M11 evidence is tied to its exercised commit and does not automatically validate later hardening. No testnet result implies production safety, mainnet readiness, legal enforceability, economic finality, or audit completion.
 
@@ -62,7 +62,7 @@ M8 ObligationLedger                                TESTED_TESTNET
 M9 ClearingEngine / ClearingEpoch                  TESTED_TESTNET
 M10 ResidualLedger / SettlementRouter              TESTED_TESTNET
 M11 SettlementAdapter / SettlementASC              TESTED_TESTNET
-M11-Lifecycle CommitmentLifecycleASC               IMPLEMENTED_LOCAL
+M11-Lifecycle CommitmentLifecycleASC               TESTED_TESTNET
 ```
 
 ## M1 — Verification Substrate
@@ -520,10 +520,41 @@ M8: live M7 seal -> canonical FINALIZED drawdown obligations on CC3
 M9: explicit bilateral setoff authorization -> immutable clearing epoch -> deterministic cleared accounting
 M10: finalized M9 epoch -> canonical 340,000 residual -> one route instruction, with settlement accounting unchanged
 M11 (current head): source mock-token settlement -> Attestcoin -> SettlementASC -> reconciliation -> SETTLED
-M11-Lifecycle (local): CapitalConsumed / CapitalExpired -> Attestcoin -> CommitmentLifecycleASC -> terminal commitment/allocation state
+M11-Lifecycle (current head): CapitalConsumed / CapitalExpired -> Attestcoin -> CommitmentLifecycleASC -> terminal commitment/allocation state
 ```
 
 M7 -> M8, M7 -> M9, and M9 -> M10 directly reuse live deployed state. Earlier M3-M6 milestones remain separately evidenced deployments; Cleara does not yet claim one uninterrupted M3 -> M10 deployment lifecycle.
+
+## M11-Lifecycle — Commitment Lifecycle Attestation
+
+Status: `TESTED_TESTNET`; current-head live execution: `PASS`.
+
+Evidence:
+
+```text
+Workflow: M11 Lifecycle Live Attestation
+Run: 33699324988
+Head: 57cc061972ddaa1b308b13e722a4ad0f9b62bf43
+Job: lifecycle / 100474985355
+Artifact: 9873864767
+Artifact name: m11-lifecycle-33699324988
+Evidence status: PASS
+```
+
+The current-head run passed the build/property gate, fresh Sepolia and CC3 fixture deployment, independent source-receipt validation, Attestcoin proof acceptance and consumption for both lifecycle events, exact terminal commitment/allocation transitions, gross-versus-terminal accounting reconciliation, replay rejection, and wrong-chain rejection.
+
+Observed lifecycle accounting:
+
+```text
+gross committed: 200,000
+consumed:        100,000
+expired:         100,000
+active:                0
+source vault:          0
+gross = terminal + active: true
+```
+
+This is testnet evidence using the documented mock-token fixture. It does not prove production capital, Attestcoin writability, or an indexed read model.
 
 ## Not Yet Implemented / Not Yet Proven
 
@@ -578,7 +609,7 @@ M8  TESTED_TESTNET
 M9  TESTED_TESTNET
 M10 TESTED_TESTNET
 M11 TESTED_TESTNET
-M11-Lifecycle IMPLEMENTED_LOCAL
+M11-Lifecycle TESTED_TESTNET
 ```
 
 Rule:
