@@ -73,8 +73,37 @@ source action
 The complete proposed surface is in
 `docs/development/WEBAPP_SURFACE.md`. The first defensible frontend slice is a
 fixture-backed, read-only M11/M11-Lifecycle proof workspace plus the connection
-and capability model. Real write actions should follow the indexer/API boundary,
-not be simulated in the UI.
+and capability model. It is a workbench for concrete cases and state
+transitions, not a dashboard. Real write actions should follow the indexer/API
+boundary, not be simulated in the UI.
+
+## Review of the DaoTian recommendations
+
+The recommendations are relevant and mostly preserve Cleara's thesis:
+
+```text
+indexed read model -> durable evidence workers -> reconciliation/failure
+controls -> authority separation -> one real-asset adapter
+```
+
+The current projection core already covers the deterministic fold, proof/source
+pending states, accounting checks, idempotency, finality promotion, and reorg
+detection. The missing operational layer is RPC backfill, durable checkpoints,
+replay, monitoring, and an API that exposes provenance and uncertainty.
+
+Two corrections are carried forward:
+
+1. Reconciliation and exception handling are part of the indexer/API product
+   boundary, not a later dashboard feature.
+2. `CONSUMED`, `RELEASED`, `EXPIRED`, `DISPUTED`, and `SUPERSEDED` should not be
+   assumed to form one linear lifecycle. Each needs a defined transition graph,
+   authority, reversibility, accounting effect, and race rule before contracts
+   change. `DISPUTED` may be an operational overlay rather than a financial
+   state.
+
+The strongest customer-facing direction is an institutional state-and-evidence
+workbench for credit, treasury, operations, and audit teams. Consumers and
+generic wallet users are not Cleara's direct audience.
 
 ## Next bounded slice
 

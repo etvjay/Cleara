@@ -8,19 +8,31 @@ not presented as a bridge or a universal wallet.
 
 ## Product stance
 
-The app should answer one question immediately:
+Cleara is not a dashboard. A source event does not merely appear as a metric; it
+changes facility capitalization, available commitment capacity, obligation
+state, clearing eligibility, or settlement state. The UI must therefore be
+organized around work on a persistent financial relationship and its state
+machine.
 
-> What is the state of my relationship, capital, obligation, and evidence across
-> the domains involved?
+The primary interaction is:
+
+```text
+open a work item
+    -> inspect the current state and what caused it
+    -> perform an authorized native action or request evidence
+    -> verify the next transition
+    -> reconcile or recover when the state is incomplete
+```
 
 The chain is context, not the product's top-level navigation. A participant
-should see a facility, commitment, obligation, or settlement and then see which
+should open a facility, commitment, obligation, or settlement and then see which
 source chain produced the fact, which Attestcoin proof supports it, and which
 Creditcoin transition is canonical.
 
-`Relationship` is a participant-facing read-model grouping of parties and
-protocol records. It is not a new financial authority or a replacement for the
-canonical facility, commitment, obligation, evidence, or Creditcoin records.
+`Relationship` and `Work item` are participant-facing read-model groupings of
+parties and protocol records. They are not new financial authorities or
+replacements for the canonical facility, commitment, obligation, evidence, or
+Creditcoin records.
 
 The app must preserve these distinctions:
 
@@ -130,7 +142,8 @@ timeline with different roles; that is expected and must remain visible.
 
 ```text
 /app
-├── overview
+├── work                         # default entry; assigned/pending work items
+│   └── :workItemId
 ├── relationships
 │   └── :relationshipId
 ├── facilities
@@ -142,13 +155,14 @@ timeline with different roles; that is expected and must remain visible.
 ├── evidence
 │   └── :evidenceId
 ├── activity
-├── settings
-│   ├── connections
-│   └── access
+├── connections
+├── access
 └── help / protocol
 ```
 
-`Overview` is the hub. `Relationships` is the participant mental model;
+`Work` is the entry point, not an overview dashboard. It is a queue of specific
+relationship, commitment, obligation, evidence, or reconciliation items that
+need attention or inspection. `Relationships` is the participant mental model;
 facilities, commitments, obligations, and evidence are progressively more
 specific views of the same lifecycle.
 
@@ -170,34 +184,58 @@ specific views of the same lifecycle.
 This is a separate role-gated surface. Operators need operational controls;
 participants should not be exposed to registry administration or signer roles.
 
-## App shell and primary screen
+## App shell and primary workspace
 
-The shell has a left navigation rail, a top context bar, and a calm content
-workspace. The top bar contains:
+The shell has a left navigation rail, a top context bar, and a three-pane work
+workspace. It should feel closer to an institutional casebook or operations
+workbench than a dashboard. The top bar contains:
 
 ```text
 workspace / participant
 environment: testnet
-scope: all relationships | selected relationship
+scope: selected relationship | selected facility | selected obligation
 connected domains: source wallet(s) and role
 ```
 
-The Overview screen contains:
+The default Work screen contains:
 
-1. **Canonical state banner** — Creditcoin is the financial authority; source
-   events and Attestcoin proofs are shown as supporting evidence.
-2. **Four summary blocks** — active facilities, gross/active commitments, open
-   obligations, and pending proof/reconciliation items.
-3. **Relationship list** — parties, facility/obligation, amount, canonical state,
-   source domain, and continuity status.
-4. **Needs attention** — `PENDING_PROOF`, `PENDING_SOURCE`, `MISMATCH`,
-   `REORG_DETECTED`, expiring commitments, and settlement actions that still need
-   a native signature.
-5. **Recent activity** — event timeline with source/Attestcoin/Creditcoin badges.
+1. **Work queue** — concrete items such as a proof waiting for maturation, a
+   source signature, an expiring commitment, a reconciliation exception, or a
+   detected reorg. Each row has an owner, state, reason, age, and next action.
+2. **Selected relationship/case** — parties, canonical object, current state,
+   and the lifecycle strip for the selected item.
+3. **Evidence and authority pane** — source receipt, Attestcoin coordinates,
+   Creditcoin observation, finality, accounting, and actions permitted for the
+   connected role.
+
+There are no default KPI tiles, portfolio charts, chain heatmaps, or synthetic
+"health" scores. Aggregates belong inside a specific reconciliation task or an
+export, where their source and uncertainty are explicit.
 
 This is a coordination workspace, not a token portfolio. A balance may be shown
 inside a source transaction, but it must never be labelled committed capital
 unless the commitment state says so.
+
+## Reconciliation workspace
+
+Reconciliation is an action-oriented work surface, not a dashboard. An operator
+opens one facility/provider or obligation and compares:
+
+```text
+opening amount
++ commitments / allocations
+- consumed
+- expired
+- released
+- cleared
+- settled
+= remaining
+```
+
+The workspace shows the invariant result as `PASS`, `FAIL`, or `UNKNOWN`, lists
+the exact unexplained difference, links every input to source/proof/coordination
+evidence, and offers export/sign-off only to an authorized role. A mismatch is a
+case to resolve, never a zero to hide.
 
 ## Detail page contract
 
@@ -254,11 +292,11 @@ finality state, never an automatic `SETTLED` badge.
 
 The first frontend slice should be deliberately narrow:
 
-1. Next.js app shell with the participant navigation above.
-2. Fixture-backed/read-model-backed Overview.
-3. One Commitment detail showing M11-Lifecycle consume/expire proof flow.
-4. One Obligation detail showing M11 settlement/reconciliation flow.
-5. Evidence drawer with domain-separated coordinates and finality.
+1. Next.js app shell that opens on a concrete Work queue, not a dashboard.
+2. Fixture-backed/read-model-backed M11 settlement work item.
+3. One Commitment work item showing M11-Lifecycle consume/expire proof flow.
+4. One Obligation work item showing M11 settlement/reconciliation flow.
+5. Evidence pane with domain-separated coordinates and finality.
 6. Connection modal with capability matrix and wallet-scoped action prompts.
 7. Explicit testnet and `IMPLEMENTED_LOCAL` labels; no simulated success.
 
