@@ -12,12 +12,15 @@ is a proposal; it does not change Cleara's canonical product or evidence status.
 Repository: etvjay/Cleara
 Checkpoint artifact: docs/development/CHECKPOINT_2026-09-03.md
 Webapp surface artifact: docs/development/WEBAPP_SURFACE.md
-Code slice under checkpoint: 549d54ed6f3bb733159b9ad9e58068248f8f3ee9
+Code status: see `docs/canonical/GROUND_TRUTH.md`; this checkpoint is
+head-independent and does not freeze a stale commit hash.
 ```
 
 The repository currently contains the protocol contracts, live evidence
 scripts/workflows, and the local indexed projection core. There is no
-`apps/web` frontend implementation yet.
+`apps/web` frontend implementation yet. The hackathon packaging boundary is
+recorded in `HACKATHON_RELEASE_CHECKLIST.md`, with compliance, SLO, and
+authority boundaries in the companion documents in this directory.
 
 ## Protected truth
 
@@ -105,9 +108,10 @@ The strongest customer-facing direction is an institutional state-and-evidence
 workbench for credit, treasury, operations, and audit teams. Consumers and
 generic wallet users are not Cleara's direct audience.
 
-## Next bounded slice
+## Post-hackathon bounded slice
 
-M12 should implement durable ingestion/backfill for the projection core:
+The next engineering slice, after the packaged demonstration, is M12 durable
+ingestion/backfill for the projection core:
 
 ```text
 RPC/log backfill

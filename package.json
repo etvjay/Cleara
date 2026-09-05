@@ -5,6 +5,9 @@
   "packageManager": "pnpm@11.24.0",
   "engines": { "node": ">=24.19.0 <25" },
   "scripts": {
+    "check:projection": "pnpm --filter @cleara/multichain-execution typecheck && pnpm --filter @cleara/multichain-execution test",
+    "typecheck:projection": "pnpm --filter @cleara/multichain-execution typecheck",
+    "test:projection": "pnpm --filter @cleara/multichain-execution test",
     "probe:creditcoin": "tsx scripts/probe/creditcoin-rpc.ts",
     "probe:chaininfo": "tsx scripts/probe/attestcoin-supported-chains.ts",
     "probe:blockprover": "tsx scripts/probe/block-prover.ts",
