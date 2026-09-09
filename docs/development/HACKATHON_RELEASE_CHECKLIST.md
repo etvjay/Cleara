@@ -20,8 +20,8 @@ credible protocol and evidence story without claiming production readiness.
 - [x] Projection typecheck and tests pass with `pnpm check:projection`.
 - [x] README, ground truth, implementation ledger, compliance boundary, SLO
       boundary, and authority matrix agree on the current scope.
-- [x] No UI or worker path claims success before evidence and canonical state
-      agree.
+- [x] A local read-only workbench packages the shared composite case, role views,
+      evidence panel, capability matrix, and investigation examples.
 
 ## Review path
 
@@ -40,7 +40,7 @@ These are next-phase engineering, not hidden claims in this release:
 
 - durable RPC/log backfill, checkpoints, and production reorg replay;
 - durable evidence workers, dead-letter handling, and operator paging;
-- a permissioned API and the proposed workbench frontend;
+- a permissioned API and production workbench frontend;
 - complete lifecycle semantics for release, dispute, and supersession;
 - production asset adapters, custody, compliance, accounting, privacy, and
   institutional controls; and

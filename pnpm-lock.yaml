@@ -37,6 +37,18 @@ importers:
         specifier: 7.0.2
         version: 7.0.2
 
+  apps/web:
+    devDependencies:
+      '@types/node':
+        specifier: 24.3.0
+        version: 24.3.0
+      tsx:
+        specifier: 4.23.12
+        version: 4.23.12
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+
   workers/multichain-execution:
     devDependencies:
       '@types/node':

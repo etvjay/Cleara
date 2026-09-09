@@ -17,10 +17,12 @@ head-independent and does not freeze a stale commit hash.
 ```
 
 The repository currently contains the protocol contracts, live evidence
-scripts/workflows, and the local indexed projection core. There is no
-`apps/web` frontend implementation yet. The hackathon packaging boundary is
-recorded in `HACKATHON_RELEASE_CHECKLIST.md`, with compliance, SLO, and
-authority boundaries in the companion documents in this directory.
+scripts/workflows, the local indexed projection core, and a narrow local
+read-only submission workbench. There is no production `apps/web` frontend
+claim or deployment; the local workbench is explicitly `IMPLEMENTED_LOCAL`.
+The hackathon packaging boundary is recorded in
+`HACKATHON_RELEASE_CHECKLIST.md`, with compliance, SLO, and authority boundaries
+in the companion documents in this directory.
 
 ## Protected truth
 

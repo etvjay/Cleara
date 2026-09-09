@@ -15,6 +15,7 @@ The hackathon protocol package is ready for review on testnet:
 | M2-M11 protocol slices | `TESTED_TESTNET` |
 | M11 commitment lifecycle | `TESTED_TESTNET` |
 | Indexed projection core | `IMPLEMENTED_LOCAL` |
+| Read-only institutional workbench | `IMPLEMENTED_LOCAL` |
 | Production indexer, API, and frontend | Not claimed |
 
 Current-head live gates passed independently:
@@ -30,6 +31,15 @@ The canonical operating truth is
 [`docs/canonical/GROUND_TRUTH.md`](docs/canonical/GROUND_TRUTH.md). The
 release boundary and deferred work are recorded in
 [`docs/development/HACKATHON_RELEASE_CHECKLIST.md`](docs/development/HACKATHON_RELEASE_CHECKLIST.md).
+
+The local submission workbench runs with:
+
+```bash
+pnpm web:check
+pnpm web:dev
+```
+
+It is read-only, fixture/read-model backed, and requires no wallet or secret.
 
 ## What the protocol demonstrates
 
@@ -74,14 +84,16 @@ of the repository, UI, or uploaded evidence.
 
 ## Documentation map
 
-- [`GROUND_TRUTH.md`](docs/canonical/GROUND_TRUTH.md) — authoritative status and
-  protected semantic boundaries.
+- [`GROUND_TRUTH.md`](docs/canonical/GROUND_TRUTH.md) — authoritative status and protected semantic boundaries.
+- [`EVIDENCE_INDEX.md`](docs/submission/EVIDENCE_INDEX.md) — human and machine-readable evidence index; the structured manifest is `docs/submission/evidence-manifest.json`.
+- [`REVIEW_RECONCILIATION.md`](docs/submission/REVIEW_RECONCILIATION.md) — architecture-review reconciliation and scope boundary.
 - [`IMPLEMENTATION_LEDGER.md`](docs/development/IMPLEMENTATION_LEDGER.md) —
   milestone-by-milestone evidence ledger.
 - [`INDEXED_READ_MODEL.md`](docs/development/INDEXED_READ_MODEL.md) — local
   deterministic projection boundary.
-- [`WEBAPP_SURFACE.md`](docs/development/WEBAPP_SURFACE.md) — proposed
-  relationship/workbench UX; no frontend implementation claim.
+- [`WEBAPP_SURFACE.md`](docs/development/WEBAPP_SURFACE.md) — narrow local
+  read-only workbench implemented; complete participant/operator surface remains
+  proposed.
 - [`COMPLIANCE_BOUNDARY.md`](docs/development/COMPLIANCE_BOUNDARY.md) — what
   this hackathon package does and does not address.
 - [`SLA_SLO.md`](docs/development/SLA_SLO.md) — operational targets and

@@ -1,6 +1,6 @@
 # Cleara Webapp Surface
 
-Status: `PROPOSED` (experience design; no frontend implementation claim)
+Status: `IMPLEMENTED_LOCAL` for the narrow read-only submission slice; the complete participant/operator surface remains `PROPOSED`.
 
 This specification turns Cleara's protocol and evidence boundary into a usable
 participant and operator surface. It is intentionally chain-neutral. Cleara is

@@ -64,6 +64,7 @@ M10 ResidualLedger / SettlementRouter              TESTED_TESTNET
 M11 SettlementAdapter / SettlementASC              TESTED_TESTNET
 M11-Lifecycle CommitmentLifecycleASC               TESTED_TESTNET
 Indexed read-model projection core                IMPLEMENTED_LOCAL
+Read-only institutional workbench                 IMPLEMENTED_LOCAL
 ```
 
 ## M1 — Verification Substrate
@@ -523,6 +524,7 @@ M10: finalized M9 epoch -> canonical 340,000 residual -> one route instruction, 
 M11 (current head): source mock-token settlement -> Attestcoin -> SettlementASC -> reconciliation -> SETTLED
 M11-Lifecycle (current head): CapitalConsumed / CapitalExpired -> Attestcoin -> CommitmentLifecycleASC -> terminal commitment/allocation state
 Indexed read-model projection core (local): observed source/Creditcoin events -> deterministic read-only projection -> JSON checkpoint
+Read-only institutional workbench (local): shared composite case graph -> three role views -> evidence/capability/investigation surfaces
 ```
 
 M7 -> M8, M7 -> M9, and M9 -> M10 directly reuse live deployed state. Earlier M3-M6 milestones remain separately evidenced deployments; Cleara does not yet claim one uninterrupted M3 -> M10 deployment lifecycle.
@@ -570,7 +572,7 @@ indexed read model (production integration)
 M12 durable workers
 M13 production indexer
 M14 application API
-M15 product frontend
+M15 production application frontend
 M16 Wormhole residual-settlement integration
 M17 hardening / audit / production governance
 mainnet Cleara deployment
@@ -618,6 +620,7 @@ M10 TESTED_TESTNET
 M11 TESTED_TESTNET
 M11-Lifecycle TESTED_TESTNET
 Indexed read-model projection core IMPLEMENTED_LOCAL
+Read-only institutional workbench IMPLEMENTED_LOCAL
 ```
 
 Rule:
