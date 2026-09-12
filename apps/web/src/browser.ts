@@ -24,11 +24,44 @@ function evidenceBoundary(kind: string): string {
 function accountingPanel(): string {
   return `<section class="accounting-panel"><div class="panel-head"><div><span class="eyebrow">ACCOUNTING / RECONCILIATION</span><h2>Residual settlement vector</h2></div><span class="muted">Composite fixture</span></div><div class="accounting-grid"><div><small>GROSS OBLIGATIONS</small><strong>460,000</strong></div><div><small>CLEARED INTERNALLY</small><strong>120,000</strong></div><div><small>RESIDUAL ROUTED</small><strong>340,000</strong></div><div><small>FINAL STATE</small><strong class="accounting-success">SETTLED</strong></div></div><div class="balance-line"><span>Debtor balance <b>340,000 → 0</b></span><span>Creditor balance <b>0 → 340,000</b></span></div><p class="accounting-note">The residual is shown as ROUTED until the native receipt, Attestcoin proof, canonical Creditcoin state, and reconciliation all agree. Values are testnet evidence presented through a local composite fixture.</p></section>`;
 }
+
+function referenceHero(): string {
+  return `<section class="reference-hero-wrap" id="reference-hero" aria-label="Hero reference study">
+    <div class="reference-hero">
+      <img class="reference-hero-media" src="assets/hero-luminous.webp" alt="Woman resting in warm red light" />
+      <div class="reference-hero-shade" aria-hidden="true"></div>
+      <header class="reference-hero-header">
+        <a class="reference-brand" href="#workbench" aria-label="Luminous Labs reference home">
+          <span class="reference-brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+          <span>luminous labs</span>
+        </a>
+        <nav class="reference-nav" aria-label="Reference navigation">
+          <a href="#workbench">Technology</a>
+          <a href="#workbench">Company</a>
+          <a href="#workbench">Commercial</a>
+          <a href="#workbench">Blog</a>
+          <a class="reference-nav-pill" href="#workbench">Shop</a>
+        </nav>
+        <div class="reference-utilities">
+          <button class="reference-language" type="button" aria-label="Language: English">EN <span aria-hidden="true">⌄</span></button>
+          <a class="reference-cart" href="#workbench">Cart</a>
+          <a class="reference-bag" href="#workbench" aria-label="Open reference cart"><span aria-hidden="true">⌑</span></a>
+        </div>
+      </header>
+      <div class="reference-hero-copy">
+        <p>Red Light Therapy: proven, safe, and non-invasive</p>
+        <h1>Your cells, supercharged</h1>
+      </div>
+    </div>
+  </section>`;
+}
+
 function render(): void {
   const summary = roleSummary(role, graph);
   const focus = new Set(summary.focus);
   app.innerHTML = `
-    <header class="topbar">
+    ${referenceHero()}
+    <header class="topbar" id="workbench">
       <div class="brand"><span class="brand-mark">C</span><span>Cleara</span><small>WORKBENCH</small></div>
       <div class="top-context"><span class="context-dot"></span><span>TESTNET</span><span class="context-separator">/</span><span>${esc(summary.title)}</span></div>
       <div class="top-actions"><span class="read-only">READ-ONLY</span><button id="reset" class="text-button">Reset seed</button></div>

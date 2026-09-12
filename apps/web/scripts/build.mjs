@@ -13,4 +13,5 @@ await new Promise((resolvePromise, reject) => {
 });
 await cp(resolve(root, "public/index.html"), resolve(dist, "index.html"));
 await cp(resolve(root, "public/styles.css"), resolve(dist, "styles.css"));
+await cp(resolve(root, "public/assets"), resolve(dist, "assets"), { recursive: true });
 console.log(`built ${dist}`);
