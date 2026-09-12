@@ -101,6 +101,34 @@ test("mismatch is explicit and carries recovery ownership", () => {
   assert.equal(record.recoveryRole, "operator");
 });
 
+test("reconciliation current state is distinct from reconciliation history", () => {
+  const initial = { relationshipId: "relationship:history", sourceEventId: "source:history", canonicalObjectId: "commitment:history", state: "PENDING" as const, observationAmount: "100", canonicalAmount: null, authority: "projection" as const, nextAction: "Wait", recoveryRole: "operator", reason: "awaiting proof" };
+  const updated = { ...initial, state: "MISMATCH" as const, canonicalAmount: "90", nextAction: "Pause", reason: "amount differs" };
+  let state = reconcile(createSliceBState(), initial);
+  state = reconcile(state, updated);
+  assert.equal(state.reconciliations.size, 1);
+  assert.equal([...state.reconciliations.values()][0]?.state, "MISMATCH");
+  assert.equal(state.reconciliationHistory.length, 2);
+  assert.deepEqual(state.reconciliationHistory.map((record) => record.state), ["PENDING", "MISMATCH"]);
+  const api = createSliceBApi(state);
+  const relationship = api.relationship("relationship:history") as { reconciliations: Array<{ state: string }>; reconciliationHistory: Array<{ state: string }> };
+  assert.deepEqual(relationship.reconciliations.map((record) => record.state), ["MISMATCH"]);
+  assert.deepEqual(relationship.reconciliationHistory.map((record) => record.state), ["PENDING", "MISMATCH"]);
+  assert.equal(api.investigations("relationship:history").filter((item) => (item as { state?: string }).state === "MISMATCH").length, 1);
+  state = reconcile(state, initial);
+  assert.equal(state.reconciliationHistory.length, 3);
+  assert.deepEqual(state.reconciliationHistory.map((record) => record.state), ["PENDING", "MISMATCH", "PENDING"]);
+});
+
+test("a second event in an already canonical block does not demote its trusted header", () => {
+  let state = ingestObservation(createSliceBState(), baseObservation(10n, "h10", "0xfirst-event", "relationship:block-events", "commitment:first", "h9", 1, 11155111, "ethereum-sepolia", "test", "slice-b-observation-v1", 0));
+  state = advanceFinality(state, 1, 10n, 2);
+  state = ingestObservation(state, baseObservation(10n, "h10", "0xsecond-event", "relationship:block-events", "commitment:second", "h9", 1, 11155111, "ethereum-sepolia", "test", "slice-b-observation-v1", 1));
+  const header = [...state.blockHistory.values()].find((item) => item.blockHash === "h10");
+  assert.equal(header?.status, "CANONICAL");
+  assert.equal(header?.observationId, observationId({ domain: "ethereum-sepolia", chainKey: 1, transactionHash: "0xfirst-event", eventIndex: 0 }, "CapitalCommitted"));
+});
+
 test("reorg preserves history and finality cannot clear replay-required", () => {
   let state = ingestObservation(createSliceBState(), baseObservation());
   state = advanceFinality(state, 1, 10n, 2);
@@ -217,6 +245,7 @@ test("evidence lookup is explicit and relationship scope is isolated", () => {
   assert.deepEqual(r1.canonicalState.map((item) => item.objectId), ["object:r1"]);
   assert.equal(api.evidence("evidence:r1")?.evidenceId, "evidence:r1");
   assert.equal(api.evidence("evidence:missing"), null);
+  assert.equal(api.object("evidence:r2", "r1"), null);
 });
 test("same object IDs remain scoped to both relationships", () => {
   let state = createSliceBState();
@@ -238,6 +267,18 @@ test("same object IDs remain scoped to both relationships", () => {
   assert.equal(snapshotHash(recordCanonical(conflict, { ...r1, state: "CONSUMED" })), snapshotHash(conflict));
 });
 
+test("composite canonical identifiers cannot collide at delimiter boundaries", () => {
+  const first = { relationshipId: "a:b", creditcoinChainId: 1, contractAddress: "0xfirst", transactionHash: null, blockNumber: null, blockHash: null, objectId: "c", state: "ACTIVE", readStatus: "READ" as const, expectedState: "ACTIVE", readAt: 1 };
+  const second = { relationshipId: "a", creditcoinChainId: 1, contractAddress: "0xsecond", transactionHash: null, blockNumber: null, blockHash: null, objectId: "b:c", state: "ACTIVE", readStatus: "READ" as const, expectedState: "ACTIVE", readAt: 1 };
+  let state = recordCanonical(createSliceBState(), first);
+  state = recordCanonical(state, second);
+  assert.equal(state.canonical.size, 2);
+  const api = createSliceBApi(state);
+  assert.equal((api.object("c", "a:b") as { canonicalReference: { contractAddress: string } }).canonicalReference.contractAddress, "0xfirst");
+  assert.equal((api.object("b:c", "a") as { canonicalReference: { contractAddress: string } }).canonicalReference.contractAddress, "0xsecond");
+  assert.notEqual(sourceEventId({ domain: "a|1", chainKey: 2, transactionHash: "b", eventIndex: 0 }), sourceEventId({ domain: "a", chainKey: 1, transactionHash: "2|b", eventIndex: 0 }));
+});
+
 test("identical evidence recording is idempotent and conflicting evidence is explicit", () => {
   const evidence = { evidenceId: "evidence:idempotent", relationshipId: "r1", sourceEventId: "source:idempotent", mode: "implemented_local" as const, sourceDomain: "ethereum-sepolia", chainKey: 1, transactionHash: "0xidempotent", blockNumber: 1n, attestcoinReference: "attest:idempotent", status: "ACCEPTED" as const, linkedCreditcoinTransition: "cc3:idempotent", sourceReference: "fixture:idempotent", reason: null };
   const once = recordEvidence(createSliceBState(), evidence);
@@ -247,9 +288,25 @@ test("identical evidence recording is idempotent and conflicting evidence is exp
   const restored = restoreSnapshot(snapshot(once));
   assert.equal(snapshotHash(recordEvidence(restored, evidence)), snapshotHash(restored));
   const conflicting = recordEvidence(once, { ...evidence, status: "REJECTED", reason: "different content" });
-  assert.equal(conflicting.evidence.get(evidence.evidenceId)?.status, "REJECTED");
+  assert.equal(conflicting.evidence.get(evidence.evidenceId)?.status, "ACCEPTED");
+  assert.equal(conflicting.evidenceConflicts.length, 1);
   assert.equal(conflicting.provenance.length, once.provenance.length);
   assert.equal(snapshotHash(recordEvidence(conflicting, { ...evidence, status: "REJECTED", reason: "different content" })), snapshotHash(conflicting));
+});
+
+test("evidence conflicts preserve the original and retain distinct conflict history", () => {
+  const original = { evidenceId: "evidence:preserve", relationshipId: "r1", sourceEventId: "source:original", mode: "implemented_local" as const, sourceDomain: "ethereum-sepolia", chainKey: 1, transactionHash: "0xoriginal", blockNumber: 1n, attestcoinReference: "attest:original", status: "ACCEPTED" as const, linkedCreditcoinTransition: null, sourceReference: "fixture:original", reason: null };
+  const conflictOne = { ...original, relationshipId: "r2", sourceEventId: "source:conflict-one", transactionHash: "0xconflict-one", status: "REJECTED" as const, reason: "wrong source" };
+  const conflictTwo = { ...original, relationshipId: "r3", sourceEventId: "source:conflict-two", transactionHash: "0xconflict-two", status: "PENDING" as const, reason: null };
+  let state = recordEvidence(createSliceBState(), original);
+  state = recordEvidence(state, conflictOne);
+  state = recordEvidence(state, conflictTwo);
+  assert.deepEqual(state.evidence.get(original.evidenceId), original);
+  assert.equal(state.evidenceConflicts.length, 2);
+  assert.equal(state.evidenceConflicts[0]?.conflictingRelationshipId, "r2");
+  assert.equal(state.evidenceConflicts[1]?.conflictingRelationshipId, "r3");
+  state = recordEvidence(state, conflictOne);
+  assert.equal(state.evidenceConflicts.length, 2);
 });
 
 test("replay fails closed without trusted canonical history", () => {
@@ -313,6 +370,80 @@ test("sparse event cursor semantics allow gaps but replay still needs indexed he
   assert.equal(state.blockHistory.size, 1);
 });
 
+test("earlier indexed event reorg replays against its own trusted old block hash", () => {
+  let state = createSliceBState();
+  const original10 = baseObservation(10n, "h10", "0xoriginal10", "relationship:earlier", "commitment:earlier-10", "h9", 1, 11155111, "ethereum-sepolia", "test", "slice-b-observation-v1", 0);
+  const original11 = baseObservation(11n, "h11", "0xoriginal11", "relationship:earlier", "commitment:earlier-11", "h10", 1, 11155111, "ethereum-sepolia", "test", "slice-b-observation-v1", 1);
+  state = ingestObservation(state, original10);
+  state = advanceFinality(state, 1, 10n, 2);
+  state = ingestObservation(state, original11);
+  state = advanceFinality(state, 1, 11n, 3);
+  const replacement = baseObservation(10n, "replacement-h10", "0xreplacement10", "relationship:earlier", "commitment:earlier-10", "h9", 1, 11155111, "ethereum-sepolia", "test", "slice-b-observation-v1", 2);
+  state = ingestObservation(state, replacement);
+  assert.equal(state.checkpoints.get(1)?.replayFromBlock, 10n);
+  assert.equal((state.checkpoints.get(1) as { replayOldBlockHash?: string | null }).replayOldBlockHash, "h10");
+  state = advanceFinality(state, 1, 11n, 4);
+  const replayed = replayReorg(state, state.observations.get(replacement.observationId)!, { finalizedBlock: 11n, observedAt: 5 });
+  assert.equal(replayed.outcome, "REPLAYED");
+  assert.equal(replayed.state.checkpoints.get(1)?.lastObservedBlockHash, "replacement-h10");
+});
+
+test("successful replay cannot regress an already higher finality checkpoint", () => {
+  let state = createSliceBState();
+  const original10 = baseObservation(10n, "h10", "0xoriginal10-stale", "relationship:stale-finality", "commitment:stale-finality", "h9", 1, 11155111, "ethereum-sepolia", "test", "slice-b-observation-v1", 0);
+  const original11 = baseObservation(11n, "h11", "0xoriginal11-stale", "relationship:stale-finality", "commitment:stale-finality-11", "h10", 1, 11155111, "ethereum-sepolia", "test", "slice-b-observation-v1", 1);
+  state = ingestObservation(state, original10);
+  state = advanceFinality(state, 1, 10n, 2);
+  state = ingestObservation(state, original11);
+  state = advanceFinality(state, 1, 11n, 3);
+  const replacement = baseObservation(10n, "replacement-stale-finality", "0xreplacement-stale-finality", "relationship:stale-finality", "commitment:stale-finality", "h9", 1, 11155111, "ethereum-sepolia", "test", "slice-b-observation-v1", 2);
+  state = ingestObservation(state, replacement);
+  state = advanceFinality(state, 1, 11n, 4);
+  const replayed = replayReorg(state, state.observations.get(replacement.observationId)!, { finalizedBlock: 10n, observedAt: 5 });
+  assert.equal(replayed.outcome, "REPLAYED");
+  assert.equal(replayed.state.checkpoints.get(1)?.lastFinalizedBlock, 11n);
+});
+
+test("earlier replacement with missing target history remains replay-required and blocked", () => {
+  let state = createSliceBState();
+  const original10 = baseObservation(10n, "h10", "0xmissing-target10", "relationship:missing-target", "commitment:missing-target", "h9", 1, 11155111, "ethereum-sepolia", "test", "slice-b-observation-v1", 0);
+  const original11 = baseObservation(11n, "h11", "0xmissing-target11", "relationship:missing-target", "commitment:missing-target-11", "h10", 1, 11155111, "ethereum-sepolia", "test", "slice-b-observation-v1", 1);
+  state = ingestObservation(state, original10);
+  state = advanceFinality(state, 1, 10n, 2);
+  state = ingestObservation(state, original11);
+  state = advanceFinality(state, 1, 11n, 3);
+  const blockHistory = new Map(state.blockHistory);
+  for (const [key, header] of blockHistory) if (header.blockHash === "h10") blockHistory.delete(key);
+  state = { ...state, blockHistory };
+  const replacement = baseObservation(10n, "replacement-missing-target", "0xreplacement-missing-target", "relationship:missing-target", "commitment:missing-target", "h9", 1, 11155111, "ethereum-sepolia", "test", "slice-b-observation-v1", 2);
+  state = ingestObservation(state, replacement);
+  assert.equal(state.checkpoints.get(1)?.replayStatus, "REPLAY_REQUIRED");
+  assert.equal(state.checkpoints.get(1)?.replayOldBlockHash, null);
+  state = advanceFinality(state, 1, 11n, 4);
+  const blocked = replayReorg(state, state.observations.get(replacement.observationId)!, { finalizedBlock: 11n, observedAt: 5 });
+  assert.equal(blocked.outcome, "BLOCKED");
+  assert.equal(blocked.state.checkpoints.get(1)?.replayStatus, "REPLAY_REQUIRED");
+});
+
+test("multiple replacement events at one block preserve the other replacement candidate", () => {
+  let state = createSliceBState();
+  const originalOne = baseObservation(10n, "h10", "0xoriginal-one", "relationship:multi-replacement", "commitment:original-one", "h9", 1, 11155111, "ethereum-sepolia", "test", "slice-b-observation-v1", 0);
+  const originalTwo = baseObservation(10n, "h10", "0xoriginal-two", "relationship:multi-replacement", "commitment:original-two", "h9", 1, 11155111, "ethereum-sepolia", "test", "slice-b-observation-v1", 1);
+  state = ingestObservation(state, originalOne);
+  state = advanceFinality(state, 1, 10n, 2);
+  state = ingestObservation(state, originalTwo);
+  const replacementOne = baseObservation(10n, "replacement-h10", "0xreplacement-one", "relationship:multi-replacement", "commitment:replacement-one", "h9", 1, 11155111, "ethereum-sepolia", "test", "slice-b-observation-v1", 2);
+  state = ingestObservation(state, replacementOne);
+  const replacementTwo = baseObservation(10n, "replacement-h10", "0xreplacement-two", "relationship:multi-replacement", "commitment:replacement-two", "h9", 1, 11155111, "ethereum-sepolia", "test", "slice-b-observation-v1", 3);
+  state = ingestObservation(state, replacementTwo);
+  assert.equal(state.observations.get(replacementOne.observationId)?.finalityState, "FINALITY_PENDING");
+  assert.equal(state.observations.get(replacementTwo.observationId)?.finalityState, "FINALITY_PENDING");
+  state = advanceFinality(state, 1, 10n, 3);
+  const replayed = replayReorg(state, state.observations.get(replacementOne.observationId)!, { finalizedBlock: 10n, observedAt: 4 });
+  assert.equal(replayed.outcome, "REPLAYED");
+  assert.notEqual(replayed.state.observations.get(replacementTwo.observationId)?.finalityState, "REORGED");
+});
+
 test("global evidence IDs reject cross-relationship conflicts without leaking scope", () => {
   const first = { evidenceId: "evidence:global", relationshipId: "r1", sourceEventId: "source:r1", mode: "implemented_local" as const, sourceDomain: "ethereum-sepolia", chainKey: 1, transactionHash: "0xr1", blockNumber: 1n, attestcoinReference: "attest:r1", status: "ACCEPTED" as const, linkedCreditcoinTransition: null, sourceReference: "fixture:r1", reason: null };
   const conflicting = { ...first, relationshipId: "r2", sourceEventId: "source:r2", transactionHash: "0xr2" };
@@ -320,7 +451,8 @@ test("global evidence IDs reject cross-relationship conflicts without leaking sc
   state = recordEvidence(state, conflicting);
   const api = createSliceBApi(state);
   assert.equal(state.evidence.get("evidence:global")?.relationshipId, "r1");
-  assert.equal(state.evidence.get("evidence:global")?.status, "REJECTED");
+  assert.equal(state.evidence.get("evidence:global")?.status, "ACCEPTED");
+  assert.equal(state.evidenceConflicts.length, 1);
   assert.equal((api.relationship("r1") as { evidence: EvidenceRecord[] }).evidence[0]?.relationshipId, "r1");
   assert.equal((api.relationship("r2") as { evidence: EvidenceRecord[] }).evidence.length, 0);
   assert.equal(api.investigations("r2").some((item) => (item as { relationshipId?: string }).relationshipId === "r2"), true);
@@ -373,6 +505,34 @@ test("snapshot restore preserves deterministic state across restart", () => {
   state = advanceFinality(state, 1, 10n, 2);
   state = projectRelationship(state, "relationship:fixture");
   const restored = restoreSnapshot(snapshot(state));
+  assert.equal(snapshotHash(restored), snapshotHash(state));
+});
+
+test("snapshot restore accepts older checkpoints and delimiter-keyed maps", () => {
+  let state = ingestObservation(createSliceBState(), baseObservation());
+  state = advanceFinality(state, 1, 10n, 2);
+  state = recordCanonical(state, { relationshipId: "a:b", creditcoinChainId: 102031, contractAddress: "0xcc3", transactionHash: null, blockNumber: null, blockHash: null, objectId: "c", state: "ACTIVE", readStatus: "READ", expectedState: "ACTIVE", readAt: 2 });
+  state = reconcile(state, { relationshipId: "a:b", sourceEventId: "source:legacy", canonicalObjectId: "c", state: "PENDING", observationAmount: "1", canonicalAmount: null, authority: "projection", nextAction: "Wait", recoveryRole: "operator", reason: "legacy" });
+  const legacy = JSON.parse(snapshot(state)) as { canonical: [string, Record<string, unknown>][]; blockHistory: [string, Record<string, unknown>][]; checkpoints: [number, Record<string, unknown>][]; reconciliationHistory?: unknown };
+  legacy.canonical = legacy.canonical.map(([, reference]) => ["a:b:c", reference]);
+  legacy.blockHistory = legacy.blockHistory.map(([, header]) => ["1:10:h10", header]);
+  for (const [, checkpoint] of legacy.checkpoints) delete checkpoint.replayOldBlockHash;
+  delete legacy.reconciliationHistory;
+  const restored = restoreSnapshot(JSON.stringify(legacy));
+  assert.equal(restored.canonical.size, 1);
+  assert.equal(restored.blockHistory.size, 1);
+  assert.equal(restored.reconciliations.size, 1);
+  assert.equal(restored.reconciliationHistory.length, 1);
+  assert.equal(restored.checkpoints.get(1)?.replayOldBlockHash, null);
+  assert.equal(snapshotHash(restored), snapshotHash(state));
+});
+
+test("snapshot restore preserves literal strings that resemble bigint values", () => {
+  const observation = { ...baseObservation(), normalizedPayload: { amount: "100000", facilityId: "facility:1", literal: "123n" } };
+  const state = ingestObservation(createSliceBState(), observation);
+  const restored = restoreSnapshot(snapshot(state));
+  assert.equal(restored.observations.get(observation.observationId)?.normalizedPayload.literal, "123n");
+  assert.equal(typeof restored.observations.get(observation.observationId)?.normalizedPayload.literal, "string");
   assert.equal(snapshotHash(restored), snapshotHash(state));
 });
 

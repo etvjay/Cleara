@@ -43,10 +43,11 @@ Slice B now provides:
 - stable source-event identity;
 - separate observation, finality, evidence, canonical, projection, and reconciliation states;
 - explicit reorg detection;
-- explicit replay with trusted canonical block-header continuity, sparse-event cursor semantics, finality monotonicity, provenance, and idempotency checks;
-- globally unique evidence IDs with explicit conflict investigations;
-- relationship-scoped evidence, canonical, replay, dead-letter, and investigation reads;
-- deterministic recursively canonical snapshots and hashes;
+- explicit replay with trusted canonical block-header continuity, target-block identity, sparse-event cursor semantics, finality monotonicity, provenance, and idempotency checks;
+- globally unique evidence IDs with explicit conflict investigations that preserve the original record;
+- relationship-scoped evidence, canonical, replay, dead-letter, object, and investigation reads;
+- current reconciliation state separated from append-only reconciliation history;
+- deterministic recursively canonical snapshots and hashes with backward-compatible field-aware restore;
 - a narrow derived relationship projection;
 - assertion-backed demo scenarios;
 - a local read-only API.
@@ -84,13 +85,13 @@ No Nomos package, Nomos contract, Arbitrum file, new chain adapter, wallet, brid
 
 The repair is accepted only if:
 
-1. finality cannot clear `REPLAY_REQUIRED`;
-2. explicit replay succeeds only after continuity and finality checks;
+1. finality cannot clear `REPLAY_REQUIRED` or regress during replay;
+2. explicit replay succeeds only after target-header continuity and finality checks;
 3. replay is idempotent and preserves superseded history;
-4. evidence lookup returns known records;
-5. relationship responses cannot leak other relationship records;
-6. equivalent insertion order produces equal hashes;
-7. meaningful state changes alter hashes;
+4. evidence lookup returns known records and conflicting evidence preserves the original;
+5. relationship responses cannot leak other relationship records, including scoped object reads;
+6. current reconciliation state is separate from reconciliation history;
+7. equivalent insertion order produces equal hashes and collision boundaries remain distinct;
 8. the demo exits nonzero on failed assertions;
 9. read-only API behavior remains enforced;
 10. exact repair SHA passes pull-request CI.

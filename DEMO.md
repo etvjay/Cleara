@@ -39,8 +39,8 @@ GET /relationships/relationship:slice-b:fixture
 GET /relationships/relationship:slice-b:fixture/timeline
 GET /relationships/relationship:slice-b:fixture/graph
 GET /facilities/:id, /commitments/:id, /obligations/:id, /settlements/:id, /evidence/:id
-GET /reconciliation/exceptions
-GET /investigations
+GET /reconciliation/exceptions?relationshipId=:id
+GET /investigations?relationshipId=:id
 GET /checkpoints
 GET /snapshots/relationship:slice-b:fixture
 ```

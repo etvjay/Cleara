@@ -152,6 +152,8 @@ export interface Checkpoint {
   readonly replayStatus: "CURRENT" | "REPLAY_REQUIRED";
   /** Trusted parent hash from the previously indexed canonical block header. */
   readonly replayParentBlockHash: string | null;
+  /** Hash of the canonical header being replaced at replayFromBlock. */
+  readonly replayOldBlockHash: string | null;
   readonly replayFromBlock: bigint | null;
   readonly replaySequence: number;
 }
@@ -205,7 +207,10 @@ export interface SliceBState {
   /** Keyed by relationship scope plus object ID. */
   readonly canonical: ReadonlyMap<string, CanonicalReference>;
   readonly provenance: readonly ProvenanceLink[];
+  /** Current record for each relationship/source/canonical reconciliation scope. */
   readonly reconciliations: ReadonlyMap<string, ReconciliationRecord>;
+  /** Append-only state transitions for reconciliation investigation and audit. */
+  readonly reconciliationHistory: readonly ReconciliationRecord[];
   readonly checkpoints: ReadonlyMap<number, Checkpoint>;
   readonly blockHistory: ReadonlyMap<string, BlockHeader>;
   readonly replayHistory: readonly ReplayAttempt[];
@@ -224,7 +229,7 @@ export interface ReplayResult {
   readonly attempt: ReplayAttempt | null;
 }
 
-const hash = (...parts: readonly string[]): string => createHash("sha256").update(parts.join("|"), "utf8").digest("hex");
+const hash = (...parts: readonly string[]): string => createHash("sha256").update(parts.map((part) => `${part.length}:${part}`).join(""), "utf8").digest("hex");
 
 function canonicalize(value: unknown, ancestors = new Set<object>()): unknown {
   if (typeof value === "bigint") return `${value}n`;
@@ -236,9 +241,18 @@ function canonicalize(value: unknown, ancestors = new Set<object>()): unknown {
 }
 
 const stableJson = (value: unknown): string => JSON.stringify(canonicalize(value));
-const revive = (_key: string, value: unknown): unknown => typeof value === "string" && /^-?\d+n$/.test(value) ? BigInt(value.slice(0, -1)) : value;
-const blockKey = (chainKey: number, blockNumber: bigint, blockHash: string): string => `${chainKey}:${blockNumber.toString()}:${blockHash}`;
-const canonicalKey = (relationshipId: string | null, objectId: string): string => `${relationshipId ?? "global"}:${objectId}`;
+const snapshotBigInt = (value: unknown): bigint => {
+  if (typeof value === "bigint") return value;
+  if (typeof value === "string" && /^-?\d+n$/.test(value)) return BigInt(value.slice(0, -1));
+  throw new Error("INVALID_SNAPSHOT_BIGINT");
+};
+const snapshotOptionalBigInt = (value: unknown): bigint | null => value === null || value === undefined ? null : snapshotBigInt(value);
+const compositeKey = (...parts: readonly (string | number | bigint | null)[]): string => parts.map((part) => {
+  const encoded = part === null ? "null:" : `${typeof part}:` + String(part);
+  return `${encoded.length}:${encoded}`;
+}).join("");
+const blockKey = (chainKey: number, blockNumber: bigint, blockHash: string): string => compositeKey("block", chainKey, blockNumber, blockHash);
+const canonicalKey = (relationshipId: string | null, objectId: string): string => compositeKey("canonical", relationshipId, objectId);
 
 export function sourceEventId(identity: SourceEventIdentity): string {
   return `source:${hash(identity.domain, String(identity.chainKey), identity.transactionHash.toLowerCase(), String(identity.eventIndex))}`;
@@ -249,7 +263,7 @@ export function observationId(identity: SourceEventIdentity, eventType: string):
 }
 
 export function createSliceBState(): SliceBState {
-  return { schemaVersion: "slice-b-read-model-v1", observations: new Map(), evidence: new Map(), evidenceConflicts: [], canonical: new Map(), provenance: [], reconciliations: new Map(), checkpoints: new Map(), blockHistory: new Map(), replayHistory: [], graphs: new Map(), deadLetters: [] };
+  return { schemaVersion: "slice-b-read-model-v1", observations: new Map(), evidence: new Map(), evidenceConflicts: [], canonical: new Map(), provenance: [], reconciliations: new Map(), reconciliationHistory: [], checkpoints: new Map(), blockHistory: new Map(), replayHistory: [], graphs: new Map(), deadLetters: [] };
 }
 
 function clone(state: SliceBState, changes: Partial<SliceBState>): SliceBState {
@@ -284,6 +298,7 @@ function checkpointFromPrevious(chainKey: number, previous: Checkpoint | undefin
     updatedAt: previous?.updatedAt ?? 0,
     replayStatus: previous?.replayStatus ?? "CURRENT",
     replayParentBlockHash: previous?.replayParentBlockHash ?? null,
+    replayOldBlockHash: previous?.replayOldBlockHash ?? null,
     replayFromBlock: previous?.replayFromBlock ?? null,
     replaySequence: previous?.replaySequence ?? 0,
     ...overrides,
@@ -296,8 +311,14 @@ function blockHeaderFor(input: ObservationEnvelope, status: BlockHeader["status"
 
 function upsertBlockHeader(blockHistory: ReadonlyMap<string, BlockHeader>, input: ObservationEnvelope, status: BlockHeader["status"]): ReadonlyMap<string, BlockHeader> {
   const next = new Map(blockHistory);
-  next.set(blockKey(input.chainKey, input.blockNumber, input.blockHash), blockHeaderFor(input, status));
+  const key = blockKey(input.chainKey, input.blockNumber, input.blockHash);
+  const existing = next.get(key);
+  if (!existing || !(existing.status === "CANONICAL" && status === "CANDIDATE")) next.set(key, blockHeaderFor(input, status));
   return next;
+}
+
+function canonicalHeaderAt(state: SliceBState, chainKey: number, blockNumber: bigint): BlockHeader | undefined {
+  return [...state.blockHistory.values()].find((header) => header.chainKey === chainKey && header.blockNumber === blockNumber && header.status === "CANONICAL");
 }
 
 function canonicalHeaderFor(state: SliceBState, chainKey: number, blockNumber: bigint, blockHash: string): BlockHeader | undefined {
@@ -338,16 +359,29 @@ export function ingestObservation(state: SliceBState, input: ObservationEnvelope
   const checkpoint = state.checkpoints.get(input.chainKey);
   const observations = new Map(state.observations);
   let blockHistory = upsertBlockHeader(state.blockHistory, input, "CANDIDATE");
-  const reorgDetected = checkpoint && input.parentBlockHash && checkpoint.lastObservedBlockHash !== input.parentBlockHash && input.blockNumber <= checkpoint.lastObservedBlock + 1n;
+  const trustedHeaderAtTarget = checkpoint ? canonicalHeaderAt(state, input.chainKey, input.blockNumber) : undefined;
+  const sameCanonicalHeader = trustedHeaderAtTarget !== undefined && trustedHeaderAtTarget.blockHash === input.blockHash && trustedHeaderAtTarget.parentBlockHash === input.parentBlockHash;
+  const targetHistoryUnavailable = Boolean(checkpoint && trustedHeaderAtTarget === undefined && (input.blockNumber < checkpoint.lastObservedBlock || (input.blockNumber === checkpoint.lastObservedBlock && input.blockHash !== checkpoint.lastObservedBlockHash)));
+  const reorgDetected = Boolean(checkpoint && (
+    targetHistoryUnavailable ||
+    (trustedHeaderAtTarget !== undefined && !sameCanonicalHeader && input.blockNumber <= checkpoint.lastObservedBlock) ||
+    (input.blockNumber === checkpoint.lastObservedBlock + 1n && input.parentBlockHash !== checkpoint.lastObservedBlockHash)
+  ));
+  const replacementForPendingReplay = Boolean(checkpoint?.replayStatus === "REPLAY_REQUIRED" && checkpoint.replayFromBlock === input.blockNumber && input.blockHash !== checkpoint.replayOldBlockHash);
+  if (replacementForPendingReplay) {
+    observations.set(input.observationId, { ...input, finalityState: "FINALITY_PENDING", projectionReference: `reorg:candidate:${input.observationId}` });
+    return clone(state, { observations, blockHistory });
+  }
   if (reorgDetected) {
-    const trustedHeader = canonicalHeaderFor(state, input.chainKey, input.blockNumber, checkpoint.lastObservedBlockHash);
+    const replayOldBlockHash = trustedHeaderAtTarget?.blockHash ?? (input.blockNumber === checkpoint!.lastObservedBlock ? checkpoint!.lastObservedBlockHash : null);
     for (const [id, item] of observations) if (item.chainKey === input.chainKey && item.blockNumber >= input.blockNumber) observations.set(id, { ...item, finalityState: "REORGED", projectionReference: `reorg:superseded:${id}` });
     observations.set(input.observationId, { ...input, finalityState: "FINALITY_PENDING", projectionReference: `reorg:candidate:${input.observationId}` });
     const checkpoints = new Map(state.checkpoints);
     checkpoints.set(input.chainKey, checkpointFromPrevious(input.chainKey, checkpoint, {
       replayStatus: "REPLAY_REQUIRED",
       replayFromBlock: input.blockNumber,
-      replayParentBlockHash: trustedHeader?.parentBlockHash ?? null,
+      replayOldBlockHash,
+      replayParentBlockHash: trustedHeaderAtTarget?.parentBlockHash ?? null,
       updatedAt: input.observedAt,
     }));
     return clone(state, { observations, checkpoints, blockHistory });
@@ -409,7 +443,7 @@ function blockedReplay(state: SliceBState, checkpoint: Checkpoint | undefined, r
   const id = `${baseId}:blocked:${hash(reason)}`;
   const existing = state.replayHistory.find((attempt) => attempt.id === id);
   if (existing) return { outcome: "BLOCKED", state, attempt: existing };
-  const attempt: ReplayAttempt = { id, relationshipId, chainKey: replacement.chainKey, fromBlock: checkpoint?.replayFromBlock ?? replacement.blockNumber, replacementObservationId: replacement.observationId, oldBlockHash: checkpoint?.lastObservedBlockHash ?? "", replacementBlockHash: replacement.blockHash, status: "BLOCKED", reason, recoveryRole: "projection operator", observedAt, sequence };
+  const attempt: ReplayAttempt = { id, relationshipId, chainKey: replacement.chainKey, fromBlock: checkpoint?.replayFromBlock ?? replacement.blockNumber, replacementObservationId: replacement.observationId, oldBlockHash: checkpoint?.replayOldBlockHash ?? "", replacementBlockHash: replacement.blockHash, status: "BLOCKED", reason, recoveryRole: "projection operator", observedAt, sequence };
   return { outcome: "BLOCKED", state: clone(state, { replayHistory: [...state.replayHistory, attempt] }), attempt };
 }
 
@@ -426,37 +460,38 @@ export function replayReorg(state: SliceBState, replacement: ObservationEnvelope
   if (!sameReplayIdentity(indexedReplacement, replacement)) return blockedReplay(state, checkpoint, replacement, "replacement identity conflicts with indexed observation", observedAt, sequence, indexedReplacement.relationshipId ?? null);
   const replayFromBlock = checkpoint.replayFromBlock;
   if (replayFromBlock === null) return blockedReplay(state, checkpoint, replacement, "replay cursor is unavailable", observedAt, sequence, indexedReplacement.relationshipId ?? null);
-  const trustedHeader = canonicalHeaderFor(state, replacement.chainKey, replayFromBlock, checkpoint.lastObservedBlockHash);
+  const replayOldBlockHash = checkpoint.replayOldBlockHash;
+  const trustedHeader = replayOldBlockHash === null ? undefined : canonicalHeaderFor(state, replacement.chainKey, replayFromBlock, replayOldBlockHash);
   const oldObservation = trustedHeader ? state.observations.get(trustedHeader.observationId) : undefined;
-  const reason = indexedReplacement.blockNumber !== replayFromBlock ? "replacement block does not match replay cursor" : !trustedHeader ? "trusted canonical block header is unavailable" : trustedHeader.parentBlockHash === null ? "trusted predecessor parent is unavailable" : trustedHeader.chainKey !== replacement.chainKey || trustedHeader.blockNumber !== replayFromBlock || trustedHeader.blockHash !== checkpoint.lastObservedBlockHash || trustedHeader.chainId !== checkpoint.chainId || trustedHeader.sourceDomain !== checkpoint.sourceDomain || trustedHeader.adapterVersion !== checkpoint.adapterVersion || trustedHeader.payloadSchemaVersion !== checkpoint.observationSchemaVersion ? "trusted canonical header metadata does not match checkpoint" : checkpoint.replayParentBlockHash !== trustedHeader.parentBlockHash ? "checkpoint predecessor does not match trusted canonical header" : indexedReplacement.parentBlockHash !== trustedHeader.parentBlockHash ? "replacement parent does not match trusted predecessor" : checkpoint.chainId !== indexedReplacement.chainId ? "replacement chain ID does not match checkpoint" : checkpoint.sourceDomain !== indexedReplacement.sourceDomain ? "replacement source domain does not match checkpoint" : checkpoint.adapterVersion !== indexedReplacement.adapterVersion ? "replacement adapter version does not match checkpoint" : checkpoint.observationSchemaVersion !== indexedReplacement.payloadSchemaVersion ? "replacement schema version does not match checkpoint" : indexedReplacement.finalityState !== "FINALIZED" || options.finalizedBlock < indexedReplacement.blockNumber ? "replacement has not reached finality" : indexedReplacement.observationState === "CONFLICTING" || indexedReplacement.observationState === "MALFORMED" ? "replacement observation is not eligible" : indexedReplacement.blockHash === checkpoint.lastObservedBlockHash ? "replacement block hash is not a replacement" : null;
+  const reason = indexedReplacement.blockNumber !== replayFromBlock ? "replacement block does not match replay cursor" : replayOldBlockHash === null ? "replay target old block hash is unavailable" : !trustedHeader ? "trusted canonical block header is unavailable" : trustedHeader.parentBlockHash === null ? "trusted predecessor parent is unavailable" : trustedHeader.chainKey !== replacement.chainKey || trustedHeader.blockNumber !== replayFromBlock || trustedHeader.blockHash !== replayOldBlockHash || trustedHeader.chainId !== checkpoint.chainId || trustedHeader.sourceDomain !== checkpoint.sourceDomain || trustedHeader.adapterVersion !== checkpoint.adapterVersion || trustedHeader.payloadSchemaVersion !== checkpoint.observationSchemaVersion ? "trusted canonical header metadata does not match checkpoint" : checkpoint.replayParentBlockHash !== trustedHeader.parentBlockHash ? "checkpoint predecessor does not match trusted canonical header" : indexedReplacement.parentBlockHash !== trustedHeader.parentBlockHash ? "replacement parent does not match trusted predecessor" : checkpoint.chainId !== indexedReplacement.chainId ? "replacement chain ID does not match checkpoint" : checkpoint.sourceDomain !== indexedReplacement.sourceDomain ? "replacement source domain does not match checkpoint" : checkpoint.adapterVersion !== indexedReplacement.adapterVersion ? "replacement adapter version does not match checkpoint" : checkpoint.observationSchemaVersion !== indexedReplacement.payloadSchemaVersion ? "replacement schema version does not match checkpoint" : indexedReplacement.finalityState !== "FINALIZED" || options.finalizedBlock < indexedReplacement.blockNumber ? "replacement has not reached finality" : indexedReplacement.observationState === "CONFLICTING" || indexedReplacement.observationState === "MALFORMED" ? "replacement observation is not eligible" : indexedReplacement.blockHash === replayOldBlockHash ? "replacement block hash is not a replacement" : null;
   if (reason) return blockedReplay(state, checkpoint, replacement, reason, observedAt, sequence, indexedReplacement.relationshipId ?? null);
+  if (replayOldBlockHash === null || !trustedHeader) return blockedReplay(state, checkpoint, replacement, "trusted replay target unavailable", observedAt, sequence, indexedReplacement.relationshipId ?? null);
+  const effectiveReplayFinality = checkpoint.lastFinalizedBlock !== null && checkpoint.lastFinalizedBlock > options.finalizedBlock ? checkpoint.lastFinalizedBlock : options.finalizedBlock;
 
   const observations = new Map(state.observations);
-  for (const [id, item] of observations) if (item.chainKey === replacement.chainKey && item.blockNumber >= replayFromBlock && id !== indexedReplacement.observationId) observations.set(id, { ...item, finalityState: "REORGED", projectionReference: `replay:superseded:${indexedReplacement.observationId}` });
+  for (const [id, item] of observations) if (item.chainKey === replacement.chainKey && item.blockNumber >= replayFromBlock && id !== indexedReplacement.observationId && item.blockHash !== indexedReplacement.blockHash) observations.set(id, { ...item, finalityState: "REORGED", projectionReference: `replay:superseded:${indexedReplacement.observationId}` });
   observations.set(indexedReplacement.observationId, { ...indexedReplacement, finalityState: "FINALIZED", projectionReference: `replay:current:${indexedReplacement.observationId}`, updatedAt: observedAt });
   const blockHistory = new Map(state.blockHistory);
   for (const [key, header] of blockHistory) {
     if (header.chainKey === replacement.chainKey && header.blockNumber === replayFromBlock) blockHistory.set(key, { ...header, status: header.blockHash === indexedReplacement.blockHash ? "CANONICAL" : "SUPERSEDED" });
   }
   const checkpoints = new Map(state.checkpoints);
-  checkpoints.set(replacement.chainKey, checkpointFromPrevious(replacement.chainKey, checkpoint, { sourceDomain: indexedReplacement.sourceDomain, chainId: indexedReplacement.chainId, lastObservedBlock: indexedReplacement.blockNumber, lastObservedBlockHash: indexedReplacement.blockHash, lastFinalizedBlock: options.finalizedBlock, adapterVersion: indexedReplacement.adapterVersion, observationSchemaVersion: indexedReplacement.payloadSchemaVersion, replayStatus: "CURRENT", replayFromBlock: null, replayParentBlockHash: null, replaySequence: sequence, updatedAt: observedAt }));
+  checkpoints.set(replacement.chainKey, checkpointFromPrevious(replacement.chainKey, checkpoint, { sourceDomain: indexedReplacement.sourceDomain, chainId: indexedReplacement.chainId, lastObservedBlock: indexedReplacement.blockNumber, lastObservedBlockHash: indexedReplacement.blockHash, lastFinalizedBlock: effectiveReplayFinality, adapterVersion: indexedReplacement.adapterVersion, observationSchemaVersion: indexedReplacement.payloadSchemaVersion, replayStatus: "CURRENT", replayFromBlock: null, replayOldBlockHash: null, replayParentBlockHash: null, replaySequence: sequence, updatedAt: observedAt }));
   const provenance = oldObservation ? addProvenance(state, { id: `provenance:${hash(indexedReplacement.observationId, oldObservation.observationId)}`, childId: indexedReplacement.observationId, parentId: oldObservation.observationId, relation: "REPLAYED_FROM", authority: "projection", evidenceId: null }) : state.provenance;
-  const attempt: ReplayAttempt = { id: baseId, relationshipId: indexedReplacement.relationshipId ?? null, chainKey: replacement.chainKey, fromBlock: replayFromBlock, replacementObservationId: indexedReplacement.observationId, oldBlockHash: checkpoint.lastObservedBlockHash, replacementBlockHash: indexedReplacement.blockHash, status: "SUCCEEDED", reason: "replacement finalized and replayed", recoveryRole: "projection operator", observedAt, sequence };
+  const attempt: ReplayAttempt = { id: baseId, relationshipId: indexedReplacement.relationshipId ?? null, chainKey: replacement.chainKey, fromBlock: replayFromBlock, replacementObservationId: indexedReplacement.observationId, oldBlockHash: replayOldBlockHash, replacementBlockHash: indexedReplacement.blockHash, status: "SUCCEEDED", reason: "replacement finalized and replayed", recoveryRole: "projection operator", observedAt, sequence };
   return { outcome: "REPLAYED", state: clone(state, { observations, checkpoints, blockHistory, provenance, replayHistory: [...state.replayHistory, attempt] }), attempt };
 }
 
 export function recordEvidence(state: SliceBState, evidence: EvidenceRecord): SliceBState {
   const existing = state.evidence.get(evidence.evidenceId);
   if (existing) {
-    if (stableJson(existing) === stableJson(evidence) || (existing.status === "REJECTED" && existing.reason === "CONFLICTING_DUPLICATE")) return state;
+    if (stableJson(existing) === stableJson(evidence)) return state;
     const conflictId = `evidence-conflict:${hash(evidence.evidenceId, stableJson(evidence))}`;
     if (state.evidenceConflicts.some((conflict) => conflict.id === conflictId)) return state;
-    const records = new Map(state.evidence);
-    records.set(evidence.evidenceId, { ...existing, status: "REJECTED", reason: "CONFLICTING_DUPLICATE" });
     const observations = new Map(state.observations);
     for (const [id, item] of observations) if (item.sourceEventId === evidence.sourceEventId) observations.set(id, { ...item, observationState: "CONFLICTING" });
     const conflict: EvidenceConflict = { id: conflictId, relationshipId: evidence.relationshipId, evidenceId: evidence.evidenceId, existingRelationshipId: existing.relationshipId, conflictingRelationshipId: evidence.relationshipId, existingSourceEventId: existing.sourceEventId, conflictingSourceEventId: evidence.sourceEventId, existingContentHash: hash(stableJson(existing)), conflictingContentHash: hash(stableJson(evidence)), reason: "same globally unique evidence ID has conflicting content" };
-    return clone(state, { evidence: records, evidenceConflicts: [...state.evidenceConflicts, conflict], observations });
+    return clone(state, { evidenceConflicts: [...state.evidenceConflicts, conflict], observations });
   }
   const records = new Map(state.evidence);
   records.set(evidence.evidenceId, evidence);
@@ -481,14 +516,21 @@ export function recordCanonical(state: SliceBState, reference: CanonicalReferenc
   return clone(state, { canonical, provenance });
 }
 
+function reconciliationKey(record: Pick<ReconciliationRecord, "relationshipId" | "canonicalObjectId" | "sourceEventId">): string {
+  return compositeKey("reconciliation", record.relationshipId, record.canonicalObjectId, record.sourceEventId);
+}
+
 export function reconcile(state: SliceBState, record: Omit<ReconciliationRecord, "id">): SliceBState {
-  const value = { ...record, id: `reconciliation:${hash(record.relationshipId, record.canonicalObjectId ?? "", record.sourceEventId ?? "", record.state, record.observationAmount ?? "", record.canonicalAmount ?? "")}` };
-  const existing = state.reconciliations.get(value.id);
+  const scopeKey = reconciliationKey(record);
+  const value = { ...record, id: `reconciliation:${hash(scopeKey, stableJson(record))}` };
+  const existing = state.reconciliations.get(scopeKey);
   if (existing && stableJson(existing) === stableJson(value)) return state;
   const reconciliations = new Map(state.reconciliations);
-  reconciliations.set(value.id, value);
+  reconciliations.set(scopeKey, value);
+  const historyValue = { ...value, id: `reconciliation-history:${hash(scopeKey, stableJson(record), existing?.id ?? "")}` };
+  const reconciliationHistory = state.reconciliationHistory.some((item) => item.id === historyValue.id) ? state.reconciliationHistory : [...state.reconciliationHistory, historyValue];
   const provenance = addProvenance(state, { id: `provenance:${hash(value.id, value.relationshipId)}`, childId: value.relationshipId, parentId: value.id, relation: "RECONCILED_BY", authority: value.authority, evidenceId: null });
-  return clone(state, { reconciliations, provenance });
+  return clone(state, { reconciliations, reconciliationHistory, provenance });
 }
 
 export function buildRelationshipGraph(state: SliceBState, relationshipId: string): RelationshipGraph {
@@ -537,6 +579,7 @@ export function snapshot(state: SliceBState): string {
     canonical: [...state.canonical.entries()].sort(([a], [b]) => a.localeCompare(b)),
     provenance: [...state.provenance].sort((a, b) => a.id.localeCompare(b.id)),
     reconciliations: [...state.reconciliations.entries()].sort(([a], [b]) => a.localeCompare(b)),
+    reconciliationHistory: [...state.reconciliationHistory].sort((a, b) => a.id.localeCompare(b.id)),
     checkpoints: [...state.checkpoints.entries()].sort(([a], [b]) => a - b),
     blockHistory: [...state.blockHistory.entries()].sort(([a], [b]) => a.localeCompare(b)),
     replayHistory: [...state.replayHistory].sort((a, b) => a.id.localeCompare(b.id)),
@@ -546,12 +589,37 @@ export function snapshot(state: SliceBState): string {
 }
 
 export function restoreSnapshot(serialized: string): SliceBState {
-  const parsed = JSON.parse(serialized, revive) as { schemaVersion: SliceBState["schemaVersion"]; observations: [string, ObservationEnvelope][]; evidence: [string, EvidenceRecord][]; evidenceConflicts?: EvidenceConflict[]; canonical: [string, CanonicalReference][]; provenance: ProvenanceLink[]; reconciliations: [string, ReconciliationRecord][]; checkpoints: [number, Record<string, unknown>][]; blockHistory: [string, BlockHeader][]; replayHistory: Record<string, unknown>[]; graphs: [string, RelationshipGraph][]; deadLetters: Record<string, unknown>[] };
+  const parsed = JSON.parse(serialized) as {
+    schemaVersion: SliceBState["schemaVersion"];
+    observations?: [string, ObservationEnvelope][];
+    evidence?: [string, EvidenceRecord][];
+    evidenceConflicts?: EvidenceConflict[];
+    canonical?: [string, CanonicalReference][];
+    provenance?: ProvenanceLink[];
+    reconciliations?: [string, ReconciliationRecord][];
+    reconciliationHistory?: ReconciliationRecord[];
+    checkpoints?: [number, Record<string, unknown>][];
+    blockHistory?: [string, BlockHeader][];
+    replayHistory?: Record<string, unknown>[];
+    graphs?: [string, RelationshipGraph][];
+    deadLetters?: Record<string, unknown>[];
+  };
   if (parsed.schemaVersion !== "slice-b-read-model-v1") throw new Error("UNSUPPORTED_SNAPSHOT_SCHEMA");
-  const checkpoints = new Map(parsed.checkpoints.map(([key, checkpoint]) => [key, { ...checkpoint, cursorMode: checkpoint.cursorMode ?? "SPARSE_EVENT" } as unknown as Checkpoint] as [number, Checkpoint]));
-  const replayHistory = parsed.replayHistory.map((attempt) => ({ ...attempt, relationshipId: attempt.relationshipId ?? null } as unknown as ReplayAttempt));
-  const deadLetters = parsed.deadLetters.map((item) => ({ ...item, relationshipId: item.relationshipId ?? null } as unknown as DeadLetterRecord));
-  return { schemaVersion: parsed.schemaVersion, observations: new Map(parsed.observations), evidence: new Map(parsed.evidence), evidenceConflicts: parsed.evidenceConflicts ?? [], canonical: new Map(parsed.canonical), provenance: parsed.provenance, reconciliations: new Map(parsed.reconciliations), checkpoints, blockHistory: new Map(parsed.blockHistory ?? []), replayHistory, graphs: new Map(parsed.graphs), deadLetters };
+  const observations = new Map((parsed.observations ?? []).map(([key, item]) => [key, { ...item, blockNumber: snapshotBigInt(item.blockNumber) } as ObservationEnvelope] as [string, ObservationEnvelope]));
+  const evidence = new Map((parsed.evidence ?? []).map(([key, item]) => [key, { ...item, blockNumber: snapshotBigInt(item.blockNumber) } as EvidenceRecord] as [string, EvidenceRecord]));
+  const checkpoints = new Map((parsed.checkpoints ?? []).map(([key, checkpoint]) => [key, { ...checkpoint, lastObservedBlock: snapshotBigInt(checkpoint.lastObservedBlock), lastFinalizedBlock: snapshotOptionalBigInt(checkpoint.lastFinalizedBlock), cursorMode: checkpoint.cursorMode ?? "SPARSE_EVENT", replayStatus: checkpoint.replayStatus ?? "CURRENT", replayParentBlockHash: checkpoint.replayParentBlockHash ?? null, replayOldBlockHash: checkpoint.replayOldBlockHash ?? null, replayFromBlock: snapshotOptionalBigInt(checkpoint.replayFromBlock), replaySequence: checkpoint.replaySequence ?? 0 } as unknown as Checkpoint] as [number, Checkpoint]));
+  const replayHistory = (parsed.replayHistory ?? []).map((attempt) => ({ ...attempt, fromBlock: snapshotBigInt(attempt.fromBlock), relationshipId: attempt.relationshipId ?? null } as unknown as ReplayAttempt));
+  const deadLetters = (parsed.deadLetters ?? []).map((item) => ({ ...item, relationshipId: item.relationshipId ?? null } as unknown as DeadLetterRecord));
+  const reconciliationRecords = parsed.reconciliations ?? [];
+  const reconciliations = new Map(reconciliationRecords.map(([, record]) => [reconciliationKey(record), record] as [string, ReconciliationRecord]));
+  const reconciliationHistory = parsed.reconciliationHistory ?? reconciliationRecords.map(([, record]) => {
+    const scopeKey = reconciliationKey(record);
+    const { id: _legacyId, ...recordWithoutId } = record;
+    return { ...record, id: `reconciliation-history:${hash(scopeKey, stableJson(recordWithoutId), "")}` };
+  });
+  const canonical = new Map((parsed.canonical ?? []).map(([, reference]) => [canonicalKey(reference.relationshipId, reference.objectId), { ...reference, blockNumber: snapshotOptionalBigInt(reference.blockNumber) } as CanonicalReference] as [string, CanonicalReference]));
+  const blockHistory = new Map((parsed.blockHistory ?? []).map(([, header]) => [blockKey(header.chainKey, snapshotBigInt(header.blockNumber), header.blockHash), { ...header, blockNumber: snapshotBigInt(header.blockNumber) } as BlockHeader] as [string, BlockHeader]));
+  return { schemaVersion: parsed.schemaVersion, observations, evidence, evidenceConflicts: parsed.evidenceConflicts ?? [], canonical, provenance: parsed.provenance ?? [], reconciliations, reconciliationHistory, checkpoints, blockHistory, replayHistory, graphs: new Map(parsed.graphs ?? []), deadLetters };
 }
 
 export function snapshotHash(state: SliceBState): string { return hash(snapshot(state)); }

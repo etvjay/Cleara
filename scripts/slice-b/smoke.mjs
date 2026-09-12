@@ -29,6 +29,7 @@ try {
   const evidence = await get("/evidence/evidence:slice-b-settlement"); expect(evidence.status === 200 && evidence.body.status === "ACCEPTED", "known evidence was not returned");
   const unknownEvidence = await get("/evidence/evidence:missing"); expect(unknownEvidence.status === 404 && unknownEvidence.body.error === "NOT_INDEXED", "unknown evidence must be typed 404");
   const traversal = await get("/evidence/%2e%2e%2fpackage.json"); expect(traversal.status === 404, "path traversal must not resolve");
+  const malformedEncoding = await get("/evidence/%E0%A4%A"); expect(malformedEncoding.status === 404, "malformed path encoding must not crash the API");
   const settlement = await get("/settlements/settlement:slice-b-1"); expect(settlement.status === 200, "known settlement object was not returned");
   const graph = await get("/relationships/relationship:slice-b:fixture/graph"); expect(graph.status === 200 && graph.body.schemaVersion === "slice-b-graph-v1", "graph route failed");
   const snapshot = await get("/snapshots/relationship:slice-b:fixture"); expect(snapshot.status === 200 && typeof snapshot.body.hash === "string", "snapshot route failed");

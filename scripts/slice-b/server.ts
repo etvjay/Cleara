@@ -13,6 +13,7 @@ state = recordEvidence(state, { evidenceId: "evidence:slice-b-settlement", relat
 state = projectRelationship(state, relationshipId);
 const api = createSliceBApi(state);
 const json = (value: unknown): string => JSON.stringify(value, (_, current) => typeof current === "bigint" ? `${current}n` : current);
+const safeDecode = (value: string): string | null => { try { return decodeURIComponent(value); } catch { return null; } };
 
 const server = createServer((request: IncomingMessage, response: ServerResponse) => {
   response.setHeader("content-type", "application/json; charset=utf-8"); response.setHeader("cache-control", "no-store");
@@ -22,8 +23,8 @@ const server = createServer((request: IncomingMessage, response: ServerResponse)
   else if (url.pathname === `/relationships/${relationshipId}`) value = api.relationship(relationshipId);
   else if (url.pathname === `/relationships/${relationshipId}/timeline`) value = api.timeline(relationshipId);
   else if (url.pathname === `/relationships/${relationshipId}/graph`) value = api.graph(relationshipId);
-  else if (/^\/evidence\/[^/]+$/.test(url.pathname)) { const evidenceId = decodeURIComponent(url.pathname.slice("/evidence/".length)); value = api.evidence(evidenceId); if (value === null) { response.writeHead(404); response.end(json({ error: "NOT_INDEXED", evidenceId })); return; } }
-  else if (/^\/(facilities|commitments|obligations|settlements)\/[^/]+$/.test(url.pathname)) { const objectId = decodeURIComponent(url.pathname.slice(url.pathname.indexOf("/") + 1).split("/")[1]!); value = api.object(objectId, url.searchParams.get("relationshipId") ?? undefined); if (value === null) { response.writeHead(404); response.end(json({ error: "NOT_INDEXED", objectId })); return; } if (typeof value === "object" && value !== null && "error" in value && (value as { error?: string }).error === "AMBIGUOUS_OBJECT_SCOPE") { response.writeHead(409); response.end(json(value)); return; } }
+  else if (/^\/evidence\/[^/]+$/.test(url.pathname)) { const evidenceId = safeDecode(url.pathname.slice("/evidence/".length)); if (evidenceId === null) { response.writeHead(404); response.end(json({ error: "NOT_INDEXED" })); return; } value = api.evidence(evidenceId); if (value === null) { response.writeHead(404); response.end(json({ error: "NOT_INDEXED", evidenceId })); return; } }
+  else if (/^\/(facilities|commitments|obligations|settlements)\/[^/]+$/.test(url.pathname)) { const encodedObjectId = url.pathname.slice(url.pathname.indexOf("/") + 1).split("/")[1]!; const objectId = safeDecode(encodedObjectId); if (objectId === null) { response.writeHead(404); response.end(json({ error: "NOT_INDEXED" })); return; } value = api.object(objectId, url.searchParams.get("relationshipId") ?? undefined); if (value === null) { response.writeHead(404); response.end(json({ error: "NOT_INDEXED", objectId })); return; } if (typeof value === "object" && value !== null && "error" in value && (value as { error?: string }).error === "AMBIGUOUS_OBJECT_SCOPE") { response.writeHead(409); response.end(json(value)); return; } }
   else if (url.pathname === "/reconciliation/exceptions") value = api.investigations(url.searchParams.get("relationshipId") ?? undefined);
   else if (url.pathname === "/investigations") value = api.investigations(url.searchParams.get("relationshipId") ?? undefined);
   else if (url.pathname === "/checkpoints") value = api.checkpoints();

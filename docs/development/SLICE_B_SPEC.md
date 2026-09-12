@@ -41,20 +41,25 @@ No axis promotes another. `FINALIZED` is not `PROVEN`, `PROVEN` is not `ACCEPTED
 
 ## Cursor and continuity semantics
 
-Slice B uses a `SPARSE_EVENT` cursor. `lastObservedBlock` means the latest indexed event block, not a complete chain-header cursor. `blockHistory` contains headers for indexed event blocks only; gaps with no relevant events are permitted. Reorg replay is stronger than ordinary sparse observation: it requires a `CANONICAL` trusted header for the superseded indexed event block, a valid parent hash, and matching checkpoint metadata. Missing or superseded trusted history blocks replay and leaves `REPLAY_REQUIRED`.
+Slice B uses a `SPARSE_EVENT` cursor. `lastObservedBlock` means the latest indexed event block, not a complete chain-header cursor. `blockHistory` contains headers for indexed event blocks only; gaps with no relevant events are permitted. A replay checkpoint stores the target identity separately as `replayFromBlock`, `replayOldBlockHash`, and `replayParentBlockHash`; `lastObservedBlockHash` remains the tip identity. Reorg replay is stronger than ordinary sparse observation: it requires a `CANONICAL` trusted header for the superseded indexed event block, a valid parent hash, and matching checkpoint metadata. Missing or superseded trusted history blocks replay and leaves `REPLAY_REQUIRED`. Earlier-block replay uses the target header's hash, never the checkpoint tip hash.
 
-Finality is monotonic. Lower or equal finality inputs cannot regress a checkpoint or demote finalized observations. Identical stale inputs are no-ops.
+Finality is monotonic across observation advancement and replay promotion. Lower or equal finality inputs cannot regress a checkpoint or demote finalized observations. Identical stale inputs are no-ops.
 
 ## Evidence identity scope
 
-Attestcoin evidence IDs are globally unique in this local model. Identical content is idempotent. Conflicting content using an existing evidence ID rejects the original record without replacing it and creates an explicit relationship-scoped evidence-conflict investigation. A conflicting record is never attached to the other relationship's evidence view.
-
+Attestcoin evidence IDs are globally unique in this local model. Identical content is idempotent. Conflicting content using an existing evidence ID preserves the original record byte-for-byte and creates an explicit relationship-scoped evidence-conflict investigation for each distinct conflicting payload. A conflicting record is never attached to the other relationship's evidence view.
 
 ```text
 domain + chainKey + transactionHash + eventIndex
 ```
 
 Observation identity additionally includes event type. Duplicate observations remain represented. A conflicting payload is marked conflicting. A reorged observation remains auditable and is not erased.
+
+## Reconciliation current state and history
+
+`reconciliations` is the current record for each typed relationship/source-event/canonical-object scope. A state transition replaces only that current entry and appends the prior/current transition to `reconciliationHistory`. Investigation reads use current reconciliation state, while relationship reads expose both current state and append-only history. This prevents stale historical mismatches from being presented as current state.
+
+Canonical, block-history, and reconciliation map keys use typed length-prefixed composite encoding. Hash inputs use the same component-boundary principle, so delimiter characters in relationship IDs, object IDs, block hashes, or source identities cannot merge distinct records.
 
 ## Read-only API
 

@@ -18,9 +18,10 @@ function belongsToRelationship(_state: SliceBState, relationshipId: string, evid
 
 function scopedObject(state: SliceBState, id: string, relationshipId?: string): unknown | null {
   const observations = [...state.observations.values()].filter((item) => item.objectId === id && (relationshipId === undefined || item.relationshipId === relationshipId));
-  const canonical = [...state.canonical.values()].filter((item) => item.objectId === id && (relationshipId === undefined || item.relationshipId === null || item.relationshipId === relationshipId));
+  const canonical = [...state.canonical.values()].filter((item) => item.objectId === id && (relationshipId === undefined || item.relationshipId === relationshipId));
   const reconciliations = [...state.reconciliations.values()].filter((item) => item.canonicalObjectId === id && (relationshipId === undefined || item.relationshipId === relationshipId));
-  const evidence = state.evidence.get(id);
+  const evidenceRecord = state.evidence.get(id);
+  const evidence = evidenceRecord && (relationshipId === undefined || evidenceRecord.relationshipId === relationshipId) ? evidenceRecord : undefined;
   const relationships = new Set<string>([
     ...observations.map((item) => item.relationshipId),
     ...canonical.flatMap((item) => item.relationshipId === null ? [] : [item.relationshipId]),
@@ -46,6 +47,7 @@ export function createSliceBApi(state: SliceBState): SliceBApi {
       evidence: [...state.evidence.values()].filter((item) => belongsToRelationship(state, id, item)),
       canonicalState: [...state.canonical.values()].filter((item) => item.relationshipId === id),
       reconciliations: [...state.reconciliations.values()].filter((item) => item.relationshipId === id),
+      reconciliationHistory: [...state.reconciliationHistory].filter((item) => item.relationshipId === id),
       graph: state.graphs.get(id) ?? null,
       evidenceMode: "local_projection",
     }),
