@@ -15,6 +15,14 @@ function serializedFixture() {
   return createSliceBApi(createSliceBState()).serializeSnapshot();
 }
 
+function sortedJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortedJson);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => [key, sortedJson(item)]));
+  }
+  return value;
+}
+
 test("checkpoint persists a serialized snapshot and a restarted store recovers it", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "cleara-slice-c-"));
   t.after(async () => rm(root, { recursive: true, force: true }));
@@ -49,6 +57,37 @@ test("a duplicate checkpoint still honors an explicitly supplied predecessor exp
     () => store.checkpoint("relationship:r1", snapshot, { expectedPreviousHash: "0".repeat(64) }),
     (error: unknown) => error instanceof SnapshotStoreError && error.code === "STALE_CHECKPOINT",
   );
+});
+
+test("a duplicate checkpoint with an explicit different sequence is rejected", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "cleara-slice-c-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+
+  const store = new DurableSnapshotStore(root);
+  const snapshot = serializedFixture();
+  await store.checkpoint("relationship:r1", snapshot, { sequence: 1 });
+
+  await assert.rejects(
+    () => store.checkpoint("relationship:r1", snapshot, { sequence: 2 }),
+    (error: unknown) => error instanceof SnapshotStoreError && error.code === "NON_MONOTONIC_CHECKPOINT",
+  );
+});
+
+test("checkpoint scopes remain isolated across restart", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "cleara-slice-c-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+
+  const store = new DurableSnapshotStore(root);
+  const snapshot = serializedFixture();
+  const secondBodyValue = { ...(JSON.parse(snapshot.body) as Record<string, unknown>), scopeMarker: "other" };
+  const secondBody = JSON.stringify(sortedJson(secondBodyValue));
+  const otherSnapshot = { hash: snapshotHashForBody(secondBody), body: secondBody };
+  await store.checkpoint("relationship:r1", snapshot);
+  await store.checkpoint("relationship:r2", otherSnapshot);
+
+  const restarted = new DurableSnapshotStore(root);
+  assert.deepEqual((await restarted.recover("relationship:r1"))?.snapshot, snapshot);
+  assert.deepEqual((await restarted.recover("relationship:r2"))?.snapshot, otherSnapshot);
 });
 
 test("restart rejects a rehashed snapshot with an invalid known bigint", async (t) => {

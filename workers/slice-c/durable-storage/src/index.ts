@@ -228,6 +228,7 @@ export class DurableSnapshotStore {
 
     const current = await this.readRecord(scopeId);
     if (options.expectedPreviousHash !== undefined && options.expectedPreviousHash !== (current?.snapshot.hash ?? null)) throw new SnapshotStoreError("STALE_CHECKPOINT", "checkpoint predecessor hash does not match durable state");
+    if (current && options.sequence !== undefined && options.sequence !== current.sequence) throw new SnapshotStoreError("NON_MONOTONIC_CHECKPOINT", "duplicate checkpoint sequence does not match durable state");
     if (current && current.snapshot.hash === snapshot.hash && current.snapshot.body === snapshot.body) return { status: "DUPLICATE", record: current };
 
     const sequence = options.sequence ?? (current ? current.sequence + 1 : 1);
