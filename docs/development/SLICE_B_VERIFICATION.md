@@ -2,7 +2,7 @@
 
 ## Status
 
-`IMPLEMENTED_LOCAL / RECEIPT_REPAIR_PENDING_FINAL_TREE`: the Slice B implementation and local matrix are verified, but this receipt repair is replacing stale exact-head fields. Final exact-head remote CI will be rerun on the final receipt tree. Browser verification remains `BROWSER_VERIFICATION_BLOCKED`. Hosted deployment remains `DEPLOYMENT_NOT_VERIFIED`.
+`IMPLEMENTED_LOCAL / FINAL_RECEIPT_PENDING`: the first repaired receipt tree passed exact-head remote CI, but this follow-up will record the final docs-only receipt tree and rerun CI on that final SHA. Browser verification remains `BROWSER_VERIFICATION_BLOCKED`. Hosted deployment remains `DEPLOYMENT_NOT_VERIFIED`.
 
 ## Repository
 
@@ -14,6 +14,8 @@ Primary blocker-closure implementation checkpoint: 37072a72a361ab4f8ce2ca890135d
 Final code-bearing checkpoint: b3f4288af9b6e1d59e8ce5a98294121dad148fa4
 Frozen consumer contract: slice-b-read-model-contract-v1
 Current tree before receipt repair: e5afedfb65c2afbe12e5d7b7b14bc730f631a3fb
+First receipt-repair tree: 5610e4dd2226a9936acceedec9f3b0c60c14337b
+First receipt-repair workflows: 34719162313 (Contracts), 34719162312 (Projection), 34719162279 (Workbench)
 Final verified tree: PENDING_FINAL_RECEIPT_COMMIT
 Final exact-head workflows: PENDING_FINAL_RECEIPT_CI
 ```

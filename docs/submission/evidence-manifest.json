@@ -286,6 +286,15 @@
       "implementationCheckpoint": "b3f4288af9b6e1d59e8ce5a98294121dad148fa4",
       "blockerClosureCheckpoint": "37072a72a361ab4f8ce2ca890135d104d5bd7dc7",
       "verifiedTree": "PENDING_FINAL_RECEIPT_COMMIT",
+      "intermediateRemoteVerification": {
+        "tree": "5610e4dd2226a9936acceedec9f3b0c60c14337b",
+        "workflows": {
+          "contracts": 34719162313,
+          "projection": 34719162312,
+          "workbench": 34719162279
+        },
+        "classification": "VERIFIED_REMOTE_INTERMEDIATE"
+      },
       "exactHeadWorkflows": null,
       "historicalRemoteReceipt": {
         "tree": "25b221a0d812658aef6e9fea70da23eaba7bfdf7",
