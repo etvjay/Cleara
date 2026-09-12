@@ -6,7 +6,7 @@
 **Base:** `f3ceae3d829bd0bb2b065e057de1f84d92f5ecd2`
 **Primary blocker-closure checkpoint:** `37072a72a361ab4f8ce2ca890135d104d5bd7dc7`
 **Final code-bearing checkpoint:** `b3f4288af9b6e1d59e8ce5a98294121dad148fa4`
-**Verification status:** Slice B remains `IMPLEMENTED_LOCAL`; first receipt-repair tree `5610e4dd2226a9936acceedec9f3b0c60c14337b` passed exact-head remote CI, and this docs-only follow-up will establish the final receipt tree and rerun CI. Browser and hosted deployment remain unverified.
+**Verification status:** Slice B is `VERIFIED_REMOTE` at the last exact workflow-verified receipt checkpoint `d7af2dfcd91371916f5e1ad36aecb7d177e7c9d6`. This final docs-only tree is verified separately through final branch/PR and workflow `headSha` readback. Browser and hosted deployment remain unverified.
 
 ## A. Current narrative truth
 

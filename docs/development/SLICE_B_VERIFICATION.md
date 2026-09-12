@@ -2,7 +2,7 @@
 
 ## Status
 
-`IMPLEMENTED_LOCAL / FINAL_RECEIPT_PENDING`: the first repaired receipt tree passed exact-head remote CI, but this follow-up will record the final docs-only receipt tree and rerun CI on that final SHA. Browser verification remains `BROWSER_VERIFICATION_BLOCKED`. Hosted deployment remains `DEPLOYMENT_NOT_VERIFIED`.
+`VERIFIED_REMOTE`: Slice B code and the repaired receipt checkpoint passed exact-head remote CI. The final docs-only receipt tree is verified separately by the final branch/PR ref and workflow `headSha` readback; this file avoids a self-referential commit hash. Browser verification remains `BROWSER_VERIFICATION_BLOCKED`. Hosted deployment remains `DEPLOYMENT_NOT_VERIFIED`.
 
 ## Repository
 
@@ -13,11 +13,9 @@ Starting head: f3ceae3d829bd0bb2b065e057de1f84d92f5ecd2
 Primary blocker-closure implementation checkpoint: 37072a72a361ab4f8ce2ca890135d104d5bd7dc7
 Final code-bearing checkpoint: b3f4288af9b6e1d59e8ce5a98294121dad148fa4
 Frozen consumer contract: slice-b-read-model-contract-v1
-Current tree before receipt repair: e5afedfb65c2afbe12e5d7b7b14bc730f631a3fb
-First receipt-repair tree: 5610e4dd2226a9936acceedec9f3b0c60c14337b
-First receipt-repair workflows: 34719162313 (Contracts), 34719162312 (Projection), 34719162279 (Workbench)
-Final verified tree: PENDING_FINAL_RECEIPT_COMMIT
-Final exact-head workflows: PENDING_FINAL_RECEIPT_CI
+Last exact workflow-verified receipt tree: d7af2dfcd91371916f5e1ad36aecb7d177e7c9d6
+Last exact workflow IDs: 34719287193 (Contracts), 34719287198 (Projection), 34719287194 (Workbench)
+Final docs-only tree: verified by final branch/PR ref and final workflow `headSha` readback
 ```
 
 The prior `verification/slice-b` receipts are historical evidence for that earlier tree and are not reused as evidence for this repair branch.
