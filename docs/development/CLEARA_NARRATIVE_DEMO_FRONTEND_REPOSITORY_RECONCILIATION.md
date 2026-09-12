@@ -2,7 +2,7 @@
 
 **Purpose:** Slice B repair and independent-verification scope lock.
 **Repository:** `etvjay/Cleara`
-**Branch:** `verification/slice-b-repair`
+**Branch:** `verification/slice-b`
 **Base:** `f3ceae3d829bd0bb2b065e057de1f84d92f5ecd2`
 **Repair checkpoint:** `37072a72a361ab4f8ce2ca890135d104d5bd7dc7`
 **Verification status:** local Slice B candidate; exact-head remote CI is pending on the final pushed repair tree. Browser and hosted deployment remain unverified.
