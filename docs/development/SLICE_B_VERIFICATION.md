@@ -8,7 +8,7 @@
 
 ```text
 Repository: etvjay/Cleara
-Repair branch: verification/slice-b-repair
+Repair branch: verification/slice-b
 Starting head: f3ceae3d829bd0bb2b065e057de1f84d92f5ecd2
 Verified local checkpoint: b3f4288af9b6e1d59e8ce5a98294121dad148fa4
 Frozen consumer contract: slice-b-read-model-contract-v1
