@@ -6,6 +6,7 @@ import {
   backfillReplayHeader,
   buildRelationshipGraph,
   createSliceBState,
+  DEFAULT_SOURCE_SCOPE,
   ingestObservation,
   observationId,
   projectRelationship,
@@ -22,6 +23,7 @@ import {
 } from "../src/slice-b.js";
 
 const identity = { domain: "ethereum-sepolia", chainKey: 1, transactionHash: "0xabc", eventIndex: 0 } as const;
+const evidenceSource = (transactionHash: string, eventIndex = 0): string => sourceEventId({ domain: "ethereum-sepolia", chainKey: 1, transactionHash, eventIndex });
 const baseObservation = (
   blockNumber = 10n,
   blockHash = "h10",
@@ -87,7 +89,7 @@ test("finality promotion never accepts an unfinalized observation", () => {
 
 test("evidence and canonical state remain separate axes", () => {
   let state = ingestObservation(createSliceBState(), baseObservation());
-  state = recordEvidence(state, { evidenceId: "evidence:1", relationshipId: "relationship:fixture", sourceEventId: sourceEventId(identity), mode: "fixture_from_live_evidence", sourceDomain: "ethereum-sepolia", chainKey: 1, transactionHash: "0xabc", blockNumber: 10n, attestcoinReference: "attest:1", status: "PENDING", linkedCreditcoinTransition: null, sourceReference: "M6", reason: null });
+  state = recordEvidence(state, { evidenceId: "evidence:1", relationshipId: "relationship:fixture", sourceEventId: sourceEventId(identity), mode: "fixture_from_live_evidence", sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, eventIndex: 0, transactionHash: "0xabc", blockNumber: 10n, blockHash: "h10", attestcoinReference: "attest:1", status: "PENDING", linkedCreditcoinTransition: null, sourceReference: "M6", reason: null });
   state = recordCanonical(state, { relationshipId: "relationship:fixture", creditcoinChainId: 102031, contractAddress: "0xcc3", transactionHash: null, blockNumber: null, blockHash: null, objectId: "commitment:1", state: "ACTIVE", readStatus: "READ", expectedState: "ACTIVE", readAt: 2 });
   const item = state.observations.get(baseObservation().observationId)!;
   assert.equal(item.evidenceId, "evidence:1");
@@ -168,7 +170,7 @@ test("explicit replay promotes the replacement once and is idempotent", () => {
   assert.equal(replayed.state.checkpoints.get(1)?.replayStatus, "CURRENT");
   assert.equal(replayed.state.observations.get(baseObservation().observationId)?.finalityState, "REORGED");
   assert.equal(replayed.state.observations.get(replacement.observationId)?.finalityState, "FINALIZED");
-  const second = replayReorg(replayed.state, replacement, { finalizedBlock: 10n, observedAt: 5 });
+  const second = replayReorg(replayed.state, finalizedReplacement, { finalizedBlock: 10n, observedAt: 4 });
   assert.equal(second.outcome, "NOOP");
   assert.equal(second.state.replayHistory.filter((attempt) => attempt.status === "SUCCEEDED").length, 1);
 });
@@ -251,8 +253,8 @@ test("read-only API exposes projection boundary and checkpoints", () => {
 
 test("evidence lookup is explicit and relationship scope is isolated", () => {
   let state = createSliceBState();
-  state = recordEvidence(state, { evidenceId: "evidence:r1", relationshipId: "r1", sourceEventId: "source:r1", mode: "implemented_local", sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, eventIndex: 0, blockHash: "evidence:r1-block", transactionHash: "0xr1", blockNumber: 1n, attestcoinReference: "attest:r1", status: "ACCEPTED", linkedCreditcoinTransition: "cc3:r1", sourceReference: "fixture:r1", reason: null });
-  state = recordEvidence(state, { evidenceId: "evidence:r2", relationshipId: "r2", sourceEventId: "source:r2", mode: "implemented_local", sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, eventIndex: 0, blockHash: "evidence:r2-block", transactionHash: "0xr2", blockNumber: 2n, attestcoinReference: "attest:r2", status: "PENDING", linkedCreditcoinTransition: null, sourceReference: "fixture:r2", reason: null });
+  state = recordEvidence(state, { evidenceId: "evidence:r1", relationshipId: "r1", sourceEventId: evidenceSource("0xr1"), mode: "implemented_local", sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, eventIndex: 0, blockHash: "evidence:r1-block", transactionHash: "0xr1", blockNumber: 1n, attestcoinReference: "attest:r1", status: "ACCEPTED", linkedCreditcoinTransition: "cc3:r1", sourceReference: "fixture:r1", reason: null });
+  state = recordEvidence(state, { evidenceId: "evidence:r2", relationshipId: "r2", sourceEventId: evidenceSource("0xr2"), mode: "implemented_local", sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, eventIndex: 0, blockHash: "evidence:r2-block", transactionHash: "0xr2", blockNumber: 2n, attestcoinReference: "attest:r2", status: "PENDING", linkedCreditcoinTransition: null, sourceReference: "fixture:r2", reason: null });
   state = recordCanonical(state, { relationshipId: "r1", creditcoinChainId: 102031, contractAddress: "0xcc3-r1", transactionHash: null, blockNumber: null, blockHash: null, objectId: "object:r1", state: "ACTIVE", readStatus: "READ", expectedState: "ACTIVE", readAt: 3 });
   state = recordCanonical(state, { relationshipId: "r2", creditcoinChainId: 102031, contractAddress: "0xcc3-r2", transactionHash: null, blockNumber: null, blockHash: null, objectId: "object:r2", state: "ACTIVE", readStatus: "READ", expectedState: "ACTIVE", readAt: 3 });
   const api = createSliceBApi(state);
@@ -264,7 +266,7 @@ test("evidence lookup is explicit and relationship scope is isolated", () => {
   assert.equal(api.object("evidence:r2", "r1"), null);
 });
 test("global evidence is visible only to unscoped lookup", () => {
-  const global = { evidenceId: "global-object", relationshipId: null, sourceEventId: "source:global", mode: "implemented_local" as const, sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, eventIndex: 0, blockHash: "global-object-block", transactionHash: "0xglobal", blockNumber: 1n, attestcoinReference: null, status: "ACCEPTED" as const, linkedCreditcoinTransition: null, sourceReference: "global fixture", reason: null };
+  const global = { evidenceId: "global-object", relationshipId: null, sourceEventId: evidenceSource("0xglobal"), mode: "implemented_local" as const, sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, eventIndex: 0, blockHash: "global-object-block", transactionHash: "0xglobal", blockNumber: 1n, attestcoinReference: null, status: "ACCEPTED" as const, linkedCreditcoinTransition: null, sourceReference: "global fixture", reason: null };
   const api = createSliceBApi(recordEvidence(createSliceBState(), global));
   assert.equal(api.evidence("global-object")?.relationshipId, null);
   assert.equal(api.object("global-object", "r1"), null);
@@ -309,7 +311,7 @@ test("composite canonical identifiers cannot collide at delimiter boundaries", (
 });
 
 test("identical evidence recording is idempotent and conflicting evidence is explicit", () => {
-  const evidence = { evidenceId: "evidence:idempotent", relationshipId: "r1", sourceEventId: "source:idempotent", mode: "implemented_local" as const, sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, eventIndex: 0, blockHash: "evidence:idempotent-block", transactionHash: "0xidempotent", blockNumber: 1n, attestcoinReference: "attest:idempotent", status: "ACCEPTED" as const, linkedCreditcoinTransition: "cc3:idempotent", sourceReference: "fixture:idempotent", reason: null };
+  const evidence = { evidenceId: "evidence:idempotent", relationshipId: "r1", sourceEventId: evidenceSource("0xidempotent"), mode: "implemented_local" as const, sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, eventIndex: 0, blockHash: "evidence:idempotent-block", transactionHash: "0xidempotent", blockNumber: 1n, attestcoinReference: "attest:idempotent", status: "ACCEPTED" as const, linkedCreditcoinTransition: "cc3:idempotent", sourceReference: "fixture:idempotent", reason: null };
   const once = recordEvidence(createSliceBState(), evidence);
   const twice = recordEvidence(once, evidence);
   assert.equal(snapshotHash(twice), snapshotHash(once));
@@ -317,20 +319,20 @@ test("identical evidence recording is idempotent and conflicting evidence is exp
   const restored = restoreSnapshot(snapshot(once));
   assert.equal(snapshotHash(recordEvidence(restored, evidence)), snapshotHash(restored));
   const conflicting = recordEvidence(once, { ...evidence, status: "REJECTED", reason: "different content" });
-  assert.equal(conflicting.evidence.get(evidence.evidenceId)?.status, "ACCEPTED");
+  assert.equal(conflicting.evidence.get(evidence.evidenceId)?.status, "PENDING");
   assert.equal(conflicting.evidenceConflicts.length, 1);
   assert.equal(conflicting.provenance.length, once.provenance.length);
   assert.equal(snapshotHash(recordEvidence(conflicting, { ...evidence, status: "REJECTED", reason: "different content" })), snapshotHash(conflicting));
 });
 
 test("evidence conflicts preserve the original and retain distinct conflict history", () => {
-  const original = { evidenceId: "evidence:preserve", relationshipId: "r1", sourceEventId: "source:original", mode: "implemented_local" as const, sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, eventIndex: 0, blockHash: "evidence:preserve-block", transactionHash: "0xoriginal", blockNumber: 1n, attestcoinReference: "attest:original", status: "ACCEPTED" as const, linkedCreditcoinTransition: null, sourceReference: "fixture:original", reason: null };
-  const conflictOne = { ...original, relationshipId: "r2", sourceEventId: "source:conflict-one", transactionHash: "0xconflict-one", status: "REJECTED" as const, reason: "wrong source" };
-  const conflictTwo = { ...original, relationshipId: "r3", sourceEventId: "source:conflict-two", transactionHash: "0xconflict-two", status: "PENDING" as const, reason: null };
+  const original = { evidenceId: "evidence:preserve", relationshipId: "r1", sourceEventId: evidenceSource("0xoriginal"), mode: "implemented_local" as const, sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, eventIndex: 0, blockHash: "evidence:preserve-block", transactionHash: "0xoriginal", blockNumber: 1n, attestcoinReference: "attest:original", status: "ACCEPTED" as const, linkedCreditcoinTransition: null, sourceReference: "fixture:original", reason: null };
+  const conflictOne = { ...original, relationshipId: "r2", sourceEventId: evidenceSource("0xconflict-one"), transactionHash: "0xconflict-one", status: "REJECTED" as const, reason: "wrong source" };
+  const conflictTwo = { ...original, relationshipId: "r3", sourceEventId: evidenceSource("0xconflict-two"), transactionHash: "0xconflict-two", status: "PENDING" as const, reason: null };
   let state = recordEvidence(createSliceBState(), original);
   state = recordEvidence(state, conflictOne);
   state = recordEvidence(state, conflictTwo);
-  assert.deepEqual(state.evidence.get(original.evidenceId), original);
+  assert.deepEqual(state.evidence.get(original.evidenceId), { ...original, status: "PENDING", reason: "awaiting matching observation" });
   assert.equal(state.evidenceConflicts.length, 2);
   assert.deepEqual(state.evidenceConflicts.map((conflict) => conflict.conflictingRelationshipId).sort(), ["r2", "r3"]);
   assert.equal(state.evidenceConflicts.every((conflict) => conflict.existingContent?.evidenceId === original.evidenceId && conflict.conflictingContent?.evidenceId === original.evidenceId), true);
@@ -433,7 +435,7 @@ test("replay rejects negative finality input without promotion", () => {
 });
 
 test("sparse event cursor semantics allow gaps but replay still needs indexed headers", () => {
-  let state = ingestObservation(createSliceBState(), baseObservation(12n, "h12", "0xgap", "relationship:gap", "commitment:gap", "h11"));
+  let state = ingestObservation(createSliceBState([{ ...DEFAULT_SOURCE_SCOPE, anchorBlockNumber: 11n, anchorBlockHash: "h11" }]), baseObservation(12n, "h12", "0xgap", "relationship:gap", "commitment:gap", "h11"));
   state = advanceFinality(state, 1, 12n, 2);
   const checkpoint = state.checkpoints.get(1)! as typeof state.checkpoints extends ReadonlyMap<number, infer C> ? C : never;
   assert.equal(checkpoint.lastObservedBlock, 12n);
@@ -656,7 +658,8 @@ test("evidence linkage is identity-safe and arrival-order independent", () => {
   const wrong = { ...evidence, evidenceId: "evidence:wrong-block", blockNumber: 11n, blockHash: "h11" };
   const mismatched = recordEvidence(observationFirst, wrong);
   assert.equal(mismatched.observations.get(observation.observationId)?.evidenceId, evidence.evidenceId);
-  assert.equal(mismatched.evidence.get(wrong.evidenceId)?.evidenceId, wrong.evidenceId);
+  assert.equal(mismatched.evidence.has(wrong.evidenceId), false);
+  assert.equal(mismatched.deadLetters.some((item) => item.code === "EVIDENCE_IDENTITY_MISMATCH" && item.observationId === `evidence:${wrong.evidenceId}:identity-mismatch`), true);
   const { chainId: _chainId, eventIndex: _eventIndex, blockHash: _blockHash, ...evidenceWithoutIdentity } = evidence;
   const missingIdentity = { ...evidenceWithoutIdentity, evidenceId: "evidence:missing-identity" };
   const rejected = recordEvidence(createSliceBState(), missingIdentity);
@@ -679,7 +682,8 @@ test("forged replay commands cannot return NOOP and exact valid replay does", ()
   let state = ingestObservation(createSliceBState(), baseObservation()); state = advanceFinality(state, 1, 10n, 2);
   const replacement = baseObservation(10n, "replacement-forged", "0xforged-replay", "relationship:forged", "object:forged", "h9");
   state = ingestObservation(state, replacement); state = advanceFinality(state, 1, 10n, 3);
-  const first = replayReorg(state, state.observations.get(replacement.observationId)!, { finalizedBlock: 10n, observedAt: 4 });
+  const command = state.observations.get(replacement.observationId)!;
+  const first = replayReorg(state, command, { finalizedBlock: 10n, observedAt: 4 });
   assert.equal(first.outcome, "REPLAYED");
   const forged = { ...replacement, relationshipId: "relationship:forged-other" };
   const blocked = replayReorg(first.state, forged, { finalizedBlock: 10n, observedAt: 5 });
@@ -696,7 +700,9 @@ test("forged replay commands cannot return NOOP and exact valid replay does", ()
     { ...replacement, payloadSchemaVersion: "other-schema" },
   ]) assert.equal(replayReorg(first.state, variant, { finalizedBlock: 10n, observedAt: 5 }).outcome, "BLOCKED");
   assert.equal(replayReorg(first.state, replacement, { finalizedBlock: 11n, observedAt: 5 }).outcome, "BLOCKED");
-  const repeated = replayReorg(first.state, first.state.observations.get(replacement.observationId)!, { finalizedBlock: 10n, observedAt: 6 });
+  const alteredTimestamp = replayReorg(first.state, first.state.observations.get(replacement.observationId)!, { finalizedBlock: 10n, observedAt: 6 });
+  assert.equal(alteredTimestamp.outcome, "BLOCKED");
+  const repeated = replayReorg(first.state, command, { finalizedBlock: 10n, observedAt: 4 });
   assert.equal(repeated.outcome, "NOOP");
 });
 
@@ -711,13 +717,13 @@ test("API graph reads are rebuilt after later mutations", () => {
   assert.equal(after.nodes.some((node) => node.id === second.objectId), true);
 });
 test("global evidence IDs reject cross-relationship conflicts without leaking scope", () => {
-  const first = { evidenceId: "evidence:global", relationshipId: "r1", sourceEventId: "source:r1", mode: "implemented_local" as const, sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, eventIndex: 0, blockHash: "evidence:global-block", transactionHash: "0xr1", blockNumber: 1n, attestcoinReference: "attest:r1", status: "ACCEPTED" as const, linkedCreditcoinTransition: null, sourceReference: "fixture:r1", reason: null };
-  const conflicting = { ...first, relationshipId: "r2", sourceEventId: "source:r2", transactionHash: "0xr2" };
+  const first = { evidenceId: "evidence:global", relationshipId: "r1", sourceEventId: evidenceSource("0xr1"), mode: "implemented_local" as const, sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, eventIndex: 0, blockHash: "evidence:global-block", transactionHash: "0xr1", blockNumber: 1n, attestcoinReference: "attest:r1", status: "ACCEPTED" as const, linkedCreditcoinTransition: null, sourceReference: "fixture:r1", reason: null };
+  const conflicting = { ...first, relationshipId: "r2", sourceEventId: evidenceSource("0xr2"), transactionHash: "0xr2" };
   let state = recordEvidence(createSliceBState(), first);
   state = recordEvidence(state, conflicting);
   const api = createSliceBApi(state);
   assert.equal(state.evidence.get("evidence:global")?.relationshipId, "r1");
-  assert.equal(state.evidence.get("evidence:global")?.status, "ACCEPTED");
+  assert.equal(state.evidence.get("evidence:global")?.status, "PENDING");
   assert.equal(state.evidenceConflicts.length, 1);
   assert.equal((api.relationship("r1") as { evidence: EvidenceRecord[] }).evidence[0]?.relationshipId, "r1");
   assert.equal((api.relationship("r2") as { evidence: EvidenceRecord[] }).evidence.length, 0);
@@ -725,8 +731,8 @@ test("global evidence IDs reject cross-relationship conflicts without leaking sc
 });
 
 test("evidence conflict investigations are visible to both affected relationships", () => {
-  const original = { evidenceId: "evidence:scope-conflict", relationshipId: "r1", sourceEventId: "source:scope-r1", mode: "implemented_local" as const, sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, eventIndex: 0, blockHash: "evidence:scope-conflict-block", transactionHash: "0xscope-r1", blockNumber: 1n, attestcoinReference: "attest:scope-r1", status: "ACCEPTED" as const, linkedCreditcoinTransition: null, sourceReference: "fixture:scope-r1", reason: null };
-  const conflicting = { ...original, relationshipId: "r2", sourceEventId: "source:scope-r2", transactionHash: "0xscope-r2" };
+  const original = { evidenceId: "evidence:scope-conflict", relationshipId: "r1", sourceEventId: evidenceSource("0xscope-r1"), mode: "implemented_local" as const, sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, eventIndex: 0, blockHash: "evidence:scope-conflict-block", transactionHash: "0xscope-r1", blockNumber: 1n, attestcoinReference: "attest:scope-r1", status: "ACCEPTED" as const, linkedCreditcoinTransition: null, sourceReference: "fixture:scope-r1", reason: null };
+  const conflicting = { ...original, relationshipId: "r2", sourceEventId: evidenceSource("0xscope-r2"), transactionHash: "0xscope-r2" };
   const state = recordEvidence(recordEvidence(createSliceBState(), original), conflicting);
   const api = createSliceBApi(state);
   assert.equal(api.investigations("r1").some((item) => (item as { evidenceId?: string }).evidenceId === original.evidenceId), true);
@@ -834,8 +840,8 @@ test("snapshot restore preserves literal strings that resemble bigint values", (
 test("canonical serialization and graph hashes are independent of insertion order", () => {
   const first = baseObservation(9n, "h9", "0xfirst", "relationship:fixture", "commitment:same", "h8", 1, 11155111, "ethereum-sepolia", "test", "slice-b-observation-v1", 1);
   const second = baseObservation(10n, "h10", "0xsecond", "relationship:fixture", "commitment:same", "h9", 1, 11155111, "ethereum-sepolia", "test", "slice-b-observation-v1", 2);
-  const evidenceOne = { evidenceId: "evidence:determinism:one", relationshipId: "relationship:fixture", sourceEventId: first.sourceEventId, mode: "implemented_local" as const, sourceDomain: "ethereum-sepolia", chainKey: 1, transactionHash: "0xfirst", blockNumber: 9n, attestcoinReference: "attest:one", status: "ACCEPTED" as const, linkedCreditcoinTransition: null, sourceReference: "fixture:one", reason: null };
-  const evidenceTwo = { ...evidenceOne, evidenceId: "evidence:determinism:two", sourceEventId: second.sourceEventId, transactionHash: "0xsecond", blockNumber: 10n, attestcoinReference: "attest:two" };
+  const evidenceOne = { evidenceId: "evidence:determinism:one", relationshipId: "relationship:fixture", sourceEventId: first.sourceEventId, mode: "implemented_local" as const, sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, eventIndex: 1, blockHash: "h9", transactionHash: "0xfirst", blockNumber: 9n, attestcoinReference: "attest:one", status: "ACCEPTED" as const, linkedCreditcoinTransition: null, sourceReference: "fixture:one", reason: null };
+  const evidenceTwo = { ...evidenceOne, evidenceId: "evidence:determinism:two", sourceEventId: second.sourceEventId, eventIndex: 2, blockHash: "h10", transactionHash: "0xsecond", blockNumber: 10n, attestcoinReference: "attest:two" };
   const canonicalOne = { relationshipId: "relationship:fixture", creditcoinChainId: 102031, contractAddress: "0xcc3-one", transactionHash: null, blockNumber: null, blockHash: null, objectId: "commitment:one", state: "ACTIVE", readStatus: "READ" as const, expectedState: "ACTIVE", readAt: 3 };
   const canonicalTwo = { ...canonicalOne, objectId: "commitment:two", contractAddress: "0xcc3-two" };
   const reconciliationOne = { relationshipId: "relationship:fixture", sourceEventId: first.sourceEventId, canonicalObjectId: "commitment:one", state: "PENDING" as const, observationAmount: "100000", canonicalAmount: null, authority: "projection" as const, nextAction: "Wait", recoveryRole: "operator", reason: "fixture" };
@@ -888,4 +894,74 @@ test("canonical serialization and graph hashes are independent of insertion orde
     blockHistory: new Map([...currentBlockHistory.entries()].reverse()),
   };
   assert.equal(snapshotHash(reordered), snapshotHash(left));
+});
+
+test("explicit source scope prevents bootstrap metadata and parent poisoning", () => {
+  const scope = { chainKey: 7, chainId: 777, sourceDomain: "source-seven", adapterVersion: "scope-v1", observationSchemaVersion: "scope-observation-v1", finalityPolicyVersion: "scope-finality-v1", cursorMode: "SPARSE_EVENT" as const, anchorBlockNumber: 9n, anchorBlockHash: "scope-h9" };
+  const scoped = (overrides: Partial<ObservationEnvelope> = {}): ObservationEnvelope => {
+    const tx = overrides.transactionHash ?? "0xscope";
+    const candidate = { ...baseObservation(10n, "scope-h10", tx, "relationship:scope", "object:scope", "scope-h9", scope.chainKey, scope.chainId, scope.sourceDomain, scope.adapterVersion, scope.observationSchemaVersion), ...overrides, transactionHash: tx };
+    const identity = { domain: candidate.sourceDomain, chainKey: candidate.chainKey, transactionHash: tx, eventIndex: candidate.eventIndex };
+    return { ...candidate, observationId: observationId(identity, "CapitalCommitted"), sourceEventId: sourceEventId(identity) };
+  };
+  let state = createSliceBState([scope]);
+  state = ingestObservation(state, scoped({ chainId: 999, transactionHash: "0xwrong-chain" }));
+  assert.equal(state.observations.size, 0);
+  assert.equal(state.checkpoints.get(scope.chainKey)?.chainId, scope.chainId);
+  assert.equal(state.deadLetters.at(-1)?.nextAction, "repair chain/domain/adapter/schema metadata and retry");
+
+  state = ingestObservation(state, scoped({ parentBlockHash: "wrong-parent", transactionHash: "0xwrong-parent" }));
+  state = advanceFinality(state, scope.chainKey, 10n, 2);
+  assert.equal([...state.blockHistory.values()].find((header) => header.blockHash === "scope-h10")?.status, "CANDIDATE");
+  assert.equal(state.observations.get(observationId({ domain: scope.sourceDomain, chainKey: scope.chainKey, transactionHash: "0xwrong-parent", eventIndex: 0 }, "CapitalCommitted"))?.finalityState, "FINALIZED");
+
+  const valid = scoped({ transactionHash: "0xvalid-parent" });
+  state = ingestObservation(state, valid);
+  state = advanceFinality(state, scope.chainKey, 10n, 3);
+  assert.equal([...state.blockHistory.values()].filter((header) => header.blockNumber === 10n && header.status === "CANONICAL").length, 1);
+  assert.equal(state.observations.get(valid.observationId)?.finalityState, "FINALIZED");
+});
+
+test("null and primitive public inputs become typed recovery records", () => {
+  const state = createSliceBState();
+  const cases: Array<[string, () => typeof state]> = [
+    ["ingest", () => ingestObservation(state, null as never)],
+    ["evidence", () => recordEvidence(state, null as never)],
+    ["canonical", () => recordCanonical(state, null as never)],
+    ["reconcile", () => reconcile(state, null as never)],
+    ["backfill", () => backfillReplayHeader(state, null as never)],
+    ["replay", () => replayReorg(state, null as never, null as never).state],
+  ];
+  for (const [label, run] of cases) {
+    assert.doesNotThrow(run, label);
+  }
+  assert.ok(state.deadLetters.length >= 0);
+});
+
+test("caller-derived references are discarded until accepted transitions create them", () => {
+  const input = { ...baseObservation(), evidenceId: "evidence:forged", creditcoinReference: "cc3:forged", projectionReference: "projection:forged", reconciliationReference: "reconciliation:forged" };
+  const state = ingestObservation(createSliceBState(), input);
+  const stored = state.observations.get(input.observationId)!;
+  assert.equal(stored.evidenceId, null);
+  assert.equal(stored.creditcoinReference, null);
+  assert.equal(stored.projectionReference, null);
+  assert.equal(stored.reconciliationReference, null);
+  assert.equal(buildRelationshipGraph(state, input.relationshipId).nodes.some((node) => node.provenanceIds.includes("evidence:forged")), false);
+});
+
+test("snapshot restore rejects wrong keys and invalid graphs without mutating the prior state", () => {
+  let state = ingestObservation(createSliceBState(), baseObservation());
+  state = projectRelationship(state, "relationship:fixture");
+  const before = snapshotHash(state);
+  const wrongKey = JSON.parse(snapshot(state)) as { observations: [string, Record<string, unknown>][] };
+  wrongKey.observations[0]![0] = "wrong-observation-key";
+  assert.throws(() => restoreSnapshot(JSON.stringify(wrongKey)), /SNAPSHOT_KEY_MISMATCH:observations/);
+  assert.equal(snapshotHash(state), before);
+  const invalidCheckpoint = JSON.parse(snapshot(state)) as { checkpoints: [number, Record<string, unknown>][] };
+  invalidCheckpoint.checkpoints[0]![1]!.chainId = -1;
+  assert.throws(() => restoreSnapshot(JSON.stringify(invalidCheckpoint)), /INVALID_SNAPSHOT_RECORD/);
+  const danglingGraph = JSON.parse(snapshot(state)) as { graphs: [string, { edges: Array<Record<string, unknown>> }][] };
+  danglingGraph.graphs[0]![1]!.edges[0]!.to = "missing-node";
+  assert.throws(() => restoreSnapshot(JSON.stringify(danglingGraph)), /INVALID_SNAPSHOT_RECORD/);
+  assert.equal(snapshotHash(state), before);
 });

@@ -8,6 +8,7 @@ import {
   buildRelationshipGraph,
   createSliceBApi,
   createSliceBState,
+  DEFAULT_SOURCE_SCOPE,
   ingestObservation,
   observationId,
   projectRelationship,
@@ -23,6 +24,8 @@ import {
 
 const relationshipId = "relationship:slice-b:fixture";
 const identity = { domain: "ethereum-sepolia", chainKey: 1, transactionHash: "0xsliceb0001", eventIndex: 0 } as const;
+const demoScope = { ...DEFAULT_SOURCE_SCOPE, adapterVersion: "slice-b-demo-v1", finalityPolicyVersion: "slice-b-demo-finality-v1", anchorBlockHash: "slice-b-block-9" };
+const createDemoState = () => createSliceBState([demoScope]);
 
 function observation(tx: string = identity.transactionHash, blockHash = "slice-b-block-10", parentBlockHash = "slice-b-block-9", relation = relationshipId, objectId = "settlement:slice-b-1"): ObservationEnvelope {
   const source = { ...identity, transactionHash: tx };
@@ -32,14 +35,14 @@ function observation(tx: string = identity.transactionHash, blockHash = "slice-b
 }
 
 function baseState(): ReturnType<typeof createSliceBState> {
-  let state = ingestObservation(createSliceBState(), observation());
+  let state = ingestObservation(createDemoState(), observation());
   state = advanceFinality(state, 1, 10n, 101);
   return state;
 }
 
 function happyPath() {
   let state = baseState();
-  state = recordEvidence(state, { evidenceId: "evidence:slice-b-settlement", relationshipId, sourceEventId: sourceEventId(identity), mode: "fixture_from_live_evidence", sourceDomain: "ethereum-sepolia", chainKey: 1, transactionHash: identity.transactionHash, blockNumber: 10n, attestcoinReference: "attestcoin:fixture:m11", status: "ACCEPTED", linkedCreditcoinTransition: "cc3:reconciliation:fixture", sourceReference: "M11 settlement evidence", reason: null });
+  state = recordEvidence(state, { evidenceId: "evidence:slice-b-settlement", relationshipId, sourceEventId: sourceEventId(identity), mode: "fixture_from_live_evidence", sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, eventIndex: 0, blockHash: "slice-b-block-10", transactionHash: identity.transactionHash, blockNumber: 10n, attestcoinReference: "attestcoin:fixture:m11", status: "ACCEPTED", linkedCreditcoinTransition: "cc3:reconciliation:fixture", sourceReference: "M11 settlement evidence", reason: null });
   state = recordCanonical(state, { relationshipId, creditcoinChainId: 102031, contractAddress: "0xsettlement-reconciler-fixture", transactionHash: "0xcc3fixture", blockNumber: 20n, blockHash: "cc3-block-20", objectId: "settlement:slice-b-1", state: "RECONCILED", readStatus: "READ", expectedState: "RECONCILED", readAt: 102 });
   state = reconcile(state, { relationshipId, sourceEventId: sourceEventId(identity), canonicalObjectId: "settlement:slice-b-1", state: "RECONCILED", observationAmount: "340000", canonicalAmount: "340000", authority: "creditcoin", nextAction: "No action", recoveryRole: "auditor", reason: "source, evidence, and canonical state agree" });
   state = projectRelationship(state, relationshipId);
@@ -51,7 +54,7 @@ function happyPath() {
 
 function pendingProof() {
   let state = baseState();
-  state = recordEvidence(state, { evidenceId: "evidence:slice-b-pending", relationshipId, sourceEventId: sourceEventId(identity), mode: "implemented_local", sourceDomain: "ethereum-sepolia", chainKey: 1, transactionHash: identity.transactionHash, blockNumber: 10n, attestcoinReference: null, status: "PENDING", linkedCreditcoinTransition: null, sourceReference: "local pending-proof scenario", reason: "Attestcoin evidence not accepted" });
+  state = recordEvidence(state, { evidenceId: "evidence:slice-b-pending", relationshipId, sourceEventId: sourceEventId(identity), mode: "implemented_local", sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, eventIndex: 0, blockHash: "slice-b-block-10", transactionHash: identity.transactionHash, blockNumber: 10n, attestcoinReference: null, status: "PENDING", linkedCreditcoinTransition: null, sourceReference: "local pending-proof scenario", reason: "Attestcoin evidence not accepted" });
   state = reconcile(state, { relationshipId, sourceEventId: sourceEventId(identity), canonicalObjectId: null, state: "PENDING", observationAmount: "340000", canonicalAmount: null, authority: "attestcoin", nextAction: "Wait for proof acceptance", recoveryRole: "evidence operator", reason: "settlement observed and finalized, proof pending" });
   const investigations = createSliceBApi(state).investigations();
   assert.equal(investigations.length > 0, true);
@@ -87,16 +90,16 @@ function reorgAndReplay() {
   assert.equal(replayed.state.checkpoints.get(1)?.replayStatus, "CURRENT");
   assert.equal(replayed.state.observations.get(observationId(identity, "SettlementExecuted"))?.finalityState, "REORGED");
   assert.equal(replayed.state.observations.get(replacement.observationId)?.finalityState, "FINALIZED");
-  const second = replayReorg(replayed.state, replacement, { finalizedBlock: 10n, observedAt: 104 });
+  const second = replayReorg(replayed.state, replacement, { finalizedBlock: 10n, observedAt: 103 });
   assert.equal(second.outcome, "NOOP");
   assert.equal("write" in createSliceBApi(replayed.state), false);
   return { scenario: "reorg_and_replay", evidenceMode: "implemented_local", invalidReplay: invalidReplay.outcome, checkpointBeforeReplay: "REPLAY_REQUIRED", checkpointAfterReplay: replayed.state.checkpoints.get(1)?.replayStatus, oldObservationRetained: true, snapshotHash: snapshotHash(replayed.state) };
 }
 
 function relationshipScope() {
-  let state = createSliceBState();
-  state = recordEvidence(state, { evidenceId: "evidence:r1", relationshipId: "r1", sourceEventId: "source:r1", mode: "implemented_local", sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, eventIndex: 0, blockHash: "evidence:r1-block", transactionHash: "0xr1", blockNumber: 1n, attestcoinReference: "attest:r1", status: "ACCEPTED", linkedCreditcoinTransition: null, sourceReference: "fixture:r1", reason: null });
-  state = recordEvidence(state, { evidenceId: "evidence:r2", relationshipId: "r2", sourceEventId: "source:r2", mode: "implemented_local", sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, eventIndex: 0, blockHash: "evidence:r2-block", transactionHash: "0xr2", blockNumber: 2n, attestcoinReference: "attest:r2", status: "PENDING", linkedCreditcoinTransition: null, sourceReference: "fixture:r2", reason: null });
+  let state = createDemoState();
+  state = recordEvidence(state, { evidenceId: "evidence:r1", relationshipId: "r1", sourceEventId: sourceEventId({ domain: "ethereum-sepolia", chainKey: 1, transactionHash: "0xr1", eventIndex: 0 }), mode: "implemented_local", sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, eventIndex: 0, blockHash: "evidence:r1-block", transactionHash: "0xr1", blockNumber: 1n, attestcoinReference: "attest:r1", status: "ACCEPTED", linkedCreditcoinTransition: null, sourceReference: "fixture:r1", reason: null });
+  state = recordEvidence(state, { evidenceId: "evidence:r2", relationshipId: "r2", sourceEventId: sourceEventId({ domain: "ethereum-sepolia", chainKey: 1, transactionHash: "0xr2", eventIndex: 0 }), mode: "implemented_local", sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, eventIndex: 0, blockHash: "evidence:r2-block", transactionHash: "0xr2", blockNumber: 2n, attestcoinReference: "attest:r2", status: "PENDING", linkedCreditcoinTransition: null, sourceReference: "fixture:r2", reason: null });
   state = recordCanonical(state, { relationshipId: "r1", creditcoinChainId: 102031, contractAddress: "0xcc3-r1", transactionHash: null, blockNumber: null, blockHash: null, objectId: "object:r1", state: "ACTIVE", readStatus: "READ", expectedState: "ACTIVE", readAt: 3 });
   state = recordCanonical(state, { relationshipId: "r2", creditcoinChainId: 102031, contractAddress: "0xcc3-r2", transactionHash: null, blockNumber: null, blockHash: null, objectId: "object:r2", state: "ACTIVE", readStatus: "READ", expectedState: "ACTIVE", readAt: 3 });
   const r1 = createSliceBApi(state).relationship("r1") as { evidence: Array<{ evidenceId: string }>; canonicalState: Array<{ objectId: string }> };
@@ -108,12 +111,12 @@ function relationshipScope() {
 function determinism() {
   const first = observation("0xone", "block-one", "block-zero", relationshipId, "settlement:one");
   const second = observation("0xtwo", "block-two", "block-one", relationshipId, "settlement:two");
-  let left = ingestObservation(createSliceBState(), first); left = ingestObservation(left, second); left = advanceFinality(left, 1, 10n, 1); left = projectRelationship(left, relationshipId);
-  let right = ingestObservation(createSliceBState(), second); right = ingestObservation(right, first); right = advanceFinality(right, 1, 10n, 1); right = projectRelationship(right, relationshipId);
+  let left = ingestObservation(createDemoState(), first); left = ingestObservation(left, second); left = advanceFinality(left, 1, 10n, 1); left = projectRelationship(left, relationshipId);
+  let right = ingestObservation(createDemoState(), second); right = ingestObservation(right, first); right = advanceFinality(right, 1, 10n, 1); right = projectRelationship(right, relationshipId);
   assert.equal(snapshot(left), snapshot(right));
   assert.equal(snapshotHash(left), snapshotHash(right));
   assert.equal(buildRelationshipGraph(left, relationshipId).projectionHash, buildRelationshipGraph(right, relationshipId).projectionHash);
-  const changed = ingestObservation(createSliceBState(), { ...first, normalizedPayload: { amount: "1" } });
+  const changed = ingestObservation(createDemoState(), { ...first, normalizedPayload: { amount: "1" } });
   assert.notEqual(snapshotHash(left), snapshotHash(changed));
   return { scenario: "determinism", evidenceMode: "implemented_local", equalInsertionOrderHashes: true, meaningfulChangeChangesHash: true };
 }

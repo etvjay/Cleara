@@ -1,15 +1,28 @@
-import { buildRelationshipGraph, snapshot, snapshotHash, type EvidenceRecord, type SliceBState } from "./slice-b.js";
+import { buildRelationshipGraph, snapshot, snapshotHash, type Checkpoint, type EvidenceRecord, type ObjectType, type ReconciliationRecord, type SliceBState } from "./slice-b.js";
+
+export interface ReconciliationRead {
+  readonly current: readonly ReconciliationRecord[];
+  readonly history: readonly ReconciliationRecord[];
+}
+
+export interface SerializedSliceBSnapshot {
+  readonly hash: string;
+  readonly body: string;
+}
 
 export interface SliceBApi {
   health(): { readonly status: "ok"; readonly readOnly: true; readonly schemaVersion: string };
+  checkpoint(chainKey: number): Checkpoint | null;
   relationship(id: string): unknown;
-  object(id: string, relationshipId?: string): unknown | null;
-  evidence(id: string): EvidenceRecord | null;
+  object(id: string, relationshipId?: string, expectedType?: ObjectType): unknown | null;
+  evidence(id: string, relationshipId?: string): EvidenceRecord | null;
   timeline(id: string): unknown[];
   graph(id: string): unknown;
   investigations(relationshipId?: string): unknown[];
-  checkpoints(): unknown[];
-  snapshot(): { readonly hash: string; readonly body: string };
+  reconciliation(relationshipId: string): ReconciliationRead;
+  checkpoints(): readonly Checkpoint[];
+  snapshot(): SerializedSliceBSnapshot;
+  serializeSnapshot(): SerializedSliceBSnapshot;
 }
 
 function belongsToRelationship(_state: SliceBState, relationshipId: string, evidence: EvidenceRecord): boolean {
@@ -22,8 +35,8 @@ function stableKey(value: unknown): string {
 function sortedRecords<T>(records: readonly T[]): T[] {
   return [...records].sort((left, right) => stableKey(left).localeCompare(stableKey(right)));
 }
-function scopedObject(state: SliceBState, id: string, relationshipId?: string): unknown | null {
-  const observations = sortedRecords([...state.observations.values()].filter((item) => item.objectId === id && (relationshipId === undefined || item.relationshipId === relationshipId)));
+function scopedObject(state: SliceBState, id: string, relationshipId?: string, expectedType?: ObjectType): unknown | null {
+  const observations = sortedRecords([...state.observations.values()].filter((item) => item.objectId === id && (relationshipId === undefined || item.relationshipId === relationshipId) && (expectedType === undefined || item.objectType === expectedType)));
   const canonical = sortedRecords([...state.canonical.values()].filter((item) => item.objectId === id && (relationshipId === undefined || item.relationshipId === relationshipId)));
   const reconciliations = sortedRecords([...state.reconciliations.values()].filter((item) => item.canonicalObjectId === id && (relationshipId === undefined || item.relationshipId === relationshipId)));
   const evidenceRecord = state.evidence.get(id);
@@ -43,8 +56,14 @@ function scopedObject(state: SliceBState, id: string, relationshipId?: string): 
 export function createSliceBApi(state: SliceBState): SliceBApi {
   return {
     health: () => ({ status: "ok", readOnly: true, schemaVersion: state.schemaVersion }),
-    evidence: (id) => state.evidence.get(id) ?? null,
-    object: (id, relationshipId) => scopedObject(state, id, relationshipId),
+    checkpoint: (chainKey) => Number.isSafeInteger(chainKey) && chainKey >= 0 ? state.checkpoints.get(chainKey) ?? null : null,
+    evidence: (id, relationshipId) => {
+      const record = typeof id === "string" ? state.evidence.get(id) : undefined;
+      if (!record) return null;
+      if (relationshipId !== undefined && record.relationshipId !== relationshipId) return null;
+      return record;
+    },
+    object: (id, relationshipId, expectedType) => scopedObject(state, id, relationshipId, expectedType),
     relationship: (id) => ({
       relationshipId: id,
       source: "projection",
@@ -66,7 +85,12 @@ export function createSliceBApi(state: SliceBState): SliceBApi {
       ...state.replayHistory.filter((attempt) => attempt.status === "BLOCKED" && (relationshipId === undefined || attempt.relationshipId === relationshipId)),
       ...[...state.observations.values()].filter((item) => (item.finalityState === "REORGED" || item.observationState === "CONFLICTING" || item.observationState === "MALFORMED" || item.observationState === "REJECTED") && (relationshipId === undefined || item.relationshipId === relationshipId)),
     ]),
+    reconciliation: (relationshipId) => ({
+      current: sortedRecords([...state.reconciliations.values()].filter((item) => item.relationshipId === relationshipId)),
+      history: [...state.reconciliationHistory].filter((item) => item.relationshipId === relationshipId).sort((left, right) => left.sequence - right.sequence || left.occurredAt - right.occurredAt || left.id.localeCompare(right.id)),
+    }),
     checkpoints: () => [...state.checkpoints.values()].sort((a, b) => a.chainKey - b.chainKey),
     snapshot: () => ({ hash: snapshotHash(state), body: snapshot(state) }),
+    serializeSnapshot: () => ({ hash: snapshotHash(state), body: snapshot(state) }),
   };
 }

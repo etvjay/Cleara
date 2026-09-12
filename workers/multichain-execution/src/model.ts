@@ -26,6 +26,9 @@ export interface IndexedEvent {
   chain: Chain;
   chainId: number;
   chainKey: number;
+  sourceDomain: string;
+  adapterVersion: string;
+  schemaVersion: string;
   domainId: string | null;
   blockNumber: bigint;
   blockHash: string;

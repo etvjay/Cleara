@@ -16,7 +16,7 @@ import {
 } from "../../workers/multichain-execution/src/slice-b.ts";
 
 const identity = (transactionHash, eventIndex = 0) => ({ domain: "ethereum-sepolia", chainKey: 1, transactionHash, eventIndex });
-const observation = ({ blockNumber = 10n, blockHash = `h${blockNumber}`, transactionHash = "0xadv", relationshipId = "relationship:adversarial", objectId = "object:adv", parentBlockHash = blockNumber === 10n ? "h9" : "h10", eventIndex = 0, chainId = 11155111, sourceDomain = "ethereum-sepolia", adapterVersion = "adv", payloadSchemaVersion = "slice-b-observation-v1", payload = { amount: "1" } } = {}) => {
+const observation = ({ blockNumber = 10n, blockHash = `h${blockNumber}`, transactionHash = "0xadv", relationshipId = "relationship:adversarial", objectId = "object:adv", parentBlockHash = blockNumber === 10n ? "h9" : "h10", eventIndex = 0, chainId = 11155111, sourceDomain = "ethereum-sepolia", adapterVersion = "test", payloadSchemaVersion = "slice-b-observation-v1", payload = { amount: "1" } } = {}) => {
   const source = { ...identity(transactionHash, eventIndex), domain: sourceDomain };
   return { observationId: observationId(source, "CapitalCommitted"), sourceEventId: sourceEventId(source), relationshipId, objectId, objectType: "Commitment", eventType: "CapitalCommitted", sourceDomain, chainKey: 1, chainId, contractAddress: "0xadv", transactionHash, eventIndex, blockNumber, blockHash, parentBlockHash, observedAt: 1, normalizedPayload: payload, payloadSchemaVersion, observationState: "OBSERVED", finalityState: "UNKNOWN", evidenceId: null, creditcoinReference: null, projectionReference: null, reconciliationReference: null, evidenceMode: "implemented_local", adapterVersion, createdAt: 1, updatedAt: 1 };
 };
@@ -92,8 +92,9 @@ run("forged replay cannot return NOOP", () => {
   let state = advanceFinality(ingestObservation(createSliceBState(), observation()), 1, 10n, 2);
   const replacement = observation({ blockHash: "r10", transactionHash: "0xreplay-forged" });
   state = advanceFinality(ingestObservation(state, replacement), 1, 10n, 3);
-  const replayed = replayReorg(state, state.observations.get(replacement.observationId), { finalizedBlock: 10n, observedAt: 4 });
-  assert.equal(replayReorg(replayed.state, { ...replacement, objectId: "object:forged" }, { finalizedBlock: 10n, observedAt: 5 }).outcome, "BLOCKED"); assert.equal(replayReorg(replayed.state, replayed.state.observations.get(replacement.observationId), { finalizedBlock: 10n, observedAt: 5 }).outcome, "NOOP");
+  const command = state.observations.get(replacement.observationId);
+  const replayed = replayReorg(state, command, { finalizedBlock: 10n, observedAt: 4 });
+  assert.equal(replayReorg(replayed.state, { ...replacement, objectId: "object:forged" }, { finalizedBlock: 10n, observedAt: 5 }).outcome, "BLOCKED"); assert.equal(replayReorg(replayed.state, command, { finalizedBlock: 10n, observedAt: 4 }).outcome, "NOOP");
 });
 
 run("graph reads are fresh after mutation", () => {
