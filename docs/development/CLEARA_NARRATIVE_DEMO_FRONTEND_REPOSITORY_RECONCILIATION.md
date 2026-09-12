@@ -4,7 +4,8 @@
 **Repository:** `etvjay/Cleara`
 **Branch:** `verification/slice-b`
 **Base:** `c1065cedb2ae62543bb253d0bad9af23ffd99261`
-**Repair status:** local implementation pending exact repair-commit CI.
+**Repair implementation:** `701022d0df6e74f22c39d54d6a80ec9671e1b0b9`
+**Verification status:** local repair gates pass; exact-head PR CI pending for the final documentation tree.
 
 ## A. Current narrative truth
 
@@ -105,7 +106,7 @@ FIXTURE_FROM_LIVE_EVIDENCE  local fixture derived from evidence
 COMPOSITE_FIXTURE            combined Slice A workbench case
 IMPLEMENTED_LOCAL            local Slice B code and tests
 LOCAL_PROJECTION             derived read-model output
-NOT_VERIFIED                 browser/deployment/remote checks until proven
+NOT_VERIFIED                 browser/deployment until independently verified
 DEFERRED                     production persistence, live indexing, M12+
 ```
 

@@ -25,7 +25,7 @@ The deterministic demo emits:
 1. `happy_path`: finalized source observation, accepted evidence, Creditcoin reference, reconciled relationship, graph, snapshot hash.
 2. `pending_proof`: finalized observation with pending Attestcoin evidence, blocked reconciliation, evidence operator ownership, and next action.
 3. `mismatch`: source amount and canonical amount differ, with no silent choice.
-4. `reorg_and_replay`: replacement source transaction causes checkpoint `REPLAY_REQUIRED`, then explicit replay promotes the replacement and remains idempotent.
+4. `reorg_and_replay`: invalid parent remains blocked, then a replacement with the trusted predecessor is finalized, replayed, promoted, and safely replayed again as a no-op.
 5. `relationship_scope`: records for one relationship cannot leak into another relationship response.
 6. `determinism`: equivalent insertion orders hash identically while a meaningful payload change changes the hash.
 
@@ -49,7 +49,8 @@ The deterministic demo emits:
 - finality promotion;
 - evidence and canonical read separation;
 - explicit mismatch ownership;
-- reorg detection and replay requirement;
+- reorg detection, trusted-parent validation, and explicit replay;
+- populated current checkpoint serialization;
 - deterministic graph and snapshot composition;
 - read-only API behavior.
 
