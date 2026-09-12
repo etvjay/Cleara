@@ -1,0 +1,79 @@
+{
+  "manifestVersion": "slice-d-source-scope-v1",
+  "scopeId": "source-scope:ethereum-sepolia:capital-committed:fixture-v1",
+  "sourceDomain": "ethereum-sepolia",
+  "chainKey": 1,
+  "evmChainId": 11155111,
+  "contract": {
+    "name": "CapitalCommitmentVault",
+    "address": "0x000000000000000000000000000000000000d001",
+    "addressRole": "FIXTURE_IDENTIFIER",
+    "deploymentStatus": "FIXTURE_ONLY_NOT_DEPLOYED",
+    "sourceArtifact": "contracts/source/commitments/CapitalCommitmentVault.sol"
+  },
+  "token": {
+    "name": "MockERC20",
+    "address": "0x000000000000000000000000000000000000d002",
+    "addressRole": "FIXTURE_IDENTIFIER",
+    "deploymentStatus": "FIXTURE_ONLY_NOT_DEPLOYED",
+    "decimals": 18,
+    "sourceArtifact": "test/mocks/MockERC20.sol"
+  },
+  "eventFamily": {
+    "name": "CapitalCommitted",
+    "signature": "CapitalCommitted(bytes32,bytes32,bytes32,address,bytes32,address,uint256,uint64)",
+    "selector": "0xead4d892be5ba0cd9d75db59448b9c0cd9d398e8b3275ec31b9c720d9f1de2dd",
+    "schemaVersion": "slice-d-source-event-v1",
+    "indexedFields": [
+      { "name": "sourceCommitmentId", "type": "bytes32", "indexed": true, "topic": 1 },
+      { "name": "facilityId", "type": "bytes32", "indexed": true, "topic": 2 },
+      { "name": "allocationId", "type": "bytes32", "indexed": true, "topic": 3 }
+    ],
+    "dataFields": [
+      { "name": "provider", "type": "address", "indexed": false, "topic": null },
+      { "name": "assetClassId", "type": "bytes32", "indexed": false, "topic": null },
+      { "name": "token", "type": "address", "indexed": false, "topic": null },
+      { "name": "amount", "type": "uint256", "indexed": false, "topic": null },
+      { "name": "expiresAt", "type": "uint64", "indexed": false, "topic": null }
+    ]
+  },
+  "adapterVersion": "slice-d-source-adapter-v1",
+  "schemaVersion": "slice-d-source-scope-v1",
+  "finalityPolicy": {
+    "version": "slice-d-fixture-finality-v1",
+    "mode": "CONFIRMATION_DEPTH",
+    "depth": 2
+  },
+  "cursor": {
+    "mode": "SPARSE_EVENT",
+    "unit": "BLOCK",
+    "maxRange": 1000
+  },
+  "relationshipMappings": [
+    {
+      "mappingId": "fixture-capital-commitment-v1",
+      "eventFamily": "CapitalCommitted",
+      "sourceField": "sourceCommitmentId",
+      "relationshipIdTemplate": "relationship:fixture:capital-commitment:{sourceCommitmentId}",
+      "objectIdField": "sourceCommitmentId",
+      "objectType": "Commitment",
+      "scope": "RELATIONSHIP_SCOPED",
+      "mappingMode": "FIXTURE_ONLY"
+    }
+  ],
+  "mode": "FIXTURE_ONLY",
+  "evidenceClassification": "IMPLEMENTED_LOCAL",
+  "liveRead": {
+    "available": false,
+    "status": "NOT_VERIFIED",
+    "deploymentFieldsPresent": false,
+    "reason": "No stable live Sepolia deployment and no authoritative live relationship mapping are configured in the repository."
+  },
+  "fixtureContext": {
+    "abiSource": "contracts/source/commitments/CapitalCommitmentVault.sol",
+    "tokenSource": "test/mocks/MockERC20.sol",
+    "historicalEvidence": "evidence/runtime/M6_CAPITAL_COMMITMENT_2026-08-29.md",
+    "addressesUse": "DETERMINISTIC_IDENTIFIERS_ONLY",
+    "relationshipUse": "LOCAL_FIXTURE_MAPPING_ONLY"
+  }
+}
