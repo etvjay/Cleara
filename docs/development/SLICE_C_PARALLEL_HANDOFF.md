@@ -4,9 +4,10 @@ Status: `VERIFIED_REMOTE_INTEGRATION_UNMERGED`
 
 Slice C integration branch: `verification/slice-c-integration`
 Integration base: `6f05b10e5e016b5f8fdbbfd0bd7ce3a12ba6fc7e`
-Final integration tree: `41d0d09f860c51586b1e2757be2933eac46fd1f8`
+Code-bearing integration commit: `41f3f7ab274b054eed229027ff04543f536c8b3d`
+Last receipt tree before repair: `63099bf71552b3db431ade260fd07e9b30c52b9b`
 Draft PR: [#3](https://github.com/etvjay/Cleara/pull/3), open and unmerged
-Integration checks: `34722839926` and `34722841590`, both exact-head success
+Integration checks for that receipt tree: `34722940665` and `34722943715`, both exact-head success
 Integration coordinator/spec: `docs/development/SLICE_C_INTEGRATION.md`
 Slice C was developed in isolated worktrees from the frozen Slice B checkpoint:
 

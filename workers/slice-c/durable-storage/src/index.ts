@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { restoreSnapshot } from "../../../multichain-execution/src/slice-b.js";
 
 export const DURABLE_STORAGE_SCHEMA_VERSION = "slice-c-durable-storage-v1" as const;
 export const SLICE_B_SCHEMA_VERSION = "slice-b-read-model-v1" as const;
@@ -162,6 +163,11 @@ function parseSnapshotBody(body: string): Record<string, unknown> {
   if (parsed.schemaVersion !== SLICE_B_SCHEMA_VERSION) throw new SnapshotStoreError("CORRUPT_SNAPSHOT_BODY", "unsupported Slice B snapshot schema");
   validateKnownBigints(parsed);
   if (sortedJson(parsed) !== body) throw new SnapshotStoreError("CORRUPT_SNAPSHOT_BODY", "snapshot body is not canonical JSON");
+  try {
+    restoreSnapshot(body);
+  } catch (error) {
+    throw new SnapshotStoreError("CORRUPT_SNAPSHOT_BODY", error instanceof Error ? error.message : "Slice B snapshot restore failed");
+  }
   return parsed;
 }
 

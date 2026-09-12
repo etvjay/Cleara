@@ -90,6 +90,47 @@ test("checkpoint scopes remain isolated across restart", async (t) => {
   assert.deepEqual((await restarted.recover("relationship:r2"))?.snapshot, otherSnapshot);
 });
 
+test("checkpoint invokes strict Slice B restore validation before persistence", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "cleara-slice-c-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+
+  const snapshot = serializedFixture();
+  const bodyValue = JSON.parse(snapshot.body) as Record<string, unknown>;
+  bodyValue.blockHistory = [
+    ["1:9:h9-a", {
+      chainKey: 1,
+      chainId: 11155111,
+      sourceDomain: "ethereum-sepolia",
+      adapterVersion: "test",
+      payloadSchemaVersion: "slice-b-observation-v1",
+      blockNumber: "9n",
+      blockHash: "h9-a",
+      parentBlockHash: "h8",
+      observationId: "observation:a",
+      status: "CANONICAL",
+    }],
+    ["1:9:h9-b", {
+      chainKey: 1,
+      chainId: 11155111,
+      sourceDomain: "ethereum-sepolia",
+      adapterVersion: "test",
+      payloadSchemaVersion: "slice-b-observation-v1",
+      blockNumber: "9n",
+      blockHash: "h9-b",
+      parentBlockHash: "h8",
+      observationId: "observation:b",
+      status: "CANONICAL",
+    }],
+  ];
+  const body = JSON.stringify(sortedJson(bodyValue));
+  const invalid = { body, hash: snapshotHashForBody(body) };
+
+  await assert.rejects(
+    () => new DurableSnapshotStore(root).checkpoint("relationship:r1", invalid),
+    (error: unknown) => error instanceof SnapshotStoreError && error.code === "CORRUPT_SNAPSHOT_BODY" && error.reason.includes("canonical block header"),
+  );
+});
+
 test("restart rejects a rehashed snapshot with an invalid known bigint", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "cleara-slice-c-"));
   t.after(async () => rm(root, { recursive: true, force: true }));
