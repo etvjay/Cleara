@@ -9,8 +9,8 @@ const observation: ObservationEnvelope = {
 };
 let state = ingestObservation(createSliceBState(), observation);
 state = advanceFinality(state, 1, 10n, 101);
-state = recordEvidence(state, { evidenceId: "evidence:slice-b-settlement", relationshipId, sourceEventId: observation.sourceEventId, mode: "fixture_from_live_evidence", sourceDomain: "ethereum-sepolia", chainKey: 1, transactionHash: identity.transactionHash, blockNumber: 10n, attestcoinReference: "attestcoin:fixture:m11", status: "ACCEPTED", linkedCreditcoinTransition: "cc3:reconciliation:fixture", sourceReference: "M11 settlement evidence", reason: null });
-state = recordEvidence(state, { evidenceId: observation.objectId, relationshipId: "relationship:slice-b:other", sourceEventId: "source:slice-b:other", mode: "implemented_local", sourceDomain: "ethereum-sepolia", chainKey: 1, transactionHash: "0xother", blockNumber: 11n, attestcoinReference: "attestcoin:other", status: "ACCEPTED", linkedCreditcoinTransition: null, sourceReference: "unrelated same-ID evidence fixture", reason: null });
+state = recordEvidence(state, { evidenceId: "evidence:slice-b-settlement", relationshipId, sourceEventId: observation.sourceEventId, mode: "fixture_from_live_evidence", sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, transactionHash: identity.transactionHash, eventIndex: identity.eventIndex, blockNumber: 10n, blockHash: "slice-b-block-10", attestcoinReference: "attestcoin:fixture:m11", status: "ACCEPTED", linkedCreditcoinTransition: "cc3:reconciliation:fixture", sourceReference: "M11 settlement evidence", reason: null });
+state = recordEvidence(state, { evidenceId: observation.objectId, relationshipId: "relationship:slice-b:other", sourceEventId: "source:slice-b:other", mode: "implemented_local", sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, transactionHash: "0xother", eventIndex: 0, blockNumber: 11n, blockHash: "slice-b-block-11", attestcoinReference: "attestcoin:other", status: "ACCEPTED", linkedCreditcoinTransition: null, sourceReference: "unrelated same-ID evidence fixture", reason: null });
 state = projectRelationship(state, relationshipId);
 const api = createSliceBApi(state);
 const json = (value: unknown): string => JSON.stringify(value, (_, current) => typeof current === "bigint" ? `${current}n` : current);
@@ -19,6 +19,8 @@ const safeDecode = (value: string): string | null => { try { return decodeURICom
 const server = createServer((request: IncomingMessage, response: ServerResponse) => {
   response.setHeader("content-type", "application/json; charset=utf-8"); response.setHeader("cache-control", "no-store");
   const url = new URL(request.url ?? "/", "http://localhost"); let value: unknown;
+  const relationshipQuery = url.searchParams.get("relationshipId");
+  if (relationshipQuery !== null && (relationshipQuery.length === 0 || relationshipQuery.trim() !== relationshipQuery)) { response.writeHead(400); response.end(json({ error: "INVALID_PARAMETER", parameter: "relationshipId" })); return; }
   if (request.method !== "GET") { response.writeHead(405); response.end(json({ error: "READ_ONLY" })); return; }
   if (url.pathname === "/health") value = api.health();
   else if (url.pathname === `/relationships/${relationshipId}`) value = api.relationship(relationshipId);

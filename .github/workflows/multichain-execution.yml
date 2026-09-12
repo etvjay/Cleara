@@ -46,4 +46,5 @@ jobs:
       - run: pnpm --filter @cleara/multichain-execution test
       - run: node --import tsx scripts/slice-b/demo.ts
       - run: node scripts/slice-b/smoke.mjs
+      - run: node --import tsx scripts/slice-b/adversarial.mjs
       - run: pnpm web:check
