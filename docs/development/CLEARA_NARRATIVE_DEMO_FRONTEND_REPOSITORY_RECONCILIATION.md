@@ -5,7 +5,7 @@
 **Branch:** `verification/slice-b`
 **Base:** `f3ceae3d829bd0bb2b065e057de1f84d92f5ecd2`
 **Repair checkpoint:** `37072a72a361ab4f8ce2ca890135d104d5bd7dc7`
-**Verification status:** local Slice B candidate; exact-head remote CI is pending on the final pushed repair tree. Browser and hosted deployment remain unverified.
+**Verification status:** Slice B code checkpoint `25b221a0d812658aef6e9fea70da23eaba7bfdf7` has exact-head remote CI success. This follow-up tree changes documentation only. Browser and hosted deployment remain unverified.
 
 ## A. Current narrative truth
 

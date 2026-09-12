@@ -282,7 +282,13 @@
       "id": "slice-b-read-model",
       "milestone": "SLICE-B",
       "contractVersion": "slice-b-read-model-contract-v1",
-      "verificationStatus": "VERIFIED_LOCAL_CANDIDATE",
+      "verificationStatus": "VERIFIED_REMOTE_CODE_CHECKPOINT",
+      "verifiedCodeCheckpoint": "25b221a0d812658aef6e9fea70da23eaba7bfdf7",
+      "exactHeadWorkflows": {
+        "contracts": 34714483336,
+        "projection": 34714483273,
+        "workbench": 34714483267
+      },
       "evidenceLevel": "IMPLEMENTED_LOCAL",
       "evidenceMode": "implemented_local",
       "workflowRun": null,

@@ -2,7 +2,7 @@
 
 ## Status
 
-`VERIFIED_LOCAL_CANDIDATE`: the repair worktree has passed the current local gates. Exact-head remote CI is not claimed until the final repair tree is pushed and each workflow `headSha` is read back. Browser verification remains `BROWSER_VERIFICATION_BLOCKED`. Hosted deployment remains `DEPLOYMENT_NOT_VERIFIED`.
+`VERIFIED_REMOTE_CODE_CHECKPOINT`: the Slice B implementation and exact local matrix were pushed and all required remote workflows passed on the exact code checkpoint below. A documentation-only follow-up may advance the branch tree without changing implementation. Browser verification remains `BROWSER_VERIFICATION_BLOCKED`. Hosted deployment remains `DEPLOYMENT_NOT_VERIFIED`.
 
 ## Repository
 
@@ -11,9 +11,10 @@ Repository: etvjay/Cleara
 Repair branch: verification/slice-b
 Starting head: f3ceae3d829bd0bb2b065e057de1f84d92f5ecd2
 Verified local checkpoint: b3f4288af9b6e1d59e8ce5a98294121dad148fa4
+Verified remote code checkpoint: 25b221a0d812658aef6e9fea70da23eaba7bfdf7
 Frozen consumer contract: slice-b-read-model-contract-v1
-Final pushed SHA: pending
-Final exact-head workflow IDs: pending
+Documentation follow-up tree: this commit is docs-only; exact branch/ref readback is recorded in the final handoff
+Exact-head workflow IDs: 34714483336 (Contracts), 34714483273 (Projection), 34714483267 (Workbench)
 ```
 
 The prior `verification/slice-b` receipts are historical evidence for that earlier tree and are not reused as evidence for this repair branch.
