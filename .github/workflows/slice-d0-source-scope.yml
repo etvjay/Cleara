@@ -59,6 +59,11 @@ jobs:
       - run: corepack prepare pnpm@11.24.0 --activate
       - run: pnpm install --frozen-lockfile
 
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1.9.1
+        with:
+          version: v1.7.1
+
       - name: Validate D0 source scope
         run: >-
           pnpm exec tsc --noEmit -p workers/slice-d/source-scope/tsconfig.json
