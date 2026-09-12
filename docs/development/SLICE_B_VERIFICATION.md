@@ -2,9 +2,9 @@
 
 ## Status
 
-`VERIFIED_REMOTE` for the implementation and exact-head PR checks on `e33c8d1f550b767e2bd51538cf89c3ef60e57a6a`.
+`VERIFIED_REMOTE` for the implementation and exact-head PR checks on `a1c84bd276d9088e4751dc148d2838cebc3636d2`.
 
-The implementation repair was introduced in `701022d0df6e74f22c39d54d6a80ec9671e1b0b9`; `e33c8d1f550b767e2bd51538cf89c3ef60e57a6a` is the exact PR verification head containing the repaired implementation and reconciled documentation.
+The implementation repair was introduced in `701022d0df6e74f22c39d54d6a80ec9671e1b0b9`; the fail-closed unknown-predecessor guard was added in `a1c84bd276d9088e4751dc148d2838cebc3636d2`. The latter is the exact PR verification head containing the final repaired implementation.
 
 ## Repository
 
@@ -49,11 +49,11 @@ The local Node runtime is `22.23.2`; the repository declares Node `24.19.0`. Fou
 
 ## Exact-head PR checks
 
-All checks below passed on `e33c8d1f550b767e2bd51538cf89c3ef60e57a6a`:
+All checks below passed on `a1c84bd276d9088e4751dc148d2838cebc3636d2`:
 
-- [Contracts](https://github.com/etvjay/Cleara/actions/runs/34686928834) — `success`
-- [Multichain Execution Projection](https://github.com/etvjay/Cleara/actions/runs/34686928823) — `success`
-- [Read-only Workbench](https://github.com/etvjay/Cleara/actions/runs/34686928785) — `success`
+- [Contracts](https://github.com/etvjay/Cleara/actions/runs/34687167711) — `success`
+- [Multichain Execution Projection](https://github.com/etvjay/Cleara/actions/runs/34687167726) — `success`
+- [Read-only Workbench](https://github.com/etvjay/Cleara/actions/runs/34687167698) — `success`
 
 ## Slice B assertions
 

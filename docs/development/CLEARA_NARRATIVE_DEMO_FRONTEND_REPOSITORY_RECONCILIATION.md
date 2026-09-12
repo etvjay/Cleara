@@ -5,7 +5,7 @@
 **Branch:** `verification/slice-b`
 **Base:** `c1065cedb2ae62543bb253d0bad9af23ffd99261`
 **Repair implementation:** `701022d0df6e74f22c39d54d6a80ec9671e1b0b9`
-**Verification status:** local repair gates and exact-head PR CI pass on `e33c8d1f550b767e2bd51538cf89c3ef60e57a6a`.
+**Verification status:** local repair gates and exact-head PR CI pass on `a1c84bd276d9088e4751dc148d2838cebc3636d2`.
 
 ## A. Current narrative truth
 
