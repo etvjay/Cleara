@@ -5,6 +5,7 @@ const assert = { equal, notEqual, deepEqual };
 
 import {
   advanceFinality,
+  buildRelationshipGraph,
   createSliceBApi,
   createSliceBState,
   ingestObservation,
@@ -14,6 +15,7 @@ import {
   recordEvidence,
   reconcile,
   replayReorg,
+  snapshot,
   snapshotHash,
   sourceEventId,
   type ObservationEnvelope,
@@ -67,6 +69,14 @@ function mismatch() {
 
 function reorgAndReplay() {
   let state = baseState();
+  const invalidCandidate = observation("0xsliceb-invalid", "slice-b-invalid-parent", "invalid-parent");
+  state = ingestObservation(state, invalidCandidate);
+  state = advanceFinality(state, 1, 10n, 102);
+  const invalidReplay = replayReorg(state, state.observations.get(invalidCandidate.observationId)!, { finalizedBlock: 10n, observedAt: 102 });
+  assert.equal(invalidReplay.outcome, "BLOCKED");
+  assert.equal(invalidReplay.state.checkpoints.get(1)?.replayStatus, "REPLAY_REQUIRED");
+
+  state = baseState();
   const replacement = observation("0xsliceb-replacement", "slice-b-replacement-block-10");
   state = ingestObservation(state, replacement);
   assert.equal(state.checkpoints.get(1)?.replayStatus, "REPLAY_REQUIRED");
@@ -80,7 +90,7 @@ function reorgAndReplay() {
   const second = replayReorg(replayed.state, replacement, { finalizedBlock: 10n, observedAt: 104 });
   assert.equal(second.outcome, "NOOP");
   assert.equal("write" in createSliceBApi(replayed.state), false);
-  return { scenario: "reorg_and_replay", evidenceMode: "implemented_local", checkpointBeforeReplay: "REPLAY_REQUIRED", checkpointAfterReplay: replayed.state.checkpoints.get(1)?.replayStatus, oldObservationRetained: true, snapshotHash: snapshotHash(replayed.state) };
+  return { scenario: "reorg_and_replay", evidenceMode: "implemented_local", invalidReplay: invalidReplay.outcome, checkpointBeforeReplay: "REPLAY_REQUIRED", checkpointAfterReplay: replayed.state.checkpoints.get(1)?.replayStatus, oldObservationRetained: true, snapshotHash: snapshotHash(replayed.state) };
 }
 
 function relationshipScope() {
@@ -98,9 +108,11 @@ function relationshipScope() {
 function determinism() {
   const first = observation("0xone", "block-one", "block-zero", relationshipId, "settlement:one");
   const second = observation("0xtwo", "block-two", "block-one", relationshipId, "settlement:two");
-  let left = ingestObservation(createSliceBState(), first); left = ingestObservation(left, second); left = advanceFinality(left, 1, 10n, 1);
-  let right = ingestObservation(createSliceBState(), second); right = ingestObservation(right, first); right = advanceFinality(right, 1, 10n, 1);
+  let left = ingestObservation(createSliceBState(), first); left = ingestObservation(left, second); left = advanceFinality(left, 1, 10n, 1); left = projectRelationship(left, relationshipId);
+  let right = ingestObservation(createSliceBState(), second); right = ingestObservation(right, first); right = advanceFinality(right, 1, 10n, 1); right = projectRelationship(right, relationshipId);
+  assert.equal(snapshot(left), snapshot(right));
   assert.equal(snapshotHash(left), snapshotHash(right));
+  assert.equal(buildRelationshipGraph(left, relationshipId).projectionHash, buildRelationshipGraph(right, relationshipId).projectionHash);
   const changed = ingestObservation(createSliceBState(), { ...first, normalizedPayload: { amount: "1" } });
   assert.notEqual(snapshotHash(left), snapshotHash(changed));
   return { scenario: "determinism", evidenceMode: "implemented_local", equalInsertionOrderHashes: true, meaningfulChangeChangesHash: true };

@@ -1,13 +1,14 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createSliceBApi } from "../../workers/multichain-execution/src/api.js";
-import { createSliceBState, ingestObservation, observationId, projectRelationship, recordEvidence, sourceEventId, type ObservationEnvelope } from "../../workers/multichain-execution/src/slice-b.js";
+import { advanceFinality, createSliceBState, ingestObservation, observationId, projectRelationship, recordEvidence, sourceEventId, type ObservationEnvelope } from "../../workers/multichain-execution/src/slice-b.js";
 
 const relationshipId = "relationship:slice-b:fixture";
 const identity = { domain: "ethereum-sepolia", chainKey: 1, transactionHash: "0xsliceb0001", eventIndex: 0 } as const;
 const observation: ObservationEnvelope = {
-  observationId: observationId(identity, "SettlementExecuted"), sourceEventId: sourceEventId(identity), relationshipId, objectId: "settlement:slice-b-1", objectType: "Settlement", eventType: "SettlementExecuted", sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, contractAddress: "0xsettlement-adapter-fixture", transactionHash: identity.transactionHash, eventIndex: 0, blockNumber: 10n, blockHash: "slice-b-block-10", parentBlockHash: "slice-b-block-9", observedAt: 100, normalizedPayload: { amount: "340000", asset: "USD" }, payloadSchemaVersion: "slice-b-observation-v1", observationState: "OBSERVED", finalityState: "FINALIZED", evidenceId: null, creditcoinReference: null, projectionReference: null, reconciliationReference: null, evidenceMode: "fixture_from_live_evidence", adapterVersion: "slice-b-server-v1", createdAt: 100, updatedAt: 100,
+  observationId: observationId(identity, "SettlementExecuted"), sourceEventId: sourceEventId(identity), relationshipId, objectId: "settlement:slice-b-1", objectType: "Settlement", eventType: "SettlementExecuted", sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, contractAddress: "0xsettlement-adapter-fixture", transactionHash: identity.transactionHash, eventIndex: 0, blockNumber: 10n, blockHash: "slice-b-block-10", parentBlockHash: "slice-b-block-9", observedAt: 100, normalizedPayload: { amount: "340000", asset: "USD" }, payloadSchemaVersion: "slice-b-observation-v1", observationState: "OBSERVED", finalityState: "UNKNOWN", evidenceId: null, creditcoinReference: null, projectionReference: null, reconciliationReference: null, evidenceMode: "fixture_from_live_evidence", adapterVersion: "slice-b-server-v1", createdAt: 100, updatedAt: 100,
 };
 let state = ingestObservation(createSliceBState(), observation);
+state = advanceFinality(state, 1, 10n, 101);
 state = recordEvidence(state, { evidenceId: "evidence:slice-b-settlement", relationshipId, sourceEventId: observation.sourceEventId, mode: "fixture_from_live_evidence", sourceDomain: "ethereum-sepolia", chainKey: 1, transactionHash: identity.transactionHash, blockNumber: 10n, attestcoinReference: "attestcoin:fixture:m11", status: "ACCEPTED", linkedCreditcoinTransition: "cc3:reconciliation:fixture", sourceReference: "M11 settlement evidence", reason: null });
 state = projectRelationship(state, relationshipId);
 const api = createSliceBApi(state);
@@ -22,7 +23,7 @@ const server = createServer((request: IncomingMessage, response: ServerResponse)
   else if (url.pathname === `/relationships/${relationshipId}/timeline`) value = api.timeline(relationshipId);
   else if (url.pathname === `/relationships/${relationshipId}/graph`) value = api.graph(relationshipId);
   else if (/^\/evidence\/[^/]+$/.test(url.pathname)) { const evidenceId = decodeURIComponent(url.pathname.slice("/evidence/".length)); value = api.evidence(evidenceId); if (value === null) { response.writeHead(404); response.end(json({ error: "NOT_INDEXED", evidenceId })); return; } }
-  else if (/^\/(facilities|commitments|obligations|settlements)\/[^/]+$/.test(url.pathname)) { const objectId = decodeURIComponent(url.pathname.slice(url.pathname.indexOf("/") + 1).split("/")[1]!); value = api.object(objectId); if (value === null) { response.writeHead(404); response.end(json({ error: "NOT_INDEXED", objectId })); return; } }
+  else if (/^\/(facilities|commitments|obligations|settlements)\/[^/]+$/.test(url.pathname)) { const objectId = decodeURIComponent(url.pathname.slice(url.pathname.indexOf("/") + 1).split("/")[1]!); value = api.object(objectId, url.searchParams.get("relationshipId") ?? undefined); if (value === null) { response.writeHead(404); response.end(json({ error: "NOT_INDEXED", objectId })); return; } if (typeof value === "object" && value !== null && "error" in value && (value as { error?: string }).error === "AMBIGUOUS_OBJECT_SCOPE") { response.writeHead(409); response.end(json(value)); return; } }
   else if (url.pathname === "/reconciliation/exceptions") value = api.investigations();
   else if (url.pathname === "/investigations") value = api.investigations();
   else if (url.pathname === "/checkpoints") value = api.checkpoints();

@@ -41,8 +41,9 @@ jobs:
 
       - run: corepack enable
       - run: corepack prepare pnpm@11.24.0 --activate
-      - run: pnpm install --no-frozen-lockfile
+      - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @cleara/multichain-execution typecheck
       - run: pnpm --filter @cleara/multichain-execution test
       - run: node --import tsx scripts/slice-b/demo.ts
       - run: node scripts/slice-b/smoke.mjs
+      - run: pnpm web:check

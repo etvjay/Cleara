@@ -32,6 +32,7 @@ try {
   const settlement = await get("/settlements/settlement:slice-b-1"); expect(settlement.status === 200, "known settlement object was not returned");
   const graph = await get("/relationships/relationship:slice-b:fixture/graph"); expect(graph.status === 200 && graph.body.schemaVersion === "slice-b-graph-v1", "graph route failed");
   const snapshot = await get("/snapshots/relationship:slice-b:fixture"); expect(snapshot.status === 200 && typeof snapshot.body.hash === "string", "snapshot route failed");
+  const checkpoints = await get("/checkpoints"); expect(checkpoints.status === 200 && Array.isArray(checkpoints.body) && checkpoints.body.length >= 1, "checkpoint route must expose current state"); expect(checkpoints.body[0].chainKey === 1 && checkpoints.body[0].chainId === 11155111 && checkpoints.body[0].sourceDomain === "ethereum-sepolia" && checkpoints.body[0].replayStatus === "CURRENT" && checkpoints.body[0].lastObservedBlock === "10n" && checkpoints.body[0].lastObservedBlockHash === "slice-b-block-10" && checkpoints.body[0].adapterVersion === "slice-b-server-v1" && checkpoints.body[0].observationSchemaVersion === "slice-b-observation-v1" && checkpoints.body[0].projectionSchemaVersion === "slice-b-read-model-v1", "checkpoint fields are incomplete");
   const write = await get("/health", "POST"); expect(write.status === 405 && write.body.error === "READ_ONLY", "write boundary failed");
   console.log("Slice B API smoke: PASS");
 } finally {
