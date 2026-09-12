@@ -260,7 +260,31 @@ export class RetryOrchestrator {
   }
 
   public submit(request: RetryRequest): DeliveryResult {
-    const input = requestRecord(request);
+    let input: InputRecord;
+    try {
+      input = requestRecord(request);
+    } catch (error) {
+      const normalizedError = this.normalizeError(error);
+      const deliveryId = "invalid-delivery";
+      const requestHash = identityHash({ version: "slice-c-invalid-request-v1", deliveryId, code: normalizedError.code });
+      const deadLetter = this.addDeadLetter({
+        kind: "DELIVERY",
+        jobId: null,
+        deliveryId,
+        relationshipId: null,
+        recordKind: null,
+        recordId: null,
+        snapshotHash: null,
+        code: normalizedError.code,
+        reason: normalizedError.message,
+        attempts: 0,
+        nextAction: "submit a plain serialized read-only request",
+        sourceStatus: {},
+      });
+      const receipt = Object.freeze({ deliveryId, jobId: null, requestHash, disposition: "REJECTED" as const, reason: normalizedError.message });
+      this.deliveries.set(deliveryId, receipt);
+      return { disposition: "REJECTED", job: null, receipt, deadLetter };
+    }
     const deliveryId = safeDeliveryId(input);
     let policy: RetryPolicy | null = null;
     let normalizedSelector: { kind: RetryRequest["selector"]["kind"]; id: string } | null = safeSelector(input);
@@ -269,7 +293,38 @@ export class RetryOrchestrator {
     } catch {
       policy = null;
     }
-    const requestHash = requestHashFor(input, policy, normalizedSelector);
+    let requestHash: string;
+    try {
+      requestHash = requestHashFor(input, policy, normalizedSelector);
+    } catch (error) {
+      const normalizedError = this.normalizeError(error);
+      requestHash = identityHash({
+        version: "slice-c-invalid-delivery-v1",
+        deliveryId,
+        selector: normalizedSelector,
+        relationshipId: safeScope(input),
+        provider: typeof input.provider === "string" ? input.provider : null,
+        operation: typeof input.operation === "string" ? input.operation : null,
+        code: normalizedError.code,
+      });
+      const deadLetter = this.addDeadLetter({
+        kind: "DELIVERY",
+        jobId: null,
+        deliveryId,
+        relationshipId: safeScope(input),
+        recordKind: normalizedSelector?.kind ?? null,
+        recordId: normalizedSelector?.id ?? null,
+        snapshotHash: this.safeContractHash(input),
+        code: normalizedError.code,
+        reason: normalizedError.message,
+        attempts: 0,
+        nextAction: "repair the serialized request and redeliver the read-only job",
+        sourceStatus: {},
+      });
+      const receipt = Object.freeze({ deliveryId, jobId: null, requestHash, disposition: "REJECTED" as const, reason: normalizedError.message });
+      this.deliveries.set(deliveryId, receipt);
+      return { disposition: "REJECTED", job: null, receipt, deadLetter };
+    }
     const previous = this.deliveries.get(deliveryId);
     if (previous) {
       if (previous.requestHash === requestHash) {

@@ -6,7 +6,7 @@ import {
   type SliceBRecordKind,
   type SourceCursor,
 } from "./types.js";
-import { identityHash, serializedSliceBHash } from "./canonical.js";
+import { canonicalJson, identityHash, serializedSliceBHash } from "./canonical.js";
 
 export class ContractError extends Error {
   public readonly name = "ContractError";
@@ -112,6 +112,83 @@ function recordEntries(body: PlainRecord, field: string): readonly [unknown, unk
     }
     return [entry[0], entry[1]] as [unknown, unknown];
   });
+}
+
+function assertSafeJsonValue(value: unknown, ancestors = new Set<object>()): void {
+  if (value === null || typeof value !== "object") return;
+  if (ancestors.has(value)) throw new ContractError("INVALID_CONTRACT", "contract.body contains a cycle");
+  if (!Array.isArray(value) && !isPlainRecord(value)) {
+    throw new ContractError("INVALID_CONTRACT", "contract.body contains an unsafe object");
+  }
+  const nextAncestors = new Set(ancestors).add(value);
+  if (Array.isArray(value)) {
+    for (const item of value) assertSafeJsonValue(item, nextAncestors);
+    return;
+  }
+  for (const [key, item] of Object.entries(value)) {
+    if (["__proto__", "constructor", "prototype"].includes(key)) {
+      throw new ContractError("INVALID_CONTRACT", "contract.body contains an unsafe key");
+    }
+    assertSafeJsonValue(item, nextAncestors);
+  }
+}
+
+function requireBigIntText(value: unknown, field: string, nullable = false): void {
+  if (nullable && value === null) return;
+  if (typeof value !== "string" || !/^\d+n$/.test(value)) {
+    throw new ContractError("INVALID_CONTRACT_RECORD", `${field} must be a nonnegative bigint string`);
+  }
+}
+
+function validateKnownBigints(body: PlainRecord): void {
+  for (const [, value] of recordEntries(body, "sourceScopes")) {
+    const scope = requirePlainRecord(value, "sourceScope");
+    if (Object.prototype.hasOwnProperty.call(scope, "anchorBlockNumber")) requireBigIntText(scope.anchorBlockNumber, "sourceScope.anchorBlockNumber");
+  }
+  for (const [key, value] of recordEntries(body, "observations")) {
+    const record = requirePlainRecord(value, `observations.${String(key)}`);
+    if (Object.prototype.hasOwnProperty.call(record, "blockNumber")) requireBigIntText(record.blockNumber, "observation.blockNumber");
+  }
+  for (const [key, value] of recordEntries(body, "evidence")) {
+    const record = requirePlainRecord(value, `evidence.${String(key)}`);
+    if (Object.prototype.hasOwnProperty.call(record, "blockNumber")) requireBigIntText(record.blockNumber, "evidence.blockNumber");
+  }
+  for (const [key, value] of recordEntries(body, "canonical")) {
+    const record = requirePlainRecord(value, `canonical.${String(key)}`);
+    if (Object.prototype.hasOwnProperty.call(record, "blockNumber")) requireBigIntText(record.blockNumber, "canonical.blockNumber", true);
+  }
+  for (const [key, value] of recordEntries(body, "checkpoints")) {
+    const checkpoint = requirePlainRecord(value, `checkpoints.${String(key)}`);
+    if (Object.prototype.hasOwnProperty.call(checkpoint, "lastObservedBlock")) requireBigIntText(checkpoint.lastObservedBlock, "checkpoint.lastObservedBlock");
+    if (Object.prototype.hasOwnProperty.call(checkpoint, "lastFinalizedBlock")) requireBigIntText(checkpoint.lastFinalizedBlock, "checkpoint.lastFinalizedBlock", true);
+    if (Object.prototype.hasOwnProperty.call(checkpoint, "replayFromBlock")) requireBigIntText(checkpoint.replayFromBlock, "checkpoint.replayFromBlock", true);
+    if (checkpoint.replayTargets !== undefined) {
+      if (!Array.isArray(checkpoint.replayTargets)) throw new ContractError("INVALID_CONTRACT_RECORD", "checkpoint.replayTargets must be an array");
+      checkpoint.replayTargets.forEach((target, index) => {
+        const item = requirePlainRecord(target, `checkpoint.replayTargets[${index}]`);
+        if (Object.prototype.hasOwnProperty.call(item, "blockNumber")) requireBigIntText(item.blockNumber, "replayTarget.blockNumber");
+      });
+    }
+  }
+  for (const [key, value] of recordEntries(body, "blockHistory")) {
+    const header = requirePlainRecord(value, `blockHistory.${String(key)}`);
+    if (Object.prototype.hasOwnProperty.call(header, "blockNumber")) requireBigIntText(header.blockNumber, "blockHeader.blockNumber");
+  }
+  for (const [index, value] of (Array.isArray(body.replayHistory) ? body.replayHistory.entries() : [])) {
+    const replay = requirePlainRecord(value, `replayHistory[${index}]`);
+    if (Object.prototype.hasOwnProperty.call(replay, "fromBlock")) requireBigIntText(replay.fromBlock, "replay.fromBlock");
+    if (Object.prototype.hasOwnProperty.call(replay, "finalizedBlock")) requireBigIntText(replay.finalizedBlock, "replay.finalizedBlock");
+  }
+  for (const [index, value] of (Array.isArray(body.evidenceConflicts) ? body.evidenceConflicts.entries() : [])) {
+    const conflict = requirePlainRecord(value, `evidenceConflicts[${index}]`);
+    for (const field of ["existingContent", "conflictingContent"]) {
+      const nested = conflict[field];
+      if (nested !== undefined && nested !== null) {
+        const record = requirePlainRecord(nested, `evidenceConflicts[${index}].${field}`);
+        if (Object.prototype.hasOwnProperty.call(record, "blockNumber")) requireBigIntText(record.blockNumber, `${field}.blockNumber`);
+      }
+    }
+  }
 }
 
 function statusMarkers(record: PlainRecord): Readonly<Record<string, string | null>> {
@@ -249,8 +326,13 @@ export function parseSerializedSliceBContract(input: unknown): ParsedSliceBContr
     throw new ContractError("INVALID_CONTRACT", "contract.body is not valid JSON");
   }
   const bodyRecord = requirePlainRecord(parsed, "contract.body");
+  assertSafeJsonValue(bodyRecord);
   if (bodyRecord.schemaVersion !== SLICE_B_SCHEMA_VERSION) {
     throw new ContractError("UNSUPPORTED_SCHEMA", "contract body is not a Slice B read-model snapshot");
+  }
+  validateKnownBigints(bodyRecord);
+  if (canonicalJson(bodyRecord) !== body) {
+    throw new ContractError("INVALID_CONTRACT", "contract.body must be canonical JSON");
   }
 
   const records = RECORD_KINDS.flatMap((kind) => recordsFor(kind, bodyRecord));

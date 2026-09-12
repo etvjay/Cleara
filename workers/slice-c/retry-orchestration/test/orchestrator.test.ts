@@ -4,13 +4,15 @@ import test from "node:test";
 import {
   ProviderOutageSimulator,
   RetryOrchestrator,
+  canonicalJson,
+  parseSerializedSliceBContract,
   type ReadOnlyProvider,
   type RetryRequest,
   type SerializedSliceBContract,
 } from "../src/index.js";
 
 function contract(bodyValue: Record<string, unknown>): SerializedSliceBContract {
-  const body = JSON.stringify(bodyValue);
+  const body = canonicalJson(bodyValue);
   const hash = createHash("sha256").update(`${body.length}:${body}`, "utf8").digest("hex");
   return { hash, body };
 }
@@ -64,6 +66,49 @@ function request(contractValue: SerializedSliceBContract, deliveryId: string): R
     operation: "provider-read",
   };
 }
+
+test("serialized contracts reject noncanonical JSON and malformed known bigint fields", () => {
+  const nonCanonicalBody = '{"schemaVersion":"slice-b-read-model-v1","observations":[]}';
+  const nonCanonicalHash = createHash("sha256").update(`${nonCanonicalBody.length}:${nonCanonicalBody}`, "utf8").digest("hex");
+  assert.throws(
+    () => parseSerializedSliceBContract({ hash: nonCanonicalHash, body: nonCanonicalBody }),
+    /canonical JSON/,
+  );
+
+  assert.throws(
+    () => parseSerializedSliceBContract(contract({
+      schemaVersion: "slice-b-read-model-v1",
+      observations: [["observation:bad", { observationId: "observation:bad", relationshipId: "r", chainKey: 1, blockNumber: "9x" }]],
+    })),
+    /nonnegative bigint string/,
+  );
+});
+
+test("cyclic malformed delivery requests become dead letters instead of escaping the boundary", () => {
+  const cyclicContract: Record<string, unknown> & { body?: unknown } = { hash: "invalid" };
+  cyclicContract.body = cyclicContract;
+  const result = new RetryOrchestrator().submit({
+    deliveryId: "delivery:cyclic",
+    contract: cyclicContract,
+    selector: { kind: "observation", id: "observation:missing" },
+    relationshipId: "relationship:a",
+    provider: "projection-read",
+    operation: "provider-read",
+  } as unknown as RetryRequest);
+
+  assert.equal(result.disposition, "REJECTED");
+  assert.equal(result.job, null);
+  assert.equal(result.deadLetter?.kind, "DELIVERY");
+});
+
+test("proxy-like top-level delivery requests become dead letters", () => {
+  const proxy = new Proxy({}, { getPrototypeOf: () => { throw new Error("proxy access denied"); } });
+  const result = new RetryOrchestrator().submit(proxy as unknown as RetryRequest);
+
+  assert.equal(result.disposition, "REJECTED");
+  assert.equal(result.job, null);
+  assert.equal(result.deadLetter?.kind, "DELIVERY");
+});
 
 test("serialized Slice B delivery has deterministic identity and duplicate idempotency", () => {
   const serialized = observationContract();
