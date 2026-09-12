@@ -4,9 +4,9 @@
 **Repository:** `etvjay/Cleara`
 **Branch:** `verification/slice-b`
 **Base:** `c1065cedb2ae62543bb253d0bad9af23ffd99261`
-**Repair implementation:** `82c27b068de9d01be0ee48ec40ed62b1f682f87a`
-**Final pushed implementation SHA:** `82c27b068de9d01be0ee48ec40ed62b1f682f87a`
-**Verification status:** final implementation and exact-head PR CI pass on `82c27b068de9d01be0ee48ec40ed62b1f682f87a`; browser and hosted deployment remain unverified.
+**Repair implementation:** `0255a1756e07ed6a8d3b5d2a2ed8967a60d97593`
+**Final pushed implementation SHA:** `0255a1756e07ed6a8d3b5d2a2ed8967a60d97593`
+**Verification status:** implementation pushed; exact-head remote CI receipt pending. Browser and hosted deployment remain unverified.
 
 ## A. Current narrative truth
 
@@ -44,7 +44,8 @@ Slice B now provides:
 - stable source-event identity;
 - separate observation, finality, evidence, canonical, projection, and reconciliation states;
 - explicit reorg detection;
-- explicit replay with trusted canonical block-header continuity, target-block identity, sparse-event cursor semantics, narrow fail-closed handling for later affected blocks, finality monotonicity, provenance, and idempotency checks;
+- ordered replay ranges with trusted target identity, cursor advancement, one canonical header per chain height, out-of-order candidate retention, missing-history backfill, finality monotonicity, provenance, and idempotency checks;
+- strict boundary validation with typed dead-letter/recovery records;
 - globally unique evidence IDs with explicit conflict investigations that preserve the original record;
 - relationship-scoped evidence, canonical, replay, dead-letter, object, and investigation reads;
 - current reconciliation state separated from append-only reconciliation history;
@@ -87,15 +88,17 @@ No Nomos package, Nomos contract, Arbitrum file, new chain adapter, wallet, brid
 The repair is accepted only if:
 
 1. finality cannot clear `REPLAY_REQUIRED` or regress during replay;
-2. explicit replay succeeds only after target-header continuity and finality checks;
-3. replay is idempotent and preserves superseded history;
-4. evidence lookup returns known records and conflicting evidence preserves the original;
-5. relationship responses cannot leak other relationship records, including scoped object reads;
-6. current reconciliation state is separate from reconciliation history;
-7. equivalent insertion order produces equal hashes and collision boundaries remain distinct;
-8. the demo exits nonzero on failed assertions;
-9. read-only API behavior remains enforced;
-10. exact repair SHA passes pull-request CI.
+2. explicit replay succeeds only after ordered target-header continuity, full metadata identity, and finality checks;
+3. replay advances through every affected indexed block, reaches `CURRENT` only when complete, and preserves superseded history;
+4. finality never promotes an unselected fork candidate and one canonical header exists per chain height;
+5. malformed/conflicting observations cannot finalize or become current graph nodes;
+6. evidence linkage is order-independent and full-identity safe, with reorg invalidation and complete conflict payload retention;
+7. relationship responses cannot leak other relationship or global records, including scoped object reads;
+8. current reconciliation state is separate from sequence-preserving history;
+9. equivalent insertion order produces equal hashes and graph/API reads are fresh;
+10. the demo and adversarial harness exit nonzero on failed assertions;
+11. read-only API behavior remains enforced;
+12. exact repair SHA passes pull-request CI.
 
 ## I. Documentation status rules
 
@@ -104,13 +107,16 @@ Nomos remains a conceptual financial-semantics/interface boundary in this branch
 Use:
 
 ```text
+VERIFIED_LOCAL              exact local command and regression evidence
+VERIFIED_REMOTE             exact-head remote workflow evidence
 TESTED_TESTNET              historical protocol evidence
 FIXTURE_FROM_LIVE_EVIDENCE  local fixture derived from evidence
-COMPOSITE_FIXTURE            combined Slice A workbench case
-IMPLEMENTED_LOCAL            local Slice B code and tests
-LOCAL_PROJECTION             derived read-model output
-NOT_VERIFIED                 browser/deployment until independently verified
-DEFERRED                     production persistence, live indexing, M12+
+COMPOSITE_FIXTURE           combined Slice A workbench case
+IMPLEMENTED_LOCAL           local Slice B code and tests
+LOCAL_PROJECTION            derived read-model output
+BROWSER_VERIFICATION_BLOCKED browser harness unavailable
+DEPLOYMENT_NOT_VERIFIED     no hosted deployment/readback performed
+DEFERRED                    production persistence, indexing, workers, compliance, custody, integrations, M12+
 ```
 
 ## J. Exact verification route

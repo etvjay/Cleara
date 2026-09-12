@@ -45,16 +45,13 @@ GET /checkpoints
 GET /snapshots/relationship:slice-b:fixture
 ```
 
-The demo emits six assertion-backed local scenarios:
+The demo emits six assertion-backed local scenarios. The adversarial harness adds explicit PASS/FAIL output for ordered two-block replay, incomplete recovery, candidate ordering, canonical-height uniqueness, malformed metadata, conflict finality, evidence arrival order, reconciliation chronology, forged `NOOP`, graph freshness, and malformed snapshot restore:
 
-- happy path;
-- pending proof;
-- source/canonical mismatch;
-- reorg detection followed by explicit replay;
-- relationship scope isolation;
-- deterministic hash equivalence and change detection.
+```bash
+pnpm slice-b:adversarial
+```
 
-Evidence mode: `IMPLEMENTED_LOCAL` and `LOCAL_PROJECTION`. No route mutates canonical state.
+Evidence mode: `IMPLEMENTED_LOCAL` and `LOCAL_PROJECTION`. No route mutates canonical state. The local API rebuilds graph reads from current state and reports typed read-only or invalid-parameter errors.
 
 ## Limitations
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-`VERIFIED_REMOTE` for final implementation commit `82c27b068de9d01be0ee48ec40ed62b1f682f87a`. The exact-head workflows and all local gates below were read back against this implementation tree; later documentation-only receipts are reported separately.
+`IMPLEMENTED_LOCAL` for implementation commit `0255a1756e07ed6a8d3b5d2a2ed8967a60d97593`; exact-head remote verification is pending for this new repair. The local gates below were executed against the implementation tree; the final documentation receipt will be a separate commit.
 
 ## Repository
 
@@ -10,8 +10,9 @@
 Repository: etvjay/Cleara
 Branch: verification/slice-b
 Base: c1065cedb2ae62543bb253d0bad9af23ffd99261
-Implementation hardening commit: 82c27b068de9d01be0ee48ec40ed62b1f682f87a
-Final pushed implementation SHA: 82c27b068de9d01be0ee48ec40ed62b1f682f87a
+Implementation hardening commit: 0255a1756e07ed6a8d3b5d2a2ed8967a60d97593
+Final pushed implementation SHA: 0255a1756e07ed6a8d3b5d2a2ed8967a60d97593
+Final documentation receipt SHA: pending
 Draft PR: https://github.com/etvjay/Cleara/pull/1
 ```
 
@@ -19,22 +20,17 @@ Historical M3-M11 and M11-Lifecycle runs remain separately evidenced. No uninter
 
 ## Repaired invariants
 
-- Replay requires a `CANONICAL` trusted `BlockHeader` from `state.blockHistory`. No observation fallback can promote a replacement.
-- Replay checkpoints store `replayFromBlock`, `replayOldBlockHash`, and `replayParentBlockHash` separately from the latest observed tip identity.
-- Earlier-block replay resolves the old hash from the target block header, not from `lastObservedBlockHash`.
-- Missing, superseded, parentless, or metadata-inconsistent trusted history leaves the checkpoint `REPLAY_REQUIRED` and replay `BLOCKED`.
-- Replacement identity, predecessor parent, finality, cursor, and conflict state are validated before promotion.
-- Reorged observations remain auditable history and replay provenance is preserved.
-- Narrow fail-closed replay preserves the latest observed tip. If later indexed blocks are affected, later observations remain `REORGED`, later headers are `SUPERSEDED`, `replayReason` records `additional replacement observations required for affected indexed range`, and the checkpoint stays `REPLAY_REQUIRED`.
-- Multiple replacement events at one block do not reorg one another; old-fork observations are the records superseded by replay.
-- `advanceFinality` and successful replay are monotonic. Lower, equal, or negative inputs cannot regress finalized height or demote observations. Equal stale inputs are no-ops.
-- Cursor semantics are explicitly `SPARSE_EVENT`: latest observed event block, not a complete chain-header cursor. Replay still requires indexed canonical history for the superseded event block.
-- Reconciliation current state is stored separately from append-only `reconciliationHistory`; investigations use current state while relationship reads expose both.
-- Attestcoin evidence IDs are globally unique. Identical records are idempotent; conflicting content preserves the original and records every distinct conflict without replacing trusted evidence.
-- Typed length-prefixed composite keys and hash inputs prevent delimiter collisions across relationships, objects, block headers, and source identities.
-- Relationship-scoped investigations and object reads exclude unrelated relationship records and global records unless the query is unscoped.
-- Snapshot restore preserves literal strings, restores only known bigint fields, normalizes legacy keys, and remains backward-compatible for older fields.
-- Canonical block headers are not demoted when another event from the same canonical block is ingested.
+- Replay owns an ordered `replayTargets` range. The first target is validated against its own canonical old header, and a successful block-10 replay advances the pending cursor to block 11 without changing the original target prematurely.
+- Finality advancement never selects fork candidates; competing same-height hashes remain auditable `CANDIDATE` until validated replay selects one, and at most one header per `(chainKey, blockNumber)` is `CANONICAL`.
+- Missing, superseded, parentless, or metadata-inconsistent trusted history leaves the checkpoint `REPLAY_REQUIRED` and replay `BLOCKED`; `backfillReplayHeader` is the explicit recovery path for missing trusted history.
+- Replacement identity, predecessor parent, finality, cursor, conflict state, and command shape are validated before promotion or `NOOP`.
+- Reorged observations remain auditable history, selected old headers become `SUPERSEDED`, old evidence becomes `STALE`, dependent reconciliation becomes `REORG_DETECTED`, and replay provenance is preserved.
+- A range cannot become `CURRENT` while any affected indexed block lacks a finalized, parent-consistent selected replacement; incomplete ranges retain owner, recovery role, reason, and next action.
+- Boundary validation rejects metadata drift, nonfinite/fractional values, invalid identifiers, unsafe payloads, and invalid enums before projection mutation, recording typed recovery/dead-letter records.
+- Evidence-first and observation-first ingestion converge only on complete source identity; mismatched evidence never attaches and conflicting payloads remain retrievable in full.
+- Graph/API reads are rebuilt from current state, so cached projections cannot silently remain current after mutations.
+- Reconciliation current state is stored separately from append-only `reconciliationHistory` with per-scope sequence/occurred-at chronology.
+- Snapshot restore preserves literal strings, restores only known bigint fields, validates restored records and canonical-height uniqueness, normalizes legacy keys, and remains backward-compatible for older fields.
 
 ## Local gates
 
@@ -42,10 +38,11 @@ Executed on the final implementation tree:
 
 ```text
 corepack pnpm install --frozen-lockfile       PASS
-corepack pnpm check:projection                PASS, 47 worker tests
+corepack pnpm check:projection                PASS, 59 worker tests
 corepack pnpm web:check                       PASS, 15 web tests, build, HTTP smoke, scan
 node --import tsx scripts/slice-b/demo.ts    PASS, six assertion-backed scenarios
 node scripts/slice-b/smoke.mjs                PASS, checkpoint/evidence/investigation/read-only assertions
+node --import tsx scripts/slice-b/adversarial.mjs PASS, 10 explicit invariant scenarios
 git diff --check                              PASS
 forge fmt --check                             PASS
 forge build --sizes                           PASS
@@ -56,13 +53,7 @@ Forge was available in the verification environment. Existing timestamp and unsa
 
 ## Exact-head final PR checks
 
-All checks passed on `82c27b068de9d01be0ee48ec40ed62b1f682f87a`:
-
-- [Contracts](https://github.com/etvjay/Cleara/actions/runs/34694205068) - `success`, `headSha = 82c27b068de9d01be0ee48ec40ed62b1f682f87a`
-- [Multichain Execution Projection](https://github.com/etvjay/Cleara/actions/runs/34694205064) - `success`, `headSha = 82c27b068de9d01be0ee48ec40ed62b1f682f87a`
-- [Read-only Workbench](https://github.com/etvjay/Cleara/actions/runs/34694205086) - `success`, `headSha = 82c27b068de9d01be0ee48ec40ed62b1f682f87a`
-
-The preceding implementation receipt commits `6bc35c20b6079212253f5a00ce3f685fb5462e2b` and `b2a6b8fab45eb9491aef1653ac8f0c8186bed859` are historical context only.
+Pending for implementation commit `0255a1756e07ed6a8d3b5d2a2ed8967a60d97593`. No older workflow receipt is reused as evidence for this repair. The final documentation receipt will record each applicable workflow run, exact `head_sha`, and conclusion.
 
 ## Adversarial assertions
 
@@ -80,9 +71,13 @@ The repaired suite covers:
 - wrong source domain, adapter version, schema version, and block number;
 - unfinalized replacement;
 - earlier-block replay using the target old hash;
-- latest-tip replay and narrow fail-closed replay over multiple affected indexed blocks;
-- later replacement candidates retaining the original replay cursor;
-- wrong stored old block hash and wrong replay target;
+- complete two-block replay reaching `CURRENT` and incomplete replay remaining `REPLAY_REQUIRED` with owner/action;
+- ordered out-of-order candidates, pending-target advancement, missing-history `backfillReplayHeader`, and replay restart from snapshot;
+- one canonical header per chain height, unselected candidates never promoted by finality, same-block event preservation, and candidate ordering;
+- strict malformed metadata, nonfinite/fractional values, empty identifiers, payload shape, enum, identity, and typed dead-letter rejection;
+- evidence-first/observation-first convergence, full source identity mismatches, conflict payload retrieval, and reorg evidence/reconciliation invalidation;
+- graph/API freshness after observation, finality, evidence, canonical, reconciliation, and replay mutations;
+- forged replay commands changing relationship, object, chain, domain, parent, height, hash, adapter, schema, or finality cannot return `NOOP`;
 - invalid replacement parent;
 - successful replay preserving historical reorg data and the latest tip;
 - repeated successful replay returning `NOOP`;
@@ -100,7 +95,9 @@ The repaired suite covers:
 - delimiter-collision-resistant keys and hashes;
 - backward-compatible snapshot restore with legacy keys and fields;
 - literal strings that resemble bigint values;
-- insertion-order determinism, graph selection, meaningful hash changes, malformed path encoding, and read-only boundaries.
+- insertion-order determinism, graph selection/freshness, meaningful hash changes, malformed path encoding, invalid scope parameters, malformed snapshot rejection, and read-only boundaries.
+
+The standalone adversarial command prints 10 explicit `PASS` lines and exits nonzero on any failure.
 
 ## API readback
 
@@ -120,7 +117,7 @@ GET /checkpoints
 GET /snapshots/:id
 ```
 
-The local fixture exposes a current `SPARSE_EVENT` checkpoint with chain key `1`, Sepolia chain ID `11155111`, source domain `ethereum-sepolia`, block `10n`, explicit `CURRENT` replay status, and adapter/schema versions. Scoped object routes exclude unrelated evidence; unscoped ambiguous objects return `409 AMBIGUOUS_OBJECT_SCOPE`. All API routes remain read-only.
+The local fixture exposes a current `SPARSE_EVENT` checkpoint with chain key `1`, Sepolia chain ID `11155111`, source domain `ethereum-sepolia`, block `10n`, explicit `CURRENT` replay status, and adapter/schema versions. Scoped object routes exclude unrelated and global evidence; unscoped ambiguous objects return `409 AMBIGUOUS_OBJECT_SCOPE`. Graph reads are rebuilt from current state after mutations. All API routes remain read-only.
 
 Expected behavior includes:
 
@@ -133,6 +130,7 @@ checkpoints                        200, populated
 unknown object                     404 NOT_INDEXED
 ambiguous object scope             409 AMBIGUOUS_OBJECT_SCOPE
 malformed path encoding            404 NOT_INDEXED
+empty/whitespace scope parameter   400 INVALID_PARAMETER
 POST /health                       405 READ_ONLY
 ```
 
@@ -142,10 +140,13 @@ Creditcoin remains canonical financial authority. The API is projection-scoped.
 
 - Existing M3-M11 and M11-Lifecycle records: historical `TESTED_TESTNET`, separately evidenced.
 - Combined Slice A workbench: `COMPOSITE_FIXTURE`.
-- Slice B worker/API/demo: `IMPLEMENTED_LOCAL` and `LOCAL_PROJECTION`.
-- Exact PR workflows: remote verification of code and checks only, not live financial evidence.
+- Slice B worker/API/demo/adversarial harness: `IMPLEMENTED_LOCAL` and `LOCAL_PROJECTION`.
+- Exact PR workflows: `VERIFIED_REMOTE` for the final pushed tree only after exact-head readback; not live financial evidence.
+- Browser verification: `BROWSER_VERIFICATION_BLOCKED`.
+- Hosted deployment: `DEPLOYMENT_NOT_VERIFIED`.
 - New Attestcoin proof: not requested.
 - New Creditcoin state transition: not performed.
+- Production persistence/indexing/workers, compliance, custody, ERP/GL, live integrations, and production settlement: deferred.
 
 ## Security and authority
 

@@ -29,7 +29,7 @@ observation envelope
 
 The implementation keeps these axes independent:
 
-- observation: observed, malformed, duplicate, conflicting, unavailable;
+- observation: observed, malformed, duplicate, conflicting, unavailable, rejected;
 - finality: unknown, pending, finalized, reorged;
 - evidence: not requested, pending, accepted, rejected, consumed, stale;
 - canonical: not read, read, matched, conflicting, unavailable;
@@ -41,13 +41,13 @@ No axis promotes another. `FINALIZED` is not `PROVEN`, `PROVEN` is not `ACCEPTED
 
 ## Cursor and continuity semantics
 
-Slice B uses a `SPARSE_EVENT` cursor. `lastObservedBlock` means the latest indexed event block, not a complete chain-header cursor. `blockHistory` contains headers for indexed event blocks only; gaps with no relevant events are permitted. A replay checkpoint stores the target identity separately as `replayFromBlock`, `replayOldBlockHash`, and `replayParentBlockHash`; `lastObservedBlockHash` remains the tip identity. Reorg replay is stronger than ordinary sparse observation: it requires a `CANONICAL` trusted header for the superseded indexed event block, a valid parent hash, and matching checkpoint metadata. Missing or superseded trusted history blocks replay and leaves `REPLAY_REQUIRED`. Earlier-block replay uses the target header's hash, never the checkpoint tip hash. This slice uses the narrow fail-closed policy: a supplied replacement may be promoted, but if later indexed blocks are affected, their observations remain historical `REORGED`, their headers are `SUPERSEDED`, the latest observed tip is preserved, and the checkpoint remains `REPLAY_REQUIRED` with `replayReason = "additional replacement observations required for affected indexed range"`. Only a replay at the latest affected indexed block can reach `CURRENT`.
+Slice B uses a `SPARSE_EVENT` cursor. `lastObservedBlock` means the latest indexed event block, not a complete chain-header cursor. `blockHistory` contains headers for indexed event blocks only; gaps with no relevant events are permitted. A replay checkpoint stores an ordered `replayTargets` range. Each target carries the affected height, superseded hash, old parent, and currently expected replacement parent. The compatibility fields `replayFromBlock`, `replayOldBlockHash`, and `replayParentBlockHash` always describe the first pending target, while `lastObservedBlockHash` remains the tip identity. Reorg replay requires a `CANONICAL` trusted header for the next affected indexed event block, exact checkpoint/profile metadata, a valid old-parent link, a finalized indexed replacement, and a replacement parent matching the selected predecessor. Candidates arriving out of order remain auditable and cannot replace the first pending target. After a successful target replay, the cursor advances to the next target; only after every affected indexed block has a selected replacement can the checkpoint become `CURRENT`. Missing trusted history returns `BLOCKED` with `REPLAY_REQUIRED`, an owner, recovery role, and an explicit `backfillReplayHeader` action. Old observations become `REORGED`, selected old headers become `SUPERSEDED`, replay provenance is retained, and the latest replacement tip is preserved. Finality advancement never selects fork candidates and never creates two canonical headers at one chain height.
 
-Finality is monotonic across observation advancement and replay promotion. Lower or equal finality inputs cannot regress a checkpoint or demote finalized observations. Negative finality inputs are safe no-ops or blocked replay attempts. Identical stale inputs are no-ops.
+Finality is monotonic across observation advancement and replay promotion. Lower or equal finality inputs cannot regress a checkpoint or demote finalized observations. Negative, nonfinite, fractional, or otherwise invalid values create typed finality rejection records without mutating projection state. Identical valid replay commands return `NOOP` only after command shape, identity, target, trusted history, parent, finality, and indexed replacement validation.
 
 ## Evidence identity scope
 
-Attestcoin evidence IDs are globally unique in this local model. Identical content is idempotent. Conflicting content using an existing evidence ID preserves the original record byte-for-byte and creates an explicit relationship-scoped evidence-conflict investigation for each distinct conflicting payload. A conflicting record is never attached to the other relationship's evidence view. A scoped investigation includes a conflict when either the existing or conflicting relationship matches; an unscoped investigation includes all conflicts. Global evidence is returned only by the unscoped evidence lookup and is never relabeled as belonging to a requested relationship.
+Attestcoin evidence IDs are globally unique in this local model. Evidence linkage requires the complete source identity: source domain, chain key and chain ID, transaction hash, event index, block number, block hash, source event ID, and relationship policy. Evidence-first and observation-first arrival converge when those fields match exactly. Mismatched evidence is retained only as an unlinked/rejected record with recovery ownership; global evidence is never relabeled as relationship evidence. Identical content is idempotent. Conflicting content using an existing evidence ID preserves the original record byte-for-byte and creates an explicit conflict containing the complete accepted and conflicting payloads, not hashes alone. A conflicting record is never attached to the other relationship's evidence view. On reorg, evidence linked only to superseded observations becomes `STALE`, and dependent current reconciliation becomes `REORG_DETECTED` until replacement evidence is supplied.
 
 ```text
 domain + chainKey + transactionHash + eventIndex
@@ -57,7 +57,7 @@ Observation identity additionally includes event type. Duplicate observations re
 
 ## Reconciliation current state and history
 
-`reconciliations` is the current record for each typed relationship/source-event/canonical-object scope. A state transition replaces only that current entry and appends the prior/current transition to `reconciliationHistory`. Investigation reads use current reconciliation state, while relationship reads expose both current state and append-only history. This prevents stale historical mismatches from being presented as current state.
+`reconciliations` is the current record for each typed relationship/source-event/canonical-object scope. Each transition receives a stable per-scope `sequence` and deterministic `occurredAt`; `reconciliationHistory` preserves semantic order within a scope while scopes are ordered deterministically for snapshots. A state transition replaces only that current entry and appends the transition to history. Investigation reads use current reconciliation state, while relationship reads expose both current state and append-only history. This prevents stale historical mismatches from being presented as current state and preserves `PENDING → MISMATCH → PENDING` across restart.
 
 Canonical, block-history, and reconciliation map keys use typed length-prefixed composite encoding. Hash inputs use the same component-boundary principle, so delimiter characters in relationship IDs, object IDs, block hashes, or source identities cannot merge distinct records.
 
@@ -81,7 +81,7 @@ GET /checkpoints
 GET /snapshots/relationship:slice-b:fixture
 ```
 
-All responses are projection-scoped and carry `source: projection`, `canonical: false`, or an equivalent explicit boundary. Scoped object routes require a matching relationship record and exclude global or unrelated records; unscoped ambiguous objects return `409 AMBIGUOUS_OBJECT_SCOPE`. There are no mutation routes.
+All responses are projection-scoped and carry `source: projection`, `canonical: false`, or an equivalent explicit boundary. Graph reads are rebuilt from current state on every read, so cached graphs cannot silently remain current after observation, finality, evidence, canonical, reconciliation, or replay mutations. Scoped object routes require a matching relationship record and exclude global or unrelated records; unscoped ambiguous objects return `409 AMBIGUOUS_OBJECT_SCOPE`. Empty or whitespace-only scope parameters and malformed path encodings are rejected safely. There are no mutation routes.
 
 ## M12 handoff
 

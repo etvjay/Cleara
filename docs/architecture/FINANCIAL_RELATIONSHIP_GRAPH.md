@@ -21,7 +21,7 @@ Node types include `Relationship`, `Claim`, `Facility`, `Allocation`, `Commitmen
 
 Edges carry type and provenance IDs. The current local builder uses `DERIVED_FROM`, `PROVEN_BY`, `SETTLED_BY`, and `RECONCILES`; the broader protocol vocabulary remains available for future materialized relationships only when supported by evidence.
 
-Every graph has a deterministic `projectionHash`. Nodes and edges are sorted before hashing. Rebuilding the same observation and reconciliation set must produce the same hash.
+Every graph has a deterministic `projectionHash`. Nodes and edges are sorted before hashing, graph reads are rebuilt from current projection state, and invalid/conflicting/reorged observations cannot appear as current nodes. Rebuilding the same observation and reconciliation set must produce the same hash; later mutations must produce a fresh graph rather than silently serving cached state. Canonical-header uniqueness and replay-range state remain checkpoint concerns, not graph authority.
 
 ## Boundary
 

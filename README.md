@@ -42,12 +42,15 @@ pnpm web:dev
 
 It is read-only, fixture/read-model backed, and requires no wallet or secret.
 
-Slice B local read-model demo:
+Slice B local read-model demo and adversarial checks:
 
 ```bash
 pnpm slice-b:demo
+pnpm slice-b:adversarial
 pnpm slice-b:dev
 ```
+
+The adversarial command is local evidence only. It does not request proofs, write RPC state, or imply production indexing.
 
 See [`DEMO.md`](DEMO.md), [`ARCHITECTURE.md`](ARCHITECTURE.md), and [`SLICE_B_SPEC.md`](docs/development/SLICE_B_SPEC.md).
 

@@ -298,7 +298,7 @@
       "sourceDocument": "docs/development/SLICE_B_VERIFICATION.md",
       "authority": "Projection only; Creditcoin remains canonical",
       "currentState": "LOCAL_PROJECTION",
-      "sourceObservation": "stable observation envelope with finality and reorg scenarios",
+      "sourceObservation": "strictly validated observation envelope with ordered replay-range, finality, candidate, conflict, evidence, and reconciliation scenarios",
       "proofStatus": "pending/accepted scenarios are local fixtures; no new proof submitted",
       "creditcoinStatus": "read reference modeled separately from projection",
       "nextPermittedAction": "Inspect local read-only API or await verified external evidence"
