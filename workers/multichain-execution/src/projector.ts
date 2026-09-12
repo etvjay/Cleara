@@ -50,14 +50,14 @@ export function createProjectionState(): ProjectionState {
  */
 export function applyEvent(
   state: ProjectionState,
-  event: IndexedEvent,
+  event: unknown,
   options: ApplyEventOptions = {},
 ): ProjectionState {
   validateEventEnvelope(event);
 
   const next = cloneState(state);
   const id = eventId(event);
-  const blockKey = `${event.chain}:${event.blockNumber.toString()}`;
+  const blockKey = scopeKey(event.chain, event.chainKey, event.chainId, event.sourceDomain, event.adapterVersion, event.schemaVersion, event.blockNumber);
   const blockHash = normalise(event.blockHash);
   const priorBlockHash = next.blocks.get(blockKey);
   if (priorBlockHash !== undefined && priorBlockHash !== blockHash) {
@@ -162,17 +162,28 @@ export function applyEvents(
   return events.reduce((current, event) => applyEvent(current, event, options), state);
 }
 
+function scopeKey(...parts: readonly (string | number | bigint | null)[]): string {
+  return parts.map((part) => {
+    const encoded = part === null ? "null:" : `${typeof part}:` + String(part);
+    return `${encoded.length}:${encoded}`;
+  }).join("");
+}
+
 /** The stable identity of an observed log; it is not a proof or financial id. */
 export function eventId(event: IndexedEvent): string {
-  return [
+  return scopeKey(
     event.chain,
     event.chainKey,
-    event.blockNumber.toString(),
+    event.chainId,
+    event.sourceDomain,
+    event.adapterVersion,
+    event.schemaVersion,
+    event.blockNumber,
     normalise(event.blockHash),
     normalise(event.transactionHash),
     event.transactionIndex,
     event.logIndex,
-  ].join(":");
+  );
 }
 
 function cloneState(state: ProjectionState): ProjectionState {
@@ -213,22 +224,27 @@ function cloneEvidence(value: EvidenceProjection): EvidenceProjection {
   };
 }
 
-function validateEventEnvelope(event: IndexedEvent): void {
-  if (!Number.isSafeInteger(event.chainId) || event.chainId <= 0) {
-    throw new ProjectionError("INVALID_EVENT", "chainId must be a positive safe integer");
+function validateEventEnvelope(event: unknown): asserts event is IndexedEvent {
+  if (event === null || typeof event !== "object" || Array.isArray(event)) throw new ProjectionError("INVALID_EVENT", "event envelope must be a plain object");
+  const candidate = event as Record<string, unknown>;
+  const prototype = Object.getPrototypeOf(event);
+  if (prototype !== Object.prototype && prototype !== null) throw new ProjectionError("INVALID_EVENT", "event envelope must have a safe prototype");
+  for (const key of Object.keys(candidate)) {
+    if (["__proto__", "constructor", "prototype"].includes(key)) throw new ProjectionError("INVALID_EVENT", "event envelope contains an unsafe key");
+    const descriptor = Object.getOwnPropertyDescriptor(candidate, key);
+    if (!descriptor || !("value" in descriptor)) throw new ProjectionError("INVALID_EVENT", "event envelope contains an accessor");
   }
-  if (!Number.isSafeInteger(event.chainKey) || event.chainKey < 0) {
-    throw new ProjectionError("INVALID_EVENT", "chainKey must be a non-negative safe integer");
-  }
-  if (event.blockNumber < 0n || event.logIndex < 0 || event.transactionIndex < 0) {
-    throw new ProjectionError("INVALID_EVENT", "event coordinates cannot be negative");
-  }
-  if (!event.blockHash.trim() || !event.transactionHash.trim() || !event.address.trim() || !event.name.trim()) {
-    throw new ProjectionError("INVALID_EVENT", "event coordinates and name are required");
-  }
-  if (!Number.isSafeInteger(event.observedAt) || event.observedAt < 0) {
-    throw new ProjectionError("INVALID_EVENT", "observedAt must be a non-negative safe integer");
-  }
+  if (candidate.chain !== "source" && candidate.chain !== "coordination") throw new ProjectionError("INVALID_EVENT", "chain is invalid");
+  if (!Number.isSafeInteger(candidate.chainId) || (candidate.chainId as number) <= 0) throw new ProjectionError("INVALID_EVENT", "chainId must be a positive safe integer");
+  if (!Number.isSafeInteger(candidate.chainKey) || (candidate.chainKey as number) < 0) throw new ProjectionError("INVALID_EVENT", "chainKey must be a non-negative safe integer");
+  if (typeof candidate.sourceDomain !== "string" || !candidate.sourceDomain.trim()) throw new ProjectionError("INVALID_EVENT", "sourceDomain is required");
+  if (typeof candidate.adapterVersion !== "string" || !candidate.adapterVersion.trim()) throw new ProjectionError("INVALID_EVENT", "adapterVersion is required");
+  if (typeof candidate.schemaVersion !== "string" || !candidate.schemaVersion.trim()) throw new ProjectionError("INVALID_EVENT", "schemaVersion is required");
+  if (candidate.blockNumber !== undefined && (typeof candidate.blockNumber !== "bigint" || (candidate.blockNumber as bigint) < 0n)) throw new ProjectionError("INVALID_EVENT", "blockNumber must be a non-negative bigint");
+  if (!Number.isSafeInteger(candidate.logIndex) || (candidate.logIndex as number) < 0 || !Number.isSafeInteger(candidate.transactionIndex) || (candidate.transactionIndex as number) < 0) throw new ProjectionError("INVALID_EVENT", "event indexes cannot be negative or unsafe");
+  if (typeof candidate.blockHash !== "string" || !candidate.blockHash.trim() || typeof candidate.transactionHash !== "string" || !candidate.transactionHash.trim() || typeof candidate.address !== "string" || !candidate.address.trim() || typeof candidate.name !== "string" || !candidate.name.trim()) throw new ProjectionError("INVALID_EVENT", "event coordinates and name are required");
+  if (!Number.isSafeInteger(candidate.observedAt) || (candidate.observedAt as number) < 0) throw new ProjectionError("INVALID_EVENT", "observedAt must be a non-negative safe integer");
+  if (candidate.args === null || typeof candidate.args !== "object" || Array.isArray(candidate.args)) throw new ProjectionError("INVALID_EVENT", "args must be a plain object");
 }
 
 function requireChain(event: IndexedEvent, expected: IndexedEvent["chain"]): void {

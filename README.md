@@ -16,6 +16,7 @@ The hackathon protocol package is ready for review on testnet:
 | M11 commitment lifecycle | `TESTED_TESTNET` |
 | Indexed projection core | `IMPLEMENTED_LOCAL` |
 | Read-only institutional workbench | `IMPLEMENTED_LOCAL` |
+| Slice B indexed relationship read model | `IMPLEMENTED_LOCAL` |
 | Production indexer, API, and frontend | Not claimed |
 
 Current-head live gates passed independently:
@@ -40,6 +41,18 @@ pnpm web:dev
 ```
 
 It is read-only, fixture/read-model backed, and requires no wallet or secret.
+
+Slice B local read-model demo and adversarial checks:
+
+```bash
+pnpm slice-b:demo
+pnpm slice-b:adversarial
+pnpm slice-b:dev
+```
+
+The adversarial command is local evidence only. It does not request proofs, write RPC state, or imply production indexing.
+
+See [`DEMO.md`](DEMO.md), [`ARCHITECTURE.md`](ARCHITECTURE.md), and [`SLICE_B_SPEC.md`](docs/development/SLICE_B_SPEC.md).
 
 ## What the protocol demonstrates
 
@@ -91,6 +104,11 @@ of the repository, UI, or uploaded evidence.
   milestone-by-milestone evidence ledger.
 - [`INDEXED_READ_MODEL.md`](docs/development/INDEXED_READ_MODEL.md) — local
   deterministic projection boundary.
+- [`SLICE_B_SPEC.md`](docs/development/SLICE_B_SPEC.md) — finality-aware,
+  replayable relationship read-model contract.
+- [`SLICE_B_VERIFICATION.md`](docs/development/SLICE_B_VERIFICATION.md) — local
+  Slice B verification and limitations.
+- [`SLICE_B_COMPATIBILITY_CONTRACT.md`](docs/development/SLICE_B_COMPATIBILITY_CONTRACT.md) — frozen serialized read-only handoff for isolated Slice C consumers.
 - [`WEBAPP_SURFACE.md`](docs/development/WEBAPP_SURFACE.md) — narrow local
   read-only workbench implemented; complete participant/operator surface remains
   proposed.

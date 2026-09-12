@@ -25,15 +25,18 @@ const TOKEN = "0x4444444444444444444444444444444444444444";
 function event(
   name: string,
   args: Record<string, unknown>,
-  options: Partial<Pick<IndexedEvent, "chain" | "blockNumber" | "logIndex" | "transactionIndex" | "blockHash" | "transactionHash" | "address" | "domainId" | "finality">> = {},
+  options: Partial<Pick<IndexedEvent, "chain" | "chainId" | "chainKey" | "sourceDomain" | "adapterVersion" | "schemaVersion" | "blockNumber" | "logIndex" | "transactionIndex" | "blockHash" | "transactionHash" | "address" | "domainId" | "finality">> = {},
 ): IndexedEvent {
   const blockNumber = options.blockNumber ?? 1n;
   const ordinal = Number(blockNumber) + (options.logIndex ?? 0);
   const hex = ordinal.toString(16).padStart(64, "0");
   return {
     chain: options.chain ?? "coordination",
-    chainId: options.chain === "source" ? 11155111 : 102031,
-    chainKey: options.chain === "source" ? 1 : 0,
+    chainId: options.chainId ?? (options.chain === "source" ? 11155111 : 102031),
+    chainKey: options.chainKey ?? (options.chain === "source" ? 1 : 0),
+    sourceDomain: options.sourceDomain ?? (options.chain === "source" ? "ethereum-sepolia" : "creditcoin-cc3"),
+    adapterVersion: options.adapterVersion ?? "projector-test-v1",
+    schemaVersion: options.schemaVersion ?? "projector-event-v1",
     domainId: options.domainId ?? DOMAIN_ID,
     blockNumber,
     blockHash: options.blockHash ?? `0x${hex}`,
@@ -237,4 +240,18 @@ test("serializes a deterministic snapshot without losing bigint coordinates", ()
   assert.equal(restored.commitments.get(COMMITMENT_ID)?.amount, 100n);
   assert.equal(restored.commitments.get(COMMITMENT_ID)?.lifecycleProof?.blockHeight, 99n);
   assert.deepEqual([...restored.appliedEventIds].sort(), [...state.appliedEventIds].sort());
+});
+
+test("scope key prevents same-height events from unrelated source scopes colliding", () => {
+  const first = event("FutureEvent", {}, { chain: "source", chainId: 11155111, chainKey: 1, sourceDomain: "ethereum-sepolia", blockNumber: 10n, blockHash: "scope-a" });
+  const second = event("FutureEvent", {}, { chain: "source", chainId: 1, chainKey: 1, sourceDomain: "ethereum-mainnet", blockNumber: 10n, blockHash: "scope-b" });
+  let state = applyEvent(createProjectionState(), first);
+  state = applyEvent(state, second);
+  assert.equal(state.blocks.size, 2);
+  assert.equal(state.appliedEventIds.size, 2);
+});
+
+test("malformed projector input returns a typed error without throwing TypeError", () => {
+  assert.throws(() => applyEvent(createProjectionState(), null), (error: unknown) => error instanceof ProjectionError && error.code === "INVALID_EVENT");
+  assert.throws(() => applyEvent(createProjectionState(), { __proto__: { polluted: true } }), (error: unknown) => error instanceof ProjectionError && error.code === "INVALID_EVENT");
 });

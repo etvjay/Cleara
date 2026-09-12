@@ -55,3 +55,9 @@ M11-Lifecycle itself now has current-head testnet evidence in workflow run
 `33699324988` (artifact `9873864767`). That evidence promotes the lifecycle
 contracts, not this read-model core. The projection remains local scaffolding
 until a separately defined indexing/backfill gate exists.
+
+## Slice B local boundary
+
+`workers/multichain-execution/src/slice-b.ts` adds a deterministic, read-only relationship read-model boundary with stable source-event identity, strict runtime validation, separate observation/finality/evidence/canonical/projection/reconciliation axes, evidence-first and observation-first identity-safe linkage, provenance links, graph projection, snapshot hashing, duplicate/conflict handling, and ordered replay-range recovery. Earlier-block replay preserves the observed tip, advances through affected indexed blocks in order, rejects unresolved ranges with `REPLAY_REQUIRED`, and exposes explicit backfill recovery when trusted history is missing. `src/api.ts` exposes an in-memory read-only adapter whose graph reads are rebuilt from current state, and `scripts/slice-b/server.ts` provides local JSON routes for the demo.
+
+This is `IMPLEMENTED_LOCAL`, not a production indexer. Checkpoints are reproducible in the local state model, but durable persistence, provider backfill, operational retry/dead-letter infrastructure, hosted deployment, and live browser verification remain unverified or deferred.

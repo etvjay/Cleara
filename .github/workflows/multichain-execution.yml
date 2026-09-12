@@ -5,12 +5,16 @@ on:
     branches: [main]
     paths:
       - "workers/multichain-execution/**"
+      - "scripts/slice-b/**"
+      - "docs/development/SLICE_B_*.md"
       - "package.json"
       - "pnpm-workspace.yaml"
       - ".github/workflows/multichain-execution.yml"
   pull_request:
     paths:
       - "workers/multichain-execution/**"
+      - "scripts/slice-b/**"
+      - "docs/development/SLICE_B_*.md"
       - "package.json"
       - "pnpm-workspace.yaml"
       - ".github/workflows/multichain-execution.yml"
@@ -37,6 +41,10 @@ jobs:
 
       - run: corepack enable
       - run: corepack prepare pnpm@11.24.0 --activate
-      - run: pnpm install --no-frozen-lockfile
+      - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @cleara/multichain-execution typecheck
       - run: pnpm --filter @cleara/multichain-execution test
+      - run: node --import tsx scripts/slice-b/demo.ts
+      - run: node scripts/slice-b/smoke.mjs
+      - run: node --import tsx scripts/slice-b/adversarial.mjs
+      - run: pnpm web:check
