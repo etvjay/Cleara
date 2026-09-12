@@ -7,7 +7,7 @@ Source domains execute native actions
         ↓
 Attestcoin proves external facts
         ↓
-Nomos interprets financial meaning
+Cleara financial-semantics boundary interprets meaning
         ↓
 Creditcoin owns canonical financial state
         ↓
@@ -20,6 +20,8 @@ Settlement evidence returns through Attestcoin
 Creditcoin reconciles the relationship
 ```
 
+Nomos is the architectural name for Cleara's financial-semantics and interface boundary. This verification branch does not contain an `@cleara/nomos` package or a Nomos contract. Nomos does not own state or authority separate from Creditcoin.
+
 ## Slice B
 
 Slice B is the read-model and evidence infrastructure around that core:
@@ -31,17 +33,18 @@ observations
 → Creditcoin read reference
 → reconciliation
 → provenance
-→ derived relationship graph
+→ derived relationship projection
 → deterministic snapshot/API
 ```
 
 The Slice B graph, checkpoint, API, and projection are non-authoritative. They cannot authorize clearing, execute settlement, or promote local state over Creditcoin.
 
+The graph is intentionally narrow in this slice. It represents a relationship-to-object projection with provenance and validity labels. Supported edge types are `DERIVED_FROM`, `PROVEN_BY`, `SETTLED_BY`, and `RECONCILES`. It does not claim to materialize every facility, allocation, commitment, obligation, clearing, residual, and settlement edge.
+
 ## Repository routes
 
 - Canonical contracts: `contracts/creditcoin/`
 - Source execution contracts: `contracts/source/`
-- Nomos semantics: `packages/nomos/`
 - Slice B projection/read model: `workers/multichain-execution/src/slice-b.ts`
 - Local read-only API: `scripts/slice-b/server.ts`
 - Workbench: `apps/web/`

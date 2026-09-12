@@ -45,3 +45,4 @@ jobs:
       - run: pnpm --filter @cleara/multichain-execution typecheck
       - run: pnpm --filter @cleara/multichain-execution test
       - run: node --import tsx scripts/slice-b/demo.ts
+      - run: node scripts/slice-b/smoke.mjs

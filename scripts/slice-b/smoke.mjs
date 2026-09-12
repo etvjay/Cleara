@@ -1,0 +1,39 @@
+import { spawn } from "node:child_process";
+import { request } from "node:http";
+
+const port = 4182;
+const base = `http://127.0.0.1:${port}`;
+const child = spawn(process.execPath, ["--import", "tsx", "scripts/slice-b/server.ts"], { env: { ...process.env, SLICE_B_PORT: String(port) }, stdio: "ignore" });
+
+function get(path, method = "GET") {
+  return new Promise((resolve, reject) => {
+    const req = request(`${base}${path}`, { method }, (res) => {
+      let body = "";
+      res.setEncoding("utf8"); res.on("data", (chunk) => { body += chunk; });
+      res.on("end", () => { try { resolve({ status: res.statusCode, body: JSON.parse(body) }); } catch (error) { reject(error); } });
+    });
+    req.on("error", reject); req.end();
+  });
+}
+
+function expect(condition, message) { if (!condition) throw new Error(message); }
+
+try {
+  let ready = false;
+  for (let attempt = 0; attempt < 50 && !ready; attempt += 1) {
+    try { ready = (await get("/health")).status === 200; } catch { await new Promise((resolve) => setTimeout(resolve, 50)); }
+  }
+  expect(ready, "API did not become ready");
+  const health = await get("/health"); expect(health.body.readOnly === true, "health must be read-only");
+  const relationship = await get("/relationships/relationship:slice-b:fixture"); expect(relationship.status === 200 && relationship.body.canonical === false, "relationship projection boundary missing");
+  const evidence = await get("/evidence/evidence:slice-b-settlement"); expect(evidence.status === 200 && evidence.body.status === "ACCEPTED", "known evidence was not returned");
+  const unknownEvidence = await get("/evidence/evidence:missing"); expect(unknownEvidence.status === 404 && unknownEvidence.body.error === "NOT_INDEXED", "unknown evidence must be typed 404");
+  const traversal = await get("/evidence/%2e%2e%2fpackage.json"); expect(traversal.status === 404, "path traversal must not resolve");
+  const settlement = await get("/settlements/settlement:slice-b-1"); expect(settlement.status === 200, "known settlement object was not returned");
+  const graph = await get("/relationships/relationship:slice-b:fixture/graph"); expect(graph.status === 200 && graph.body.schemaVersion === "slice-b-graph-v1", "graph route failed");
+  const snapshot = await get("/snapshots/relationship:slice-b:fixture"); expect(snapshot.status === 200 && typeof snapshot.body.hash === "string", "snapshot route failed");
+  const write = await get("/health", "POST"); expect(write.status === 405 && write.body.error === "READ_ONLY", "write boundary failed");
+  console.log("Slice B API smoke: PASS");
+} finally {
+  child.kill("SIGTERM");
+}

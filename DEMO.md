@@ -45,12 +45,14 @@ GET /checkpoints
 GET /snapshots/relationship:slice-b:fixture
 ```
 
-The demo emits four local scenarios:
+The demo emits six assertion-backed local scenarios:
 
 - happy path;
 - pending proof;
 - source/canonical mismatch;
-- reorg and replay required.
+- reorg detection followed by explicit replay;
+- relationship scope isolation;
+- deterministic hash equivalence and change detection.
 
 Evidence mode: `IMPLEMENTED_LOCAL` and `LOCAL_PROJECTION`. No route mutates canonical state.
 

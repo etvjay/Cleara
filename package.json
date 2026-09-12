@@ -9,6 +9,7 @@
     "typecheck:projection": "pnpm --filter @cleara/multichain-execution typecheck",
     "test:projection": "pnpm --filter @cleara/multichain-execution test",
     "slice-b:demo": "tsx scripts/slice-b/demo.ts",
+    "slice-b:smoke": "node scripts/slice-b/smoke.mjs",
     "slice-b:dev": "tsx scripts/slice-b/server.ts",
     "web:build": "pnpm --filter @cleara/web build",
     "web:dev": "pnpm --filter @cleara/web dev",

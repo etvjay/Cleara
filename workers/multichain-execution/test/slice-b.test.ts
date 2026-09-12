@@ -11,6 +11,7 @@ import {
   recordCanonical,
   recordEvidence,
   reconcile,
+  replayReorg,
   restoreSnapshot,
   snapshot,
   snapshotHash,
@@ -19,18 +20,20 @@ import {
 } from "../src/slice-b.js";
 
 const identity = { domain: "ethereum-sepolia", chainKey: 1, transactionHash: "0xabc", eventIndex: 0 } as const;
-const baseObservation = (blockNumber = 10n, blockHash = "h10"): ObservationEnvelope => ({
-  observationId: observationId(identity, "CapitalCommitted"),
-  sourceEventId: sourceEventId(identity),
-  relationshipId: "relationship:fixture",
-  objectId: "commitment:1",
+const baseObservation = (blockNumber = 10n, blockHash = "h10", transactionHash: string = identity.transactionHash, relationshipId = "relationship:fixture", objectId = "commitment:1"): ObservationEnvelope => {
+  const source = { ...identity, transactionHash };
+  return {
+  observationId: observationId(source, "CapitalCommitted"),
+  sourceEventId: sourceEventId(source),
+  relationshipId,
+  objectId,
   objectType: "Commitment",
   eventType: "CapitalCommitted",
   sourceDomain: "ethereum-sepolia",
   chainKey: 1,
   chainId: 11155111,
   contractAddress: "0xsource",
-  transactionHash: identity.transactionHash,
+  transactionHash,
   eventIndex: identity.eventIndex,
   blockNumber,
   blockHash,
@@ -48,7 +51,8 @@ const baseObservation = (blockNumber = 10n, blockHash = "h10"): ObservationEnvel
   adapterVersion: "test",
   createdAt: 1,
   updatedAt: 1,
-});
+};
+};
 
 test("stable source identity and duplicate ingestion are deterministic", () => {
   assert.equal(sourceEventId(identity), sourceEventId(identity));
@@ -68,8 +72,8 @@ test("finality promotion never accepts an unfinalized observation", () => {
 
 test("evidence and canonical state remain separate axes", () => {
   let state = ingestObservation(createSliceBState(), baseObservation());
-  state = recordEvidence(state, { evidenceId: "evidence:1", sourceEventId: sourceEventId(identity), mode: "fixture_from_live_evidence", sourceDomain: "ethereum-sepolia", chainKey: 1, transactionHash: "0xabc", blockNumber: 10n, attestcoinReference: "attest:1", status: "PENDING", linkedCreditcoinTransition: null, sourceReference: "M6", reason: null });
-  state = recordCanonical(state, { creditcoinChainId: 102031, contractAddress: "0xcc3", transactionHash: null, blockNumber: null, blockHash: null, objectId: "commitment:1", state: "ACTIVE", readStatus: "READ", expectedState: "ACTIVE", readAt: 2 });
+  state = recordEvidence(state, { evidenceId: "evidence:1", relationshipId: "relationship:fixture", sourceEventId: sourceEventId(identity), mode: "fixture_from_live_evidence", sourceDomain: "ethereum-sepolia", chainKey: 1, transactionHash: "0xabc", blockNumber: 10n, attestcoinReference: "attest:1", status: "PENDING", linkedCreditcoinTransition: null, sourceReference: "M6", reason: null });
+  state = recordCanonical(state, { relationshipId: "relationship:fixture", creditcoinChainId: 102031, contractAddress: "0xcc3", transactionHash: null, blockNumber: null, blockHash: null, objectId: "commitment:1", state: "ACTIVE", readStatus: "READ", expectedState: "ACTIVE", readAt: 2 });
   const item = state.observations.get(baseObservation().observationId)!;
   assert.equal(item.evidenceId, "evidence:1");
   assert.equal(state.canonical.get("commitment:1")?.state, "ACTIVE");
@@ -83,14 +87,40 @@ test("mismatch is explicit and carries recovery ownership", () => {
   assert.equal(record.recoveryRole, "operator");
 });
 
-test("reorg preserves the old observation and requires replay", () => {
+test("reorg preserves history and finality cannot clear replay-required", () => {
   let state = ingestObservation(createSliceBState(), baseObservation());
-  state = advanceFinality(state, 1, 10n);
-  const replacementIdentity = { ...identity, transactionHash: "0xreplacement" } as const;
-  const replacement = { ...baseObservation(10n, "replacement-h10"), observationId: observationId(replacementIdentity, "CapitalCommitted"), sourceEventId: sourceEventId(replacementIdentity), transactionHash: replacementIdentity.transactionHash, parentBlockHash: "h9", normalizedPayload: { amount: "100000", facilityId: "facility:1" } };
+  state = advanceFinality(state, 1, 10n, 2);
+  const replacement = baseObservation(10n, "replacement-h10", "0xreplacement");
   state = ingestObservation(state, replacement);
   assert.equal(state.checkpoints.get(1)?.replayStatus, "REPLAY_REQUIRED");
+  state = advanceFinality(state, 1, 10n, 3);
+  assert.equal(state.checkpoints.get(1)?.replayStatus, "REPLAY_REQUIRED");
   assert.equal(state.observations.get(baseObservation().observationId)?.finalityState, "REORGED");
+});
+
+test("explicit replay promotes the replacement once and is idempotent", () => {
+  let state = ingestObservation(createSliceBState(), baseObservation());
+  state = advanceFinality(state, 1, 10n, 2);
+  const replacement = baseObservation(10n, "replacement-h10", "0xreplacement");
+  state = ingestObservation(state, replacement);
+  const replayed = replayReorg(state, replacement, { finalizedBlock: 10n, observedAt: 4 });
+  assert.equal(replayed.outcome, "REPLAYED");
+  assert.equal(replayed.state.checkpoints.get(1)?.replayStatus, "CURRENT");
+  assert.equal(replayed.state.observations.get(baseObservation().observationId)?.finalityState, "REORGED");
+  assert.equal(replayed.state.observations.get(replacement.observationId)?.finalityState, "FINALIZED");
+  const second = replayReorg(replayed.state, replacement, { finalizedBlock: 10n, observedAt: 5 });
+  assert.equal(second.outcome, "NOOP");
+  assert.equal(second.state.replayHistory.filter((attempt) => attempt.status === "SUCCEEDED").length, 1);
+});
+
+test("malformed replacement remains blocked", () => {
+  let state = ingestObservation(createSliceBState(), baseObservation());
+  state = advanceFinality(state, 1, 10n, 2);
+  const replacement = baseObservation(10n, "replacement-h10", "0xreplacement");
+  state = ingestObservation(state, replacement);
+  const blocked = replayReorg(state, { ...replacement, observationState: "CONFLICTING" }, { finalizedBlock: 10n, observedAt: 4 });
+  assert.equal(blocked.outcome, "BLOCKED");
+  assert.equal(blocked.state.checkpoints.get(1)?.replayStatus, "REPLAY_REQUIRED");
 });
 
 test("read-only API exposes projection boundary and checkpoints", () => {
@@ -104,6 +134,19 @@ test("read-only API exposes projection boundary and checkpoints", () => {
   assert.equal(api.timeline("relationship:fixture").length, 1);
 });
 
+test("evidence lookup is explicit and relationship scope is isolated", () => {
+  let state = createSliceBState();
+  state = recordEvidence(state, { evidenceId: "evidence:r1", relationshipId: "r1", sourceEventId: "source:r1", mode: "implemented_local", sourceDomain: "ethereum-sepolia", chainKey: 1, transactionHash: "0xr1", blockNumber: 1n, attestcoinReference: "attest:r1", status: "ACCEPTED", linkedCreditcoinTransition: "cc3:r1", sourceReference: "fixture:r1", reason: null });
+  state = recordEvidence(state, { evidenceId: "evidence:r2", relationshipId: "r2", sourceEventId: "source:r2", mode: "implemented_local", sourceDomain: "ethereum-sepolia", chainKey: 1, transactionHash: "0xr2", blockNumber: 2n, attestcoinReference: "attest:r2", status: "PENDING", linkedCreditcoinTransition: null, sourceReference: "fixture:r2", reason: null });
+  state = recordCanonical(state, { relationshipId: "r1", creditcoinChainId: 102031, contractAddress: "0xcc3-r1", transactionHash: null, blockNumber: null, blockHash: null, objectId: "object:r1", state: "ACTIVE", readStatus: "READ", expectedState: "ACTIVE", readAt: 3 });
+  state = recordCanonical(state, { relationshipId: "r2", creditcoinChainId: 102031, contractAddress: "0xcc3-r2", transactionHash: null, blockNumber: null, blockHash: null, objectId: "object:r2", state: "ACTIVE", readStatus: "READ", expectedState: "ACTIVE", readAt: 3 });
+  const api = createSliceBApi(state);
+  const r1 = api.relationship("r1") as { evidence: Array<{ evidenceId: string }>; canonicalState: Array<{ objectId: string }> };
+  assert.deepEqual(r1.evidence.map((item) => item.evidenceId), ["evidence:r1"]);
+  assert.deepEqual(r1.canonicalState.map((item) => item.objectId), ["object:r1"]);
+  assert.equal(api.evidence("evidence:r1")?.evidenceId, "evidence:r1");
+  assert.equal(api.evidence("evidence:missing"), null);
+});
 test("snapshot restore preserves deterministic state across restart", () => {
   let state = ingestObservation(createSliceBState(), baseObservation());
   state = advanceFinality(state, 1, 10n, 2);
