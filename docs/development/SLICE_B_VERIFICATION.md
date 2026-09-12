@@ -2,7 +2,7 @@
 
 ## Status
 
-`VERIFIED_REMOTE` for final pushed commit `6bc35c20b6079212253f5a00ce3f685fb5462e2b`. The exact-head workflows and all local gates below were read back against this final tree.
+`VERIFIED_REMOTE` for final implementation commit `82c27b068de9d01be0ee48ec40ed62b1f682f87a`. The exact-head workflows and all local gates below were read back against this implementation tree; later documentation-only receipts are reported separately.
 
 ## Repository
 
@@ -10,8 +10,8 @@
 Repository: etvjay/Cleara
 Branch: verification/slice-b
 Base: c1065cedb2ae62543bb253d0bad9af23ffd99261
-Implementation hardening commit: 6bc35c20b6079212253f5a00ce3f685fb5462e2b
-Final pushed SHA: 6bc35c20b6079212253f5a00ce3f685fb5462e2b
+Implementation hardening commit: 82c27b068de9d01be0ee48ec40ed62b1f682f87a
+Final pushed implementation SHA: 82c27b068de9d01be0ee48ec40ed62b1f682f87a
 Draft PR: https://github.com/etvjay/Cleara/pull/1
 ```
 
@@ -42,7 +42,7 @@ Executed on the final implementation tree:
 
 ```text
 corepack pnpm install --frozen-lockfile       PASS
-corepack pnpm check:projection                PASS, 44 worker tests
+corepack pnpm check:projection                PASS, 47 worker tests
 corepack pnpm web:check                       PASS, 15 web tests, build, HTTP smoke, scan
 node --import tsx scripts/slice-b/demo.ts    PASS, six assertion-backed scenarios
 node scripts/slice-b/smoke.mjs                PASS, checkpoint/evidence/investigation/read-only assertions
@@ -56,13 +56,13 @@ Forge was available in the verification environment. Existing timestamp and unsa
 
 ## Exact-head final PR checks
 
-All checks passed on `6bc35c20b6079212253f5a00ce3f685fb5462e2b`:
+All checks passed on `82c27b068de9d01be0ee48ec40ed62b1f682f87a`:
 
-- [Contracts](https://github.com/etvjay/Cleara/actions/runs/34693689201) - `success`, `headSha = 6bc35c20b6079212253f5a00ce3f685fb5462e2b`
-- [Multichain Execution Projection](https://github.com/etvjay/Cleara/actions/runs/34693689230) - `success`, `headSha = 6bc35c20b6079212253f5a00ce3f685fb5462e2b`
-- [Read-only Workbench](https://github.com/etvjay/Cleara/actions/runs/34693689235) - `success`, `headSha = 6bc35c20b6079212253f5a00ce3f685fb5462e2b`
+- [Contracts](https://github.com/etvjay/Cleara/actions/runs/34694205068) - `success`, `headSha = 82c27b068de9d01be0ee48ec40ed62b1f682f87a`
+- [Multichain Execution Projection](https://github.com/etvjay/Cleara/actions/runs/34694205064) - `success`, `headSha = 82c27b068de9d01be0ee48ec40ed62b1f682f87a`
+- [Read-only Workbench](https://github.com/etvjay/Cleara/actions/runs/34694205086) - `success`, `headSha = 82c27b068de9d01be0ee48ec40ed62b1f682f87a`
 
-The prior hardening checkpoint `b2a6b8fab45eb9491aef1653ac8f0c8186bed859` is historical context only; it is not the final pushed tree.
+The preceding implementation receipt commits `6bc35c20b6079212253f5a00ce3f685fb5462e2b` and `b2a6b8fab45eb9491aef1653ac8f0c8186bed859` are historical context only.
 
 ## Adversarial assertions
 
@@ -88,6 +88,8 @@ The repaired suite covers:
 - repeated successful replay returning `NOOP`;
 - multiple replacement events at one block remain distinct;
 - negative, lower, equal, and higher finality inputs;
+- global evidence behavior and relationship-scoped conflict isolation;
+- `PENDING → MISMATCH → RECONCILED` current-state replacement and investigation cleanup;
 - sparse event blocks without fabricated contiguous-header claims;
 - same global evidence ID across relationships;
 - original evidence preservation and multiple distinct conflict records;

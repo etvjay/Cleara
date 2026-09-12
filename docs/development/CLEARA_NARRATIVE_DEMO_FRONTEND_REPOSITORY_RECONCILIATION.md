@@ -4,9 +4,9 @@
 **Repository:** `etvjay/Cleara`
 **Branch:** `verification/slice-b`
 **Base:** `c1065cedb2ae62543bb253d0bad9af23ffd99261`
-**Repair implementation:** `6bc35c20b6079212253f5a00ce3f685fb5462e2b`
-**Final pushed SHA:** `6bc35c20b6079212253f5a00ce3f685fb5462e2b`
-**Verification status:** final implementation and exact-head PR CI pass on `6bc35c20b6079212253f5a00ce3f685fb5462e2b`; browser and hosted deployment remain unverified.
+**Repair implementation:** `82c27b068de9d01be0ee48ec40ed62b1f682f87a`
+**Final pushed implementation SHA:** `82c27b068de9d01be0ee48ec40ed62b1f682f87a`
+**Verification status:** final implementation and exact-head PR CI pass on `82c27b068de9d01be0ee48ec40ed62b1f682f87a`; browser and hosted deployment remain unverified.
 
 ## A. Current narrative truth
 
