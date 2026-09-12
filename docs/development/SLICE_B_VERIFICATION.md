@@ -2,9 +2,7 @@
 
 ## Status
 
-`VERIFIED_REMOTE` for implementation commit `a5dbdf07acdb4495a0348135fdeb2472b5856995` and exact-head PR checks on `044a65e47484539519b2db3380630ffe55751540`.
-
-The hardening implementation is in `a5dbdf07acdb4495a0348135fdeb2472b5856995`; the exact PR verification head also contains the reconciled documentation.
+`IMPLEMENTATION_VERIFIED_REMOTE` for hardening commit `b2a6b8fab45eb9491aef1653ac8f0c8186bed859`. The final verification-tree SHA will be the subsequent documentation commit and must receive its own exact-head checks.
 
 ## Repository
 
@@ -12,7 +10,7 @@ The hardening implementation is in `a5dbdf07acdb4495a0348135fdeb2472b5856995`; t
 Repository: etvjay/Cleara
 Branch: verification/slice-b
 Base: c1065cedb2ae62543bb253d0bad9af23ffd99261
-Implementation hardening commit: a5dbdf07acdb4495a0348135fdeb2472b5856995
+Implementation hardening commit: b2a6b8fab45eb9491aef1653ac8f0c8186bed859
 Draft PR: https://github.com/etvjay/Cleara/pull/1
 ```
 
@@ -21,25 +19,28 @@ Historical M3-M11 and M11-Lifecycle runs remain separately evidenced. No uninter
 ## Repaired invariants
 
 - Replay requires a `CANONICAL` trusted `BlockHeader` from `state.blockHistory`. No observation fallback can promote a replacement.
-- Trusted replay headers must match chain key, block number/hash, chain ID, source domain, adapter version, schema version, and valid parent hash.
-- Missing, superseded, parentless, or metadata-inconsistent trusted history leaves the checkpoint `REPLAY_REQUIRED`.
+- Replay checkpoints store `replayFromBlock`, `replayOldBlockHash`, and `replayParentBlockHash` separately from the latest observed tip identity.
+- Earlier-block replay resolves the old hash from the target block header, not from `lastObservedBlockHash`.
+- Missing, superseded, parentless, or metadata-inconsistent trusted history leaves the checkpoint `REPLAY_REQUIRED` and replay `BLOCKED`.
 - Replacement identity, predecessor parent, finality, cursor, and conflict state are validated before promotion.
 - Reorged observations remain auditable history and replay provenance is preserved.
-- `advanceFinality` is monotonic. Lower inputs cannot regress finalized height or demote observations. Equal stale inputs are no-ops.
+- Multiple replacement events at one block do not reorg one another; old-fork observations are the records superseded by replay.
+- `advanceFinality` and successful replay are monotonic. Lower inputs cannot regress finalized height or demote observations. Equal stale inputs are no-ops.
 - Cursor semantics are explicitly `SPARSE_EVENT`: latest observed event block, not a complete chain-header cursor. Replay still requires indexed canonical history for the superseded event block.
-- Replay attempts and dead letters carry `relationshipId`; legacy snapshots normalize missing fields to global `null`.
-- Relationship-scoped investigations exclude other relationships and global records. Unscoped investigations include all records.
-- Attestcoin evidence IDs are globally unique. Identical records are idempotent; conflicting content rejects the original without replacement and creates an explicit conflict investigation.
-- Evidence conflicts cannot leak into another relationship's evidence view.
-- Snapshot/restore includes evidence conflicts, cursor mode, relationship scopes, replay history, dead letters, and block history deterministically.
+- Reconciliation current state is stored separately from append-only `reconciliationHistory`; investigations use current state while relationship reads expose both.
+- Attestcoin evidence IDs are globally unique. Identical records are idempotent; conflicting content preserves the original and records every distinct conflict without replacing trusted evidence.
+- Typed length-prefixed composite keys and hash inputs prevent delimiter collisions across relationships, objects, block headers, and source identities.
+- Relationship-scoped investigations and object reads exclude unrelated relationship records and global records unless the query is unscoped.
+- Snapshot restore preserves literal strings, restores only known bigint fields, normalizes legacy keys, and remains backward-compatible for older fields.
+- Canonical block headers are not demoted when another event from the same canonical block is ingested.
 
 ## Local gates
 
-Executed on the final local implementation tree:
+Executed on the final implementation tree:
 
 ```text
 corepack pnpm install --frozen-lockfile       PASS
-corepack pnpm check:projection                PASS, 30 worker tests
+corepack pnpm check:projection                PASS, 40 worker tests
 corepack pnpm web:check                       PASS, 15 web tests, build, HTTP smoke, scan
 node --import tsx scripts/slice-b/demo.ts    PASS, six assertion-backed scenarios
 node scripts/slice-b/smoke.mjs                PASS, checkpoint/evidence/investigation/read-only assertions
@@ -51,18 +52,22 @@ forge test -vvv                               PASS, 96 tests
 
 Forge was available in the verification environment. Existing timestamp and unsafe-cast warnings remain; no protected contract changed. Local Node is `22.23.2`; the repository declares `24.19.0`.
 
-## Exact-head PR checks
+## Exact-head implementation PR checks
 
-All checks passed on `044a65e47484539519b2db3380630ffe55751540`:
+All checks passed on `b2a6b8fab45eb9491aef1653ac8f0c8186bed859`:
 
-- [Contracts](https://github.com/etvjay/Cleara/actions/runs/34689240789) — `success`
-- [Multichain Execution Projection](https://github.com/etvjay/Cleara/actions/runs/34689240797) — `success`
-- [Read-only Workbench](https://github.com/etvjay/Cleara/actions/runs/34689240783) — `success`
+- [Contracts](https://github.com/etvjay/Cleara/actions/runs/34692283747) - `success`
+- [Multichain Execution Projection](https://github.com/etvjay/Cleara/actions/runs/34692283754) - `success`
+- [Read-only Workbench](https://github.com/etvjay/Cleara/actions/runs/34692283749) - `success`
 
+The run API readback confirmed each `headSha` matched the implementation commit.
+
+## Adversarial assertions
 
 The repaired suite covers:
 
 - empty block history;
+- missing target history before candidate ingestion;
 - missing old canonical header;
 - superseded old header;
 - missing trusted parent hash;
@@ -72,16 +77,22 @@ The repaired suite covers:
 - wrong chain key and chain ID;
 - wrong source domain, adapter version, schema version, and block number;
 - unfinalized replacement;
+- earlier-block replay using the target old hash;
 - successful replay preserving historical reorg data;
 - repeated successful replay returning `NOOP`;
-- lower/equal finality regression and idempotency;
+- multiple replacement events at one block;
+- lower/equal finality regression and idempotency, including replay success;
 - sparse event blocks without fabricated contiguous-header claims;
 - same global evidence ID across relationships;
-- conflicting evidence preservation and scope isolation;
-- relationship-scoped replay attempts and dead letters;
+- original evidence preservation and multiple distinct conflict records;
+- relationship-scoped replay attempts, dead letters, objects, and investigations;
 - global dead-letter context in unscoped investigations;
-- backward-compatible snapshot restore;
-- insertion-order determinism, graph selection, meaningful hash changes, and read-only boundaries.
+- current reconciliation versus append-only history, including repeated state cycles;
+- canonical-header preservation for additional same-block events;
+- delimiter-collision-resistant keys and hashes;
+- backward-compatible snapshot restore with legacy keys and fields;
+- literal strings that resemble bigint values;
+- insertion-order determinism, graph selection, meaningful hash changes, malformed path encoding, and read-only boundaries.
 
 ## API readback
 
@@ -113,6 +124,7 @@ scoped reconciliation exceptions   200
 checkpoints                        200, populated
 unknown object                     404 NOT_INDEXED
 ambiguous object scope             409 AMBIGUOUS_OBJECT_SCOPE
+malformed path encoding            404 NOT_INDEXED
 POST /health                       405 READ_ONLY
 ```
 
@@ -141,7 +153,7 @@ Creditcoin remains canonical financial authority. The API is projection-scoped.
 
 ## Remaining limits
 
-- Checkpoints, block history, and replay state are deterministic local read-model state, not production durable storage.
+- Checkpoints, block history, reconciliation history, and replay state are deterministic local read-model state, not production durable storage.
 - Sparse event semantics do not claim complete chain-header continuity outside indexed event blocks.
 - No live RPC backfill or external provider adapter is connected.
 - No production retry/dead-letter service exists.
