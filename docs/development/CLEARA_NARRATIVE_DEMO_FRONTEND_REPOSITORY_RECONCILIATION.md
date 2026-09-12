@@ -6,7 +6,7 @@
 **Base:** `c1065cedb2ae62543bb253d0bad9af23ffd99261`
 **Repair implementation:** `0255a1756e07ed6a8d3b5d2a2ed8967a60d97593`
 **Final pushed implementation SHA:** `0255a1756e07ed6a8d3b5d2a2ed8967a60d97593`
-**Verification status:** implementation pushed; exact-head remote CI receipt pending. Browser and hosted deployment remain unverified.
+**Verification status:** implementation parent `f21b8fdedecfbc32ba1aac7b0493f91c7e5618d2` has exact-head remote CI success; this final documentation receipt requires fresh exact-head checks. Browser and hosted deployment remain unverified.
 
 ## A. Current narrative truth
 

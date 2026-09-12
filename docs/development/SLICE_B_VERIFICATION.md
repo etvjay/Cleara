@@ -2,7 +2,7 @@
 
 ## Status
 
-`IMPLEMENTED_LOCAL` for implementation commit `0255a1756e07ed6a8d3b5d2a2ed8967a60d97593`; exact-head remote verification is pending for this new repair. The local gates below were executed against the implementation tree; the final documentation receipt will be a separate commit.
+`VERIFIED_REMOTE` for implementation parent `f21b8fdedecfbc32ba1aac7b0493f91c7e5618d2`; the exact-head workflows below all passed on that SHA. This documentation-only receipt is part of the final branch tree and receives its own fresh exact-head checks after push.
 
 ## Repository
 
@@ -11,8 +11,8 @@ Repository: etvjay/Cleara
 Branch: verification/slice-b
 Base: c1065cedb2ae62543bb253d0bad9af23ffd99261
 Implementation hardening commit: 0255a1756e07ed6a8d3b5d2a2ed8967a60d97593
-Final pushed implementation SHA: 0255a1756e07ed6a8d3b5d2a2ed8967a60d97593
-Final documentation receipt SHA: pending
+Final pushed implementation SHA: f21b8fdedecfbc32ba1aac7b0493f91c7e5618d2
+Documentation receipt: this final documentation commit; its exact-head runs are read back separately
 Draft PR: https://github.com/etvjay/Cleara/pull/1
 ```
 
@@ -51,9 +51,15 @@ forge test -vvv                               PASS, 96 tests
 
 Forge was available in the verification environment. Existing timestamp and unsafe-cast warnings remain; no protected contract changed. Local Node is `22.23.2`; the repository declares `24.19.0`.
 
-## Exact-head final PR checks
+## Exact-head implementation-parent checks
 
-Pending for implementation commit `0255a1756e07ed6a8d3b5d2a2ed8967a60d97593`. No older workflow receipt is reused as evidence for this repair. The final documentation receipt will record each applicable workflow run, exact `head_sha`, and conclusion.
+All checks passed on `f21b8fdedecfbc32ba1aac7b0493f91c7e5618d2`:
+
+- [Contracts](https://github.com/etvjay/Cleara/actions/runs/34703943332) - `success`, `headSha = f21b8fdedecfbc32ba1aac7b0493f91c7e5618d2`
+- [Multichain Execution Projection](https://github.com/etvjay/Cleara/actions/runs/34703943370) - `success`, `headSha = f21b8fdedecfbc32ba1aac7b0493f91c7e5618d2`
+- [Read-only Workbench](https://github.com/etvjay/Cleara/actions/runs/34703943328) - `success`, `headSha = f21b8fdedecfbc32ba1aac7b0493f91c7e5618d2`
+
+The final documentation-only commit must receive fresh exact-head checks; no older receipt is reused as final-tree CI evidence.
 
 ## Adversarial assertions
 
