@@ -4,8 +4,9 @@
 **Repository:** `etvjay/Cleara`
 **Branch:** `verification/slice-b`
 **Base:** `f3ceae3d829bd0bb2b065e057de1f84d92f5ecd2`
-**Repair checkpoint:** `37072a72a361ab4f8ce2ca890135d104d5bd7dc7`
-**Verification status:** Slice B code checkpoint `25b221a0d812658aef6e9fea70da23eaba7bfdf7` has exact-head remote CI success. This follow-up tree changes documentation only. Browser and hosted deployment remain unverified.
+**Primary blocker-closure checkpoint:** `37072a72a361ab4f8ce2ca890135d104d5bd7dc7`
+**Final code-bearing checkpoint:** `b3f4288af9b6e1d59e8ce5a98294121dad148fa4`
+**Verification status:** Slice B remains `IMPLEMENTED_LOCAL`; receipt repair is pending its final tree and exact-head CI rerun. The current tree before this repair was `e5afedfb65c2afbe12e5d7b7b14bc730f631a3fb`. Browser and hosted deployment remain unverified.
 
 ## A. Current narrative truth
 

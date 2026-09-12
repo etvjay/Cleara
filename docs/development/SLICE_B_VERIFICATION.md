@@ -2,7 +2,7 @@
 
 ## Status
 
-`VERIFIED_REMOTE_CODE_CHECKPOINT`: the Slice B implementation and exact local matrix were pushed and all required remote workflows passed on the exact code checkpoint below. A documentation-only follow-up may advance the branch tree without changing implementation. Browser verification remains `BROWSER_VERIFICATION_BLOCKED`. Hosted deployment remains `DEPLOYMENT_NOT_VERIFIED`.
+`IMPLEMENTED_LOCAL / RECEIPT_REPAIR_PENDING_FINAL_TREE`: the Slice B implementation and local matrix are verified, but this receipt repair is replacing stale exact-head fields. Final exact-head remote CI will be rerun on the final receipt tree. Browser verification remains `BROWSER_VERIFICATION_BLOCKED`. Hosted deployment remains `DEPLOYMENT_NOT_VERIFIED`.
 
 ## Repository
 
@@ -10,11 +10,12 @@
 Repository: etvjay/Cleara
 Repair branch: verification/slice-b
 Starting head: f3ceae3d829bd0bb2b065e057de1f84d92f5ecd2
-Verified local checkpoint: b3f4288af9b6e1d59e8ce5a98294121dad148fa4
-Verified remote code checkpoint: 25b221a0d812658aef6e9fea70da23eaba7bfdf7
+Primary blocker-closure implementation checkpoint: 37072a72a361ab4f8ce2ca890135d104d5bd7dc7
+Final code-bearing checkpoint: b3f4288af9b6e1d59e8ce5a98294121dad148fa4
 Frozen consumer contract: slice-b-read-model-contract-v1
-Documentation follow-up tree: this commit is docs-only; exact branch/ref readback is recorded in the final handoff
-Exact-head workflow IDs: 34714483336 (Contracts), 34714483273 (Projection), 34714483267 (Workbench)
+Current tree before receipt repair: e5afedfb65c2afbe12e5d7b7b14bc730f631a3fb
+Final verified tree: PENDING_FINAL_RECEIPT_COMMIT
+Final exact-head workflows: PENDING_FINAL_RECEIPT_CI
 ```
 
 The prior `verification/slice-b` receipts are historical evidence for that earlier tree and are not reused as evidence for this repair branch.

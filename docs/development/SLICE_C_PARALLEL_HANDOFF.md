@@ -1,6 +1,6 @@
 # Slice C parallel handoff
 
-Status: `LOCAL_CANDIDATES_UNMERGED`
+Status: `VERIFIED_REMOTE_CANDIDATES_UNMERGED`
 
 Slice C was developed in isolated worktrees from the frozen Slice B checkpoint:
 
@@ -15,6 +15,7 @@ These candidates do not prove Slice B correctness and are not merged into `verif
 
 ```text
 Branch: verification/slice-c-durable-storage
+Remote ref: refs/heads/verification/slice-c-durable-storage -> e801e549b78e8b62667e6c0dd694a07c07a051df
 Worktree: /home/ubuntu/cleara-slice-c-durable-storage
 Commit: e801e549b78e8b62667e6c0dd694a07c07a051df
 Files:
@@ -35,6 +36,7 @@ The lane persists only serialized Slice B snapshot bodies and hashes. It covers 
 
 ```text
 Branch: verification/slice-c-retry-orchestration
+Remote ref: refs/heads/verification/slice-c-retry-orchestration -> d8389bd3a480f84756132c35933a9598703d860c
 Worktree: /tmp/cleara-slice-c-retry-orchestration
 Commit: d8389bd3a480f84756132c35933a9598703d860c
 Files:
@@ -58,6 +60,6 @@ The lane consumes serialized contract records only. It covers deterministic deli
 
 ## Compatibility gate
 
-Both candidates are descendants of the frozen checkpoint and change only isolated `workers/slice-c/**` paths. Parent-side scans found no protected-path changes, Slice B core imports, secret-like values, wallets, RPC writes, deployments, or live workflow dispatches.
+Both candidates are descendants of the frozen checkpoint and change only isolated `workers/slice-c/**` paths. Parent-side scans found no protected-path changes, Slice B core imports in production sources, secret-like values, wallets, RPC writes, deployments, or live workflow dispatches. The remote refs confirm publication only; there are no candidate PRs or independent remote review approvals.
 
 Before any future merge, rerun the compatibility fixture and full Slice B matrix against the combined tree. A candidate may not reinterpret `ACCEPTED`, `CANONICAL`, `FINALIZED`, `REORGED`, `STALE`, `MISMATCHED`, `REPLAY_REQUIRED`, or `RECONCILED`, and no candidate may be used as evidence for production durability or live provider readiness.
