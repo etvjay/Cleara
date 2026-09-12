@@ -41,13 +41,13 @@ No axis promotes another. `FINALIZED` is not `PROVEN`, `PROVEN` is not `ACCEPTED
 
 ## Cursor and continuity semantics
 
-Slice B uses a `SPARSE_EVENT` cursor. `lastObservedBlock` means the latest indexed event block, not a complete chain-header cursor. `blockHistory` contains headers for indexed event blocks only; gaps with no relevant events are permitted. A replay checkpoint stores the target identity separately as `replayFromBlock`, `replayOldBlockHash`, and `replayParentBlockHash`; `lastObservedBlockHash` remains the tip identity. Reorg replay is stronger than ordinary sparse observation: it requires a `CANONICAL` trusted header for the superseded indexed event block, a valid parent hash, and matching checkpoint metadata. Missing or superseded trusted history blocks replay and leaves `REPLAY_REQUIRED`. Earlier-block replay uses the target header's hash, never the checkpoint tip hash.
+Slice B uses a `SPARSE_EVENT` cursor. `lastObservedBlock` means the latest indexed event block, not a complete chain-header cursor. `blockHistory` contains headers for indexed event blocks only; gaps with no relevant events are permitted. A replay checkpoint stores the target identity separately as `replayFromBlock`, `replayOldBlockHash`, and `replayParentBlockHash`; `lastObservedBlockHash` remains the tip identity. Reorg replay is stronger than ordinary sparse observation: it requires a `CANONICAL` trusted header for the superseded indexed event block, a valid parent hash, and matching checkpoint metadata. Missing or superseded trusted history blocks replay and leaves `REPLAY_REQUIRED`. Earlier-block replay uses the target header's hash, never the checkpoint tip hash. This slice uses the narrow fail-closed policy: a supplied replacement may be promoted, but if later indexed blocks are affected, their observations remain historical `REORGED`, their headers are `SUPERSEDED`, the latest observed tip is preserved, and the checkpoint remains `REPLAY_REQUIRED` with `replayReason = "additional replacement observations required for affected indexed range"`. Only a replay at the latest affected indexed block can reach `CURRENT`.
 
-Finality is monotonic across observation advancement and replay promotion. Lower or equal finality inputs cannot regress a checkpoint or demote finalized observations. Identical stale inputs are no-ops.
+Finality is monotonic across observation advancement and replay promotion. Lower or equal finality inputs cannot regress a checkpoint or demote finalized observations. Negative finality inputs are safe no-ops or blocked replay attempts. Identical stale inputs are no-ops.
 
 ## Evidence identity scope
 
-Attestcoin evidence IDs are globally unique in this local model. Identical content is idempotent. Conflicting content using an existing evidence ID preserves the original record byte-for-byte and creates an explicit relationship-scoped evidence-conflict investigation for each distinct conflicting payload. A conflicting record is never attached to the other relationship's evidence view.
+Attestcoin evidence IDs are globally unique in this local model. Identical content is idempotent. Conflicting content using an existing evidence ID preserves the original record byte-for-byte and creates an explicit relationship-scoped evidence-conflict investigation for each distinct conflicting payload. A conflicting record is never attached to the other relationship's evidence view. A scoped investigation includes a conflict when either the existing or conflicting relationship matches; an unscoped investigation includes all conflicts. Global evidence is returned only by the unscoped evidence lookup and is never relabeled as belonging to a requested relationship.
 
 ```text
 domain + chainKey + transactionHash + eventIndex
@@ -70,10 +70,10 @@ GET /health
 GET /relationships/relationship:slice-b:fixture
 GET /relationships/relationship:slice-b:fixture/timeline
 GET /relationships/relationship:slice-b:fixture/graph
-GET /facilities/:id
-GET /commitments/:id
-GET /obligations/:id
-GET /settlements/:id
+GET /facilities/:id?relationshipId=:id
+GET /commitments/:id?relationshipId=:id
+GET /obligations/:id?relationshipId=:id
+GET /settlements/:id?relationshipId=:id
 GET /evidence/:id
 GET /reconciliation/exceptions?relationshipId=:id
 GET /investigations?relationshipId=:id
@@ -81,7 +81,7 @@ GET /checkpoints
 GET /snapshots/relationship:slice-b:fixture
 ```
 
-All responses are projection-scoped and carry `source: projection`, `canonical: false`, or an equivalent explicit boundary. There are no mutation routes.
+All responses are projection-scoped and carry `source: projection`, `canonical: false`, or an equivalent explicit boundary. Scoped object routes require a matching relationship record and exclude global or unrelated records; unscoped ambiguous objects return `409 AMBIGUOUS_OBJECT_SCOPE`. There are no mutation routes.
 
 ## M12 handoff
 

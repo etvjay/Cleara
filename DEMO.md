@@ -38,7 +38,7 @@ GET /health
 GET /relationships/relationship:slice-b:fixture
 GET /relationships/relationship:slice-b:fixture/timeline
 GET /relationships/relationship:slice-b:fixture/graph
-GET /facilities/:id, /commitments/:id, /obligations/:id, /settlements/:id, /evidence/:id
+GET /facilities/:id?relationshipId=:id, /commitments/:id?relationshipId=:id, /obligations/:id?relationshipId=:id, /settlements/:id?relationshipId=:id, /evidence/:id
 GET /reconciliation/exceptions?relationshipId=:id
 GET /investigations?relationshipId=:id
 GET /checkpoints

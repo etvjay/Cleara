@@ -55,7 +55,7 @@ export function createSliceBApi(state: SliceBState): SliceBApi {
     graph: (id) => state.graphs.get(id) ?? null,
     investigations: (relationshipId) => [
       ...[...state.reconciliations.values()].filter((item) => item.state !== "RECONCILED" && (relationshipId === undefined || item.relationshipId === relationshipId)),
-      ...state.evidenceConflicts.filter((item) => relationshipId === undefined || item.relationshipId === relationshipId),
+      ...state.evidenceConflicts.filter((item) => relationshipId === undefined || item.relationshipId === relationshipId || item.existingRelationshipId === relationshipId),
       ...state.deadLetters.filter((item) => relationshipId === undefined || item.relationshipId === relationshipId),
       ...state.replayHistory.filter((attempt) => attempt.status === "BLOCKED" && (relationshipId === undefined || attempt.relationshipId === relationshipId)),
       ...[...state.observations.values()].filter((item) => (item.finalityState === "REORGED" || item.observationState === "CONFLICTING") && (relationshipId === undefined || item.relationshipId === relationshipId)),

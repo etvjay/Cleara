@@ -150,6 +150,7 @@ export interface Checkpoint {
   readonly cursorMode: "SPARSE_EVENT";
   readonly updatedAt: number;
   readonly replayStatus: "CURRENT" | "REPLAY_REQUIRED";
+  readonly replayReason: string | null;
   /** Trusted parent hash from the previously indexed canonical block header. */
   readonly replayParentBlockHash: string | null;
   /** Hash of the canonical header being replaced at replayFromBlock. */
@@ -297,6 +298,7 @@ function checkpointFromPrevious(chainKey: number, previous: Checkpoint | undefin
     cursorMode: "SPARSE_EVENT",
     updatedAt: previous?.updatedAt ?? 0,
     replayStatus: previous?.replayStatus ?? "CURRENT",
+    replayReason: previous?.replayReason ?? null,
     replayParentBlockHash: previous?.replayParentBlockHash ?? null,
     replayOldBlockHash: previous?.replayOldBlockHash ?? null,
     replayFromBlock: previous?.replayFromBlock ?? null,
@@ -314,6 +316,14 @@ function upsertBlockHeader(blockHistory: ReadonlyMap<string, BlockHeader>, input
   const key = blockKey(input.chainKey, input.blockNumber, input.blockHash);
   const existing = next.get(key);
   if (!existing || !(existing.status === "CANONICAL" && status === "CANDIDATE")) next.set(key, blockHeaderFor(input, status));
+  return next;
+}
+
+function supersedeLaterCanonicalHeaders(blockHistory: ReadonlyMap<string, BlockHeader>, chainKey: number, fromBlock: bigint): ReadonlyMap<string, BlockHeader> {
+  const next = new Map(blockHistory);
+  for (const [key, header] of next) {
+    if (header.chainKey === chainKey && header.blockNumber > fromBlock && header.status === "CANONICAL") next.set(key, { ...header, status: "SUPERSEDED" });
+  }
   return next;
 }
 
@@ -370,15 +380,24 @@ export function ingestObservation(state: SliceBState, input: ObservationEnvelope
   const replacementForPendingReplay = Boolean(checkpoint?.replayStatus === "REPLAY_REQUIRED" && checkpoint.replayFromBlock === input.blockNumber && input.blockHash !== checkpoint.replayOldBlockHash);
   if (replacementForPendingReplay) {
     observations.set(input.observationId, { ...input, finalityState: "FINALITY_PENDING", projectionReference: `reorg:candidate:${input.observationId}` });
+    blockHistory = supersedeLaterCanonicalHeaders(blockHistory, input.chainKey, input.blockNumber);
+    return clone(state, { observations, blockHistory });
+  }
+  const laterObservationDuringPendingReplay = Boolean(checkpoint?.replayStatus === "REPLAY_REQUIRED" && checkpoint.replayFromBlock !== null && input.blockNumber > checkpoint.replayFromBlock);
+  if (laterObservationDuringPendingReplay) {
+    observations.set(input.observationId, { ...input, finalityState: "FINALITY_PENDING", projectionReference: `reorg:candidate:${input.observationId}` });
+    blockHistory = supersedeLaterCanonicalHeaders(blockHistory, input.chainKey, input.blockNumber);
     return clone(state, { observations, blockHistory });
   }
   if (reorgDetected) {
-    const replayOldBlockHash = trustedHeaderAtTarget?.blockHash ?? (input.blockNumber === checkpoint!.lastObservedBlock ? checkpoint!.lastObservedBlockHash : null);
+    const replayOldBlockHash = trustedHeaderAtTarget?.blockHash ?? null;
+    blockHistory = supersedeLaterCanonicalHeaders(blockHistory, input.chainKey, input.blockNumber);
     for (const [id, item] of observations) if (item.chainKey === input.chainKey && item.blockNumber >= input.blockNumber) observations.set(id, { ...item, finalityState: "REORGED", projectionReference: `reorg:superseded:${id}` });
     observations.set(input.observationId, { ...input, finalityState: "FINALITY_PENDING", projectionReference: `reorg:candidate:${input.observationId}` });
     const checkpoints = new Map(state.checkpoints);
     checkpoints.set(input.chainKey, checkpointFromPrevious(input.chainKey, checkpoint, {
       replayStatus: "REPLAY_REQUIRED",
+      replayReason: null,
       replayFromBlock: input.blockNumber,
       replayOldBlockHash,
       replayParentBlockHash: trustedHeaderAtTarget?.parentBlockHash ?? null,
@@ -391,6 +410,7 @@ export function ingestObservation(state: SliceBState, input: ObservationEnvelope
 }
 
 export function advanceFinality(state: SliceBState, chainKey: number, finalizedBlock: bigint, observedAt = Date.now()): SliceBState {
+  if (finalizedBlock < 0n) return state;
   const observations = new Map(state.observations);
   const blockHistory = new Map(state.blockHistory);
   const previous = state.checkpoints.get(chainKey);
@@ -428,6 +448,7 @@ export function advanceFinality(state: SliceBState, chainKey: number, finalizedB
     observationSchemaVersion: replayRequired ? previous!.observationSchemaVersion : (latestFinalized?.item.payloadSchemaVersion ?? previous?.observationSchemaVersion ?? ""),
     updatedAt: changed ? observedAt : (previous?.updatedAt ?? observedAt),
     replayStatus: replayRequired ? "REPLAY_REQUIRED" : "CURRENT",
+    replayReason: replayRequired ? previous!.replayReason : null,
   });
   if (previous && stableJson(previous) === stableJson(checkpoint) && !changed) return state;
   checkpoints.set(chainKey, checkpoint);
@@ -463,22 +484,32 @@ export function replayReorg(state: SliceBState, replacement: ObservationEnvelope
   const replayOldBlockHash = checkpoint.replayOldBlockHash;
   const trustedHeader = replayOldBlockHash === null ? undefined : canonicalHeaderFor(state, replacement.chainKey, replayFromBlock, replayOldBlockHash);
   const oldObservation = trustedHeader ? state.observations.get(trustedHeader.observationId) : undefined;
-  const reason = indexedReplacement.blockNumber !== replayFromBlock ? "replacement block does not match replay cursor" : replayOldBlockHash === null ? "replay target old block hash is unavailable" : !trustedHeader ? "trusted canonical block header is unavailable" : trustedHeader.parentBlockHash === null ? "trusted predecessor parent is unavailable" : trustedHeader.chainKey !== replacement.chainKey || trustedHeader.blockNumber !== replayFromBlock || trustedHeader.blockHash !== replayOldBlockHash || trustedHeader.chainId !== checkpoint.chainId || trustedHeader.sourceDomain !== checkpoint.sourceDomain || trustedHeader.adapterVersion !== checkpoint.adapterVersion || trustedHeader.payloadSchemaVersion !== checkpoint.observationSchemaVersion ? "trusted canonical header metadata does not match checkpoint" : checkpoint.replayParentBlockHash !== trustedHeader.parentBlockHash ? "checkpoint predecessor does not match trusted canonical header" : indexedReplacement.parentBlockHash !== trustedHeader.parentBlockHash ? "replacement parent does not match trusted predecessor" : checkpoint.chainId !== indexedReplacement.chainId ? "replacement chain ID does not match checkpoint" : checkpoint.sourceDomain !== indexedReplacement.sourceDomain ? "replacement source domain does not match checkpoint" : checkpoint.adapterVersion !== indexedReplacement.adapterVersion ? "replacement adapter version does not match checkpoint" : checkpoint.observationSchemaVersion !== indexedReplacement.payloadSchemaVersion ? "replacement schema version does not match checkpoint" : indexedReplacement.finalityState !== "FINALIZED" || options.finalizedBlock < indexedReplacement.blockNumber ? "replacement has not reached finality" : indexedReplacement.observationState === "CONFLICTING" || indexedReplacement.observationState === "MALFORMED" ? "replacement observation is not eligible" : indexedReplacement.blockHash === replayOldBlockHash ? "replacement block hash is not a replacement" : null;
+  const reason = options.finalizedBlock < 0n ? "finalized block is negative" : indexedReplacement.blockNumber !== replayFromBlock ? "replacement block does not match replay cursor" : replayOldBlockHash === null ? "replay target old block hash is unavailable" : !trustedHeader ? "trusted canonical block header is unavailable" : trustedHeader.parentBlockHash === null ? "trusted predecessor parent is unavailable" : trustedHeader.chainKey !== replacement.chainKey || trustedHeader.blockNumber !== replayFromBlock || trustedHeader.blockHash !== replayOldBlockHash || trustedHeader.chainId !== checkpoint.chainId || trustedHeader.sourceDomain !== checkpoint.sourceDomain || trustedHeader.adapterVersion !== checkpoint.adapterVersion || trustedHeader.payloadSchemaVersion !== checkpoint.observationSchemaVersion ? "trusted canonical header metadata does not match checkpoint" : checkpoint.replayParentBlockHash !== trustedHeader.parentBlockHash ? "checkpoint predecessor does not match trusted canonical header" : indexedReplacement.parentBlockHash !== trustedHeader.parentBlockHash ? "replacement parent does not match trusted predecessor" : checkpoint.chainId !== indexedReplacement.chainId ? "replacement chain ID does not match checkpoint" : checkpoint.sourceDomain !== indexedReplacement.sourceDomain ? "replacement source domain does not match checkpoint" : checkpoint.adapterVersion !== indexedReplacement.adapterVersion ? "replacement adapter version does not match checkpoint" : checkpoint.observationSchemaVersion !== indexedReplacement.payloadSchemaVersion ? "replacement schema version does not match checkpoint" : indexedReplacement.finalityState !== "FINALIZED" || options.finalizedBlock < indexedReplacement.blockNumber ? "replacement has not reached finality" : indexedReplacement.observationState === "CONFLICTING" || indexedReplacement.observationState === "MALFORMED" ? "replacement observation is not eligible" : indexedReplacement.blockHash === replayOldBlockHash ? "replacement block hash is not a replacement" : null;
   if (reason) return blockedReplay(state, checkpoint, replacement, reason, observedAt, sequence, indexedReplacement.relationshipId ?? null);
   if (replayOldBlockHash === null || !trustedHeader) return blockedReplay(state, checkpoint, replacement, "trusted replay target unavailable", observedAt, sequence, indexedReplacement.relationshipId ?? null);
   const effectiveReplayFinality = checkpoint.lastFinalizedBlock !== null && checkpoint.lastFinalizedBlock > options.finalizedBlock ? checkpoint.lastFinalizedBlock : options.finalizedBlock;
+  const laterAffected = [...state.observations.values()].some((item) => item.chainKey === replacement.chainKey && item.blockNumber > replayFromBlock && item.observationId !== indexedReplacement.observationId);
+  const preservesLaterTip = checkpoint.lastObservedBlock > replayFromBlock;
+  const nextLastObservedBlock = preservesLaterTip ? checkpoint.lastObservedBlock : indexedReplacement.blockNumber;
+  const nextLastObservedBlockHash = preservesLaterTip ? checkpoint.lastObservedBlockHash : indexedReplacement.blockHash;
 
   const observations = new Map(state.observations);
-  for (const [id, item] of observations) if (item.chainKey === replacement.chainKey && item.blockNumber >= replayFromBlock && id !== indexedReplacement.observationId && item.blockHash !== indexedReplacement.blockHash) observations.set(id, { ...item, finalityState: "REORGED", projectionReference: `replay:superseded:${indexedReplacement.observationId}` });
+  for (const [id, item] of observations) {
+    const supersededTarget = item.chainKey === replacement.chainKey && item.blockNumber === replayFromBlock && item.blockHash === replayOldBlockHash && id !== indexedReplacement.observationId;
+    const supersededLater = item.chainKey === replacement.chainKey && item.blockNumber > replayFromBlock;
+    if (supersededTarget || supersededLater) observations.set(id, { ...item, finalityState: "REORGED", projectionReference: `replay:superseded:${indexedReplacement.observationId}` });
+  }
   observations.set(indexedReplacement.observationId, { ...indexedReplacement, finalityState: "FINALIZED", projectionReference: `replay:current:${indexedReplacement.observationId}`, updatedAt: observedAt });
   const blockHistory = new Map(state.blockHistory);
   for (const [key, header] of blockHistory) {
-    if (header.chainKey === replacement.chainKey && header.blockNumber === replayFromBlock) blockHistory.set(key, { ...header, status: header.blockHash === indexedReplacement.blockHash ? "CANONICAL" : "SUPERSEDED" });
+    if (header.chainKey !== replacement.chainKey) continue;
+    if (header.blockNumber === replayFromBlock) blockHistory.set(key, { ...header, status: header.blockHash === indexedReplacement.blockHash ? "CANONICAL" : "SUPERSEDED" });
+    else if (laterAffected && header.blockNumber > replayFromBlock) blockHistory.set(key, { ...header, status: "SUPERSEDED" });
   }
   const checkpoints = new Map(state.checkpoints);
-  checkpoints.set(replacement.chainKey, checkpointFromPrevious(replacement.chainKey, checkpoint, { sourceDomain: indexedReplacement.sourceDomain, chainId: indexedReplacement.chainId, lastObservedBlock: indexedReplacement.blockNumber, lastObservedBlockHash: indexedReplacement.blockHash, lastFinalizedBlock: effectiveReplayFinality, adapterVersion: indexedReplacement.adapterVersion, observationSchemaVersion: indexedReplacement.payloadSchemaVersion, replayStatus: "CURRENT", replayFromBlock: null, replayOldBlockHash: null, replayParentBlockHash: null, replaySequence: sequence, updatedAt: observedAt }));
+  checkpoints.set(replacement.chainKey, checkpointFromPrevious(replacement.chainKey, checkpoint, { sourceDomain: indexedReplacement.sourceDomain, chainId: indexedReplacement.chainId, lastObservedBlock: nextLastObservedBlock, lastObservedBlockHash: nextLastObservedBlockHash, lastFinalizedBlock: effectiveReplayFinality, adapterVersion: indexedReplacement.adapterVersion, observationSchemaVersion: indexedReplacement.payloadSchemaVersion, replayStatus: laterAffected ? "REPLAY_REQUIRED" : "CURRENT", replayReason: laterAffected ? "additional replacement observations required for affected indexed range" : null, replayFromBlock: laterAffected ? replayFromBlock : null, replayOldBlockHash: laterAffected ? replayOldBlockHash : null, replayParentBlockHash: laterAffected ? checkpoint.replayParentBlockHash : null, replaySequence: sequence, updatedAt: observedAt }));
   const provenance = oldObservation ? addProvenance(state, { id: `provenance:${hash(indexedReplacement.observationId, oldObservation.observationId)}`, childId: indexedReplacement.observationId, parentId: oldObservation.observationId, relation: "REPLAYED_FROM", authority: "projection", evidenceId: null }) : state.provenance;
-  const attempt: ReplayAttempt = { id: baseId, relationshipId: indexedReplacement.relationshipId ?? null, chainKey: replacement.chainKey, fromBlock: replayFromBlock, replacementObservationId: indexedReplacement.observationId, oldBlockHash: replayOldBlockHash, replacementBlockHash: indexedReplacement.blockHash, status: "SUCCEEDED", reason: "replacement finalized and replayed", recoveryRole: "projection operator", observedAt, sequence };
+  const attempt: ReplayAttempt = { id: baseId, relationshipId: indexedReplacement.relationshipId ?? null, chainKey: replacement.chainKey, fromBlock: replayFromBlock, replacementObservationId: indexedReplacement.observationId, oldBlockHash: replayOldBlockHash, replacementBlockHash: indexedReplacement.blockHash, status: "SUCCEEDED", reason: laterAffected ? "replacement finalized and replayed; additional replacement observations required for affected indexed range" : "replacement finalized and replayed", recoveryRole: "projection operator", observedAt, sequence };
   return { outcome: "REPLAYED", state: clone(state, { observations, checkpoints, blockHistory, provenance, replayHistory: [...state.replayHistory, attempt] }), attempt };
 }
 
@@ -491,7 +522,8 @@ export function recordEvidence(state: SliceBState, evidence: EvidenceRecord): Sl
     const observations = new Map(state.observations);
     for (const [id, item] of observations) if (item.sourceEventId === evidence.sourceEventId) observations.set(id, { ...item, observationState: "CONFLICTING" });
     const conflict: EvidenceConflict = { id: conflictId, relationshipId: evidence.relationshipId, evidenceId: evidence.evidenceId, existingRelationshipId: existing.relationshipId, conflictingRelationshipId: evidence.relationshipId, existingSourceEventId: existing.sourceEventId, conflictingSourceEventId: evidence.sourceEventId, existingContentHash: hash(stableJson(existing)), conflictingContentHash: hash(stableJson(evidence)), reason: "same globally unique evidence ID has conflicting content" };
-    return clone(state, { evidenceConflicts: [...state.evidenceConflicts, conflict], observations });
+    const evidenceConflicts = [...state.evidenceConflicts, conflict].sort((left, right) => left.id.localeCompare(right.id));
+    return clone(state, { evidenceConflicts, observations });
   }
   const records = new Map(state.evidence);
   records.set(evidence.evidenceId, evidence);
@@ -607,7 +639,7 @@ export function restoreSnapshot(serialized: string): SliceBState {
   if (parsed.schemaVersion !== "slice-b-read-model-v1") throw new Error("UNSUPPORTED_SNAPSHOT_SCHEMA");
   const observations = new Map((parsed.observations ?? []).map(([key, item]) => [key, { ...item, blockNumber: snapshotBigInt(item.blockNumber) } as ObservationEnvelope] as [string, ObservationEnvelope]));
   const evidence = new Map((parsed.evidence ?? []).map(([key, item]) => [key, { ...item, blockNumber: snapshotBigInt(item.blockNumber) } as EvidenceRecord] as [string, EvidenceRecord]));
-  const checkpoints = new Map((parsed.checkpoints ?? []).map(([key, checkpoint]) => [key, { ...checkpoint, lastObservedBlock: snapshotBigInt(checkpoint.lastObservedBlock), lastFinalizedBlock: snapshotOptionalBigInt(checkpoint.lastFinalizedBlock), cursorMode: checkpoint.cursorMode ?? "SPARSE_EVENT", replayStatus: checkpoint.replayStatus ?? "CURRENT", replayParentBlockHash: checkpoint.replayParentBlockHash ?? null, replayOldBlockHash: checkpoint.replayOldBlockHash ?? null, replayFromBlock: snapshotOptionalBigInt(checkpoint.replayFromBlock), replaySequence: checkpoint.replaySequence ?? 0 } as unknown as Checkpoint] as [number, Checkpoint]));
+  const checkpoints = new Map((parsed.checkpoints ?? []).map(([key, checkpoint]) => [key, { ...checkpoint, lastObservedBlock: snapshotBigInt(checkpoint.lastObservedBlock), lastFinalizedBlock: snapshotOptionalBigInt(checkpoint.lastFinalizedBlock), cursorMode: checkpoint.cursorMode ?? "SPARSE_EVENT", replayStatus: checkpoint.replayStatus ?? "CURRENT", replayReason: checkpoint.replayReason ?? null, replayParentBlockHash: checkpoint.replayParentBlockHash ?? null, replayOldBlockHash: checkpoint.replayOldBlockHash ?? null, replayFromBlock: snapshotOptionalBigInt(checkpoint.replayFromBlock), replaySequence: checkpoint.replaySequence ?? 0 } as unknown as Checkpoint] as [number, Checkpoint]));
   const replayHistory = (parsed.replayHistory ?? []).map((attempt) => ({ ...attempt, fromBlock: snapshotBigInt(attempt.fromBlock), relationshipId: attempt.relationshipId ?? null } as unknown as ReplayAttempt));
   const deadLetters = (parsed.deadLetters ?? []).map((item) => ({ ...item, relationshipId: item.relationshipId ?? null } as unknown as DeadLetterRecord));
   const reconciliationRecords = parsed.reconciliations ?? [];

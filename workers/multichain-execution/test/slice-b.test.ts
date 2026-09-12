@@ -303,8 +303,11 @@ test("evidence conflicts preserve the original and retain distinct conflict hist
   state = recordEvidence(state, conflictTwo);
   assert.deepEqual(state.evidence.get(original.evidenceId), original);
   assert.equal(state.evidenceConflicts.length, 2);
-  assert.equal(state.evidenceConflicts[0]?.conflictingRelationshipId, "r2");
-  assert.equal(state.evidenceConflicts[1]?.conflictingRelationshipId, "r3");
+  assert.deepEqual(state.evidenceConflicts.map((conflict) => conflict.conflictingRelationshipId).sort(), ["r2", "r3"]);
+  let reversed = recordEvidence(createSliceBState(), original);
+  reversed = recordEvidence(reversed, conflictTwo);
+  reversed = recordEvidence(reversed, conflictOne);
+  assert.deepEqual(state.evidenceConflicts.map((conflict) => conflict.id), reversed.evidenceConflicts.map((conflict) => conflict.id));
   state = recordEvidence(state, conflictOne);
   assert.equal(state.evidenceConflicts.length, 2);
 });
@@ -348,6 +351,20 @@ test("replay rejects missing, superseded, parentless, or mismatched trusted head
   }
 });
 
+test("replay rejects a wrong stored old block hash", () => {
+  let state = ingestObservation(createSliceBState(), baseObservation());
+  state = advanceFinality(state, 1, 10n, 2);
+  const replacement = baseObservation(10n, "replacement-wrong-old-hash", "0xreplacement-wrong-old-hash", "relationship:fixture", "commitment:1", "h9");
+  state = ingestObservation(state, replacement);
+  state = advanceFinality(state, 1, 10n, 3);
+  const checkpoints = new Map(state.checkpoints);
+  checkpoints.set(1, { ...checkpoints.get(1)!, replayOldBlockHash: "wrong-old-hash" });
+  const blocked = replayReorg({ ...state, checkpoints }, state.observations.get(replacement.observationId)!, { finalizedBlock: 10n, observedAt: 4 });
+  assert.equal(blocked.outcome, "BLOCKED");
+  assert.equal(blocked.attempt?.reason, "trusted canonical block header is unavailable");
+  assert.equal(blocked.state.checkpoints.get(1)?.replayStatus, "REPLAY_REQUIRED");
+});
+
 test("finality is monotonic and equal stale inputs are idempotent", () => {
   let state = ingestObservation(createSliceBState(), baseObservation());
   state = advanceFinality(state, 1, 10n, 2);
@@ -358,6 +375,27 @@ test("finality is monotonic and equal stale inputs are idempotent", () => {
   assert.equal(snapshotHash(state), snapshotHash(finalized));
   const equal = advanceFinality(state, 1, 10n, 4);
   assert.equal(snapshotHash(equal), snapshotHash(state));
+});
+
+
+test("invalid negative finality is a safe no-op", () => {
+  let state = ingestObservation(createSliceBState(), baseObservation());
+  state = advanceFinality(state, 1, 10n, 2);
+  const before = snapshotHash(state);
+  const after = advanceFinality(state, 1, -1n, 3);
+  assert.equal(snapshotHash(after), before);
+  assert.equal(after.checkpoints.get(1)?.lastFinalizedBlock, 10n);
+});
+
+test("replay rejects negative finality input without promotion", () => {
+  let state = ingestObservation(createSliceBState(), baseObservation());
+  state = advanceFinality(state, 1, 10n, 2);
+  const replacement = baseObservation(10n, "replacement-negative-finality", "0xreplacement-negative-finality", "relationship:fixture", "commitment:1", "h9");
+  state = ingestObservation(state, replacement);
+  state = advanceFinality(state, 1, 10n, 3);
+  const blocked = replayReorg(state, state.observations.get(replacement.observationId)!, { finalizedBlock: -1n, observedAt: 4 });
+  assert.equal(blocked.outcome, "BLOCKED");
+  assert.equal(blocked.state.checkpoints.get(1)?.replayStatus, "REPLAY_REQUIRED");
 });
 
 test("sparse event cursor semantics allow gaps but replay still needs indexed headers", () => {
@@ -380,12 +418,25 @@ test("earlier indexed event reorg replays against its own trusted old block hash
   state = advanceFinality(state, 1, 11n, 3);
   const replacement = baseObservation(10n, "replacement-h10", "0xreplacement10", "relationship:earlier", "commitment:earlier-10", "h9", 1, 11155111, "ethereum-sepolia", "test", "slice-b-observation-v1", 2);
   state = ingestObservation(state, replacement);
+  const laterReplacement = baseObservation(11n, "replacement-h11", "0xreplacement11", "relationship:earlier", "commitment:earlier-11", "replacement-h10", 1, 11155111, "ethereum-sepolia", "test", "slice-b-observation-v1", 3);
+  state = ingestObservation(state, laterReplacement);
+  assert.equal(state.observations.get(laterReplacement.observationId)?.finalityState, "FINALITY_PENDING");
   assert.equal(state.checkpoints.get(1)?.replayFromBlock, 10n);
   assert.equal((state.checkpoints.get(1) as { replayOldBlockHash?: string | null }).replayOldBlockHash, "h10");
+  assert.equal(state.checkpoints.get(1)?.replayStatus, "REPLAY_REQUIRED");
+  assert.equal((state.checkpoints.get(1) as { replayReason?: string | null }).replayReason, null);
   state = advanceFinality(state, 1, 11n, 4);
   const replayed = replayReorg(state, state.observations.get(replacement.observationId)!, { finalizedBlock: 11n, observedAt: 5 });
   assert.equal(replayed.outcome, "REPLAYED");
-  assert.equal(replayed.state.checkpoints.get(1)?.lastObservedBlockHash, "replacement-h10");
+  assert.equal(replayed.state.checkpoints.get(1)?.lastObservedBlock, 11n);
+  assert.equal(replayed.state.checkpoints.get(1)?.lastObservedBlockHash, "h11");
+  assert.equal(replayed.state.checkpoints.get(1)?.replayStatus, "REPLAY_REQUIRED");
+  assert.equal((replayed.state.checkpoints.get(1) as { replayReason?: string | null }).replayReason, "additional replacement observations required for affected indexed range");
+  assert.equal(replayed.state.observations.get(original11.observationId)?.finalityState, "REORGED");
+  assert.equal([...replayed.state.blockHistory.values()].find((header) => header.blockHash === "h11")?.status, "SUPERSEDED");
+  const restored = restoreSnapshot(snapshot(replayed.state));
+  assert.equal(snapshotHash(restored), snapshotHash(replayed.state));
+  assert.equal((restored.checkpoints.get(1) as { replayReason?: string | null }).replayReason, "additional replacement observations required for affected indexed range");
 });
 
 test("successful replay cannot regress an already higher finality checkpoint", () => {
@@ -456,6 +507,16 @@ test("global evidence IDs reject cross-relationship conflicts without leaking sc
   assert.equal((api.relationship("r1") as { evidence: EvidenceRecord[] }).evidence[0]?.relationshipId, "r1");
   assert.equal((api.relationship("r2") as { evidence: EvidenceRecord[] }).evidence.length, 0);
   assert.equal(api.investigations("r2").some((item) => (item as { relationshipId?: string }).relationshipId === "r2"), true);
+});
+
+test("evidence conflict investigations are visible to both affected relationships", () => {
+  const original = { evidenceId: "evidence:scope-conflict", relationshipId: "r1", sourceEventId: "source:scope-r1", mode: "implemented_local" as const, sourceDomain: "ethereum-sepolia", chainKey: 1, transactionHash: "0xscope-r1", blockNumber: 1n, attestcoinReference: "attest:scope-r1", status: "ACCEPTED" as const, linkedCreditcoinTransition: null, sourceReference: "fixture:scope-r1", reason: null };
+  const conflicting = { ...original, relationshipId: "r2", sourceEventId: "source:scope-r2", transactionHash: "0xscope-r2" };
+  const state = recordEvidence(recordEvidence(createSliceBState(), original), conflicting);
+  const api = createSliceBApi(state);
+  assert.equal(api.investigations("r1").some((item) => (item as { evidenceId?: string }).evidenceId === original.evidenceId), true);
+  assert.equal(api.investigations("r2").some((item) => (item as { evidenceId?: string }).evidenceId === original.evidenceId), true);
+  assert.equal(api.investigations("r3").some((item) => (item as { evidenceId?: string }).evidenceId === original.evidenceId), false);
 });
 
 test("relationship-scoped investigations isolate replay attempts and dead letters", () => {

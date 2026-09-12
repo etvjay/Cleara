@@ -10,6 +10,7 @@ const observation: ObservationEnvelope = {
 let state = ingestObservation(createSliceBState(), observation);
 state = advanceFinality(state, 1, 10n, 101);
 state = recordEvidence(state, { evidenceId: "evidence:slice-b-settlement", relationshipId, sourceEventId: observation.sourceEventId, mode: "fixture_from_live_evidence", sourceDomain: "ethereum-sepolia", chainKey: 1, transactionHash: identity.transactionHash, blockNumber: 10n, attestcoinReference: "attestcoin:fixture:m11", status: "ACCEPTED", linkedCreditcoinTransition: "cc3:reconciliation:fixture", sourceReference: "M11 settlement evidence", reason: null });
+state = recordEvidence(state, { evidenceId: observation.objectId, relationshipId: "relationship:slice-b:other", sourceEventId: "source:slice-b:other", mode: "implemented_local", sourceDomain: "ethereum-sepolia", chainKey: 1, transactionHash: "0xother", blockNumber: 11n, attestcoinReference: "attestcoin:other", status: "ACCEPTED", linkedCreditcoinTransition: null, sourceReference: "unrelated same-ID evidence fixture", reason: null });
 state = projectRelationship(state, relationshipId);
 const api = createSliceBApi(state);
 const json = (value: unknown): string => JSON.stringify(value, (_, current) => typeof current === "bigint" ? `${current}n` : current);

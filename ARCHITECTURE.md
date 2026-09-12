@@ -37,7 +37,7 @@ observations
 → deterministic snapshot/API
 ```
 
-The Slice B graph, checkpoint, API, and projection are non-authoritative. They cannot authorize clearing, execute settlement, or promote local state over Creditcoin. The projection keeps current reconciliation state separate from append-only reconciliation history, and its replay checkpoint records the target block identity separately from the latest observed tip. These are local read-model concerns, not authority state.
+The Slice B graph, checkpoint, API, and projection are non-authoritative. They cannot authorize clearing, execute settlement, or promote local state over Creditcoin. The projection keeps current reconciliation state separate from append-only reconciliation history, and its replay checkpoint records the target block identity separately from the latest observed tip. Earlier-block replay uses a narrow fail-closed policy: later affected observations remain `REORGED`, later affected headers are `SUPERSEDED`, the latest observed tip is preserved, and the checkpoint remains `REPLAY_REQUIRED` until additional replacement data is available. These are local read-model concerns, not authority state.
 
 The graph is intentionally narrow in this slice. It represents a relationship-to-object projection with provenance and validity labels. Supported edge types are `DERIVED_FROM`, `PROVEN_BY`, `SETTLED_BY`, and `RECONCILES`. It does not claim to materialize every facility, allocation, commitment, obligation, clearing, residual, and settlement edge.
 

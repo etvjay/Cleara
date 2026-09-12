@@ -58,6 +58,6 @@ until a separately defined indexing/backfill gate exists.
 
 ## Slice B local boundary
 
-`workers/multichain-execution/src/slice-b.ts` adds a deterministic, read-only relationship read-model boundary with stable source-event identity, separate observation/finality/evidence/canonical/projection/reconciliation axes, evidence and Creditcoin references, provenance links, graph projection, snapshot hashing, duplicate handling, and reorg replay signaling. `src/api.ts` exposes an in-memory read-only adapter, and `scripts/slice-b/server.ts` provides local JSON routes for the demo.
+`workers/multichain-execution/src/slice-b.ts` adds a deterministic, read-only relationship read-model boundary with stable source-event identity, separate observation/finality/evidence/canonical/projection/reconciliation axes, evidence and Creditcoin references, provenance links, graph projection, snapshot hashing, duplicate handling, and reorg replay signaling. Earlier-block replay preserves the observed tip and fails closed with `REPLAY_REQUIRED` when later indexed blocks still need replacement data. `src/api.ts` exposes an in-memory read-only adapter, and `scripts/slice-b/server.ts` provides local JSON routes for the demo.
 
 This is `IMPLEMENTED_LOCAL`, not a production indexer. Checkpoints are reproducible in the local state model, but durable persistence, provider backfill, operational retry/dead-letter infrastructure, hosted deployment, and live browser verification remain unverified or deferred.
