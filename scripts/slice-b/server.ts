@@ -24,8 +24,8 @@ const server = createServer((request: IncomingMessage, response: ServerResponse)
   else if (url.pathname === `/relationships/${relationshipId}/graph`) value = api.graph(relationshipId);
   else if (/^\/evidence\/[^/]+$/.test(url.pathname)) { const evidenceId = decodeURIComponent(url.pathname.slice("/evidence/".length)); value = api.evidence(evidenceId); if (value === null) { response.writeHead(404); response.end(json({ error: "NOT_INDEXED", evidenceId })); return; } }
   else if (/^\/(facilities|commitments|obligations|settlements)\/[^/]+$/.test(url.pathname)) { const objectId = decodeURIComponent(url.pathname.slice(url.pathname.indexOf("/") + 1).split("/")[1]!); value = api.object(objectId, url.searchParams.get("relationshipId") ?? undefined); if (value === null) { response.writeHead(404); response.end(json({ error: "NOT_INDEXED", objectId })); return; } if (typeof value === "object" && value !== null && "error" in value && (value as { error?: string }).error === "AMBIGUOUS_OBJECT_SCOPE") { response.writeHead(409); response.end(json(value)); return; } }
-  else if (url.pathname === "/reconciliation/exceptions") value = api.investigations();
-  else if (url.pathname === "/investigations") value = api.investigations();
+  else if (url.pathname === "/reconciliation/exceptions") value = api.investigations(url.searchParams.get("relationshipId") ?? undefined);
+  else if (url.pathname === "/investigations") value = api.investigations(url.searchParams.get("relationshipId") ?? undefined);
   else if (url.pathname === "/checkpoints") value = api.checkpoints();
   else if (url.pathname === `/snapshots/${relationshipId}`) value = api.snapshot();
   else { response.writeHead(404); response.end(json({ error: "NOT_FOUND" })); return; }

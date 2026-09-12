@@ -12,9 +12,8 @@ export interface SliceBApi {
   snapshot(): { readonly hash: string; readonly body: string };
 }
 
-function belongsToRelationship(state: SliceBState, relationshipId: string, evidence: EvidenceRecord): boolean {
-  if (evidence.relationshipId === null || evidence.relationshipId === relationshipId) return true;
-  return [...state.observations.values()].some((observation) => observation.relationshipId === relationshipId && observation.evidenceId === evidence.evidenceId);
+function belongsToRelationship(_state: SliceBState, relationshipId: string, evidence: EvidenceRecord): boolean {
+  return evidence.relationshipId === relationshipId;
 }
 
 function scopedObject(state: SliceBState, id: string, relationshipId?: string): unknown | null {
@@ -45,7 +44,7 @@ export function createSliceBApi(state: SliceBState): SliceBApi {
       canonical: false,
       observations: [...state.observations.values()].filter((item) => item.relationshipId === id),
       evidence: [...state.evidence.values()].filter((item) => belongsToRelationship(state, id, item)),
-      canonicalState: [...state.canonical.values()].filter((item) => item.relationshipId === null || item.relationshipId === id),
+      canonicalState: [...state.canonical.values()].filter((item) => item.relationshipId === id),
       reconciliations: [...state.reconciliations.values()].filter((item) => item.relationshipId === id),
       graph: state.graphs.get(id) ?? null,
       evidenceMode: "local_projection",
@@ -54,8 +53,9 @@ export function createSliceBApi(state: SliceBState): SliceBApi {
     graph: (id) => state.graphs.get(id) ?? null,
     investigations: (relationshipId) => [
       ...[...state.reconciliations.values()].filter((item) => item.state !== "RECONCILED" && (relationshipId === undefined || item.relationshipId === relationshipId)),
-      ...state.deadLetters,
-      ...state.replayHistory.filter((attempt) => attempt.status === "BLOCKED"),
+      ...state.evidenceConflicts.filter((item) => relationshipId === undefined || item.relationshipId === relationshipId),
+      ...state.deadLetters.filter((item) => relationshipId === undefined || item.relationshipId === relationshipId),
+      ...state.replayHistory.filter((attempt) => attempt.status === "BLOCKED" && (relationshipId === undefined || attempt.relationshipId === relationshipId)),
       ...[...state.observations.values()].filter((item) => (item.finalityState === "REORGED" || item.observationState === "CONFLICTING") && (relationshipId === undefined || item.relationshipId === relationshipId)),
     ],
     checkpoints: () => [...state.checkpoints.values()].sort((a, b) => a.chainKey - b.chainKey),

@@ -16,6 +16,7 @@ import {
   snapshot,
   snapshotHash,
   sourceEventId,
+  type EvidenceRecord,
   type ObservationEnvelope,
 } from "../src/slice-b.js";
 
@@ -249,6 +250,122 @@ test("identical evidence recording is idempotent and conflicting evidence is exp
   assert.equal(conflicting.evidence.get(evidence.evidenceId)?.status, "REJECTED");
   assert.equal(conflicting.provenance.length, once.provenance.length);
   assert.equal(snapshotHash(recordEvidence(conflicting, { ...evidence, status: "REJECTED", reason: "different content" })), snapshotHash(conflicting));
+});
+
+test("replay fails closed without trusted canonical history", () => {
+  let state = ingestObservation(createSliceBState(), baseObservation());
+  state = advanceFinality(state, 1, 10n, 2);
+  const replacement = baseObservation(10n, "replacement-no-history", "0xreplacement-no-history", "relationship:fixture", "commitment:1", "h9");
+  state = ingestObservation(state, replacement);
+  state = advanceFinality(state, 1, 10n, 3);
+  const noHistory = { ...state, blockHistory: new Map() };
+  const blocked = replayReorg(noHistory, noHistory.observations.get(replacement.observationId)!, { finalizedBlock: 10n, observedAt: 4 });
+  assert.equal(blocked.outcome, "BLOCKED");
+  assert.equal(blocked.state.checkpoints.get(1)?.replayStatus, "REPLAY_REQUIRED");
+  assert.equal(blocked.state.observations.get(baseObservation().observationId)?.finalityState, "REORGED");
+  assert.equal(blocked.state.observations.get(replacement.observationId)?.projectionReference?.startsWith("reorg:candidate:"), true);
+});
+
+test("replay rejects missing, superseded, parentless, or mismatched trusted headers", () => {
+  function fixture() {
+    let state = ingestObservation(createSliceBState(), baseObservation());
+    state = advanceFinality(state, 1, 10n, 2);
+    const replacement = baseObservation(10n, "replacement-trusted-header", "0xreplacement-trusted-header", "relationship:fixture", "commitment:1", "h9");
+    state = ingestObservation(state, replacement);
+    state = advanceFinality(state, 1, 10n, 3);
+    return { state, replacement };
+  }
+  const oldKey = (state: ReturnType<typeof createSliceBState>): string => [...state.blockHistory.entries()].find(([, header]) => header.blockHash === "h10")![0];
+  const cases = [
+    ["missing header", (state: ReturnType<typeof createSliceBState>) => { const blockHistory = new Map(state.blockHistory); blockHistory.delete(oldKey(state)); return { ...state, blockHistory }; }],
+    ["superseded header", (state: ReturnType<typeof createSliceBState>) => { const blockHistory = new Map(state.blockHistory); blockHistory.set(oldKey(state), { ...blockHistory.get(oldKey(state))!, status: "SUPERSEDED" }); return { ...state, blockHistory }; }],
+    ["missing parent", (state: ReturnType<typeof createSliceBState>) => { const blockHistory = new Map(state.blockHistory); blockHistory.set(oldKey(state), { ...blockHistory.get(oldKey(state))!, parentBlockHash: null }); return { ...state, blockHistory }; }],
+    ["checkpoint parent mismatch", (state: ReturnType<typeof createSliceBState>) => { const checkpoints = new Map(state.checkpoints); checkpoints.set(1, { ...checkpoints.get(1)!, replayParentBlockHash: "not-h9" }); return { ...state, checkpoints }; }],
+    ["header metadata mismatch", (state: ReturnType<typeof createSliceBState>) => { const blockHistory = new Map(state.blockHistory); blockHistory.set(oldKey(state), { ...blockHistory.get(oldKey(state))!, chainId: 999999 }); return { ...state, blockHistory }; }],
+  ] as const;
+  for (const [label, mutate] of cases) {
+    const { state, replacement } = fixture();
+    const blocked = replayReorg(mutate(state), mutate(state).observations.get(replacement.observationId)!, { finalizedBlock: 10n, observedAt: 4 });
+    assert.equal(blocked.outcome, "BLOCKED", label);
+    assert.equal(blocked.state.checkpoints.get(1)?.replayStatus, "REPLAY_REQUIRED", label);
+  }
+});
+
+test("finality is monotonic and equal stale inputs are idempotent", () => {
+  let state = ingestObservation(createSliceBState(), baseObservation());
+  state = advanceFinality(state, 1, 10n, 2);
+  const finalized = state;
+  state = advanceFinality(state, 1, 5n, 3);
+  assert.equal(state.checkpoints.get(1)?.lastFinalizedBlock, 10n);
+  assert.equal(state.observations.get(baseObservation().observationId)?.finalityState, "FINALIZED");
+  assert.equal(snapshotHash(state), snapshotHash(finalized));
+  const equal = advanceFinality(state, 1, 10n, 4);
+  assert.equal(snapshotHash(equal), snapshotHash(state));
+});
+
+test("sparse event cursor semantics allow gaps but replay still needs indexed headers", () => {
+  let state = ingestObservation(createSliceBState(), baseObservation(12n, "h12", "0xgap", "relationship:gap", "commitment:gap", "h11"));
+  state = advanceFinality(state, 1, 12n, 2);
+  const checkpoint = state.checkpoints.get(1)! as typeof state.checkpoints extends ReadonlyMap<number, infer C> ? C : never;
+  assert.equal(checkpoint.lastObservedBlock, 12n);
+  assert.equal(checkpoint.lastFinalizedBlock, 12n);
+  assert.equal((checkpoint as { cursorMode?: string }).cursorMode, "SPARSE_EVENT");
+  assert.equal(state.blockHistory.size, 1);
+});
+
+test("global evidence IDs reject cross-relationship conflicts without leaking scope", () => {
+  const first = { evidenceId: "evidence:global", relationshipId: "r1", sourceEventId: "source:r1", mode: "implemented_local" as const, sourceDomain: "ethereum-sepolia", chainKey: 1, transactionHash: "0xr1", blockNumber: 1n, attestcoinReference: "attest:r1", status: "ACCEPTED" as const, linkedCreditcoinTransition: null, sourceReference: "fixture:r1", reason: null };
+  const conflicting = { ...first, relationshipId: "r2", sourceEventId: "source:r2", transactionHash: "0xr2" };
+  let state = recordEvidence(createSliceBState(), first);
+  state = recordEvidence(state, conflicting);
+  const api = createSliceBApi(state);
+  assert.equal(state.evidence.get("evidence:global")?.relationshipId, "r1");
+  assert.equal(state.evidence.get("evidence:global")?.status, "REJECTED");
+  assert.equal((api.relationship("r1") as { evidence: EvidenceRecord[] }).evidence[0]?.relationshipId, "r1");
+  assert.equal((api.relationship("r2") as { evidence: EvidenceRecord[] }).evidence.length, 0);
+  assert.equal(api.investigations("r2").some((item) => (item as { relationshipId?: string }).relationshipId === "r2"), true);
+});
+
+test("relationship-scoped investigations isolate replay attempts and dead letters", () => {
+  function blockedFor(relationshipId: string, chainKey: number) {
+    let state = ingestObservation(createSliceBState(), baseObservation(10n, `h10-${relationshipId}`, `0x${relationshipId}-old`, relationshipId, `object:${relationshipId}`, "h9", chainKey, chainKey === 1 ? 11155111 : 1, chainKey === 1 ? "ethereum-sepolia" : "ethereum-mainnet"));
+    state = advanceFinality(state, chainKey, 10n, 2);
+    const candidate = baseObservation(10n, `h10-${relationshipId}-replacement`, `0x${relationshipId}-replacement`, relationshipId, `object:${relationshipId}`, "invalid-parent", chainKey, chainKey === 1 ? 11155111 : 1, chainKey === 1 ? "ethereum-sepolia" : "ethereum-mainnet");
+    state = ingestObservation(state, candidate);
+    state = advanceFinality(state, chainKey, 10n, 3);
+    state = replayReorg(state, state.observations.get(candidate.observationId)!, { finalizedBlock: 10n, observedAt: 4 }).state;
+    const malformed = { ...candidate, observationId: `dead:${relationshipId}`, sourceEventId: `dead:${relationshipId}`, transactionHash: "" };
+    state = ingestObservation(state, malformed);
+    return state;
+  }
+  const r1 = blockedFor("r1", 1);
+  const r2 = blockedFor("r2", 2);
+  const globalMalformed = { ...baseObservation(), observationId: "dead:global", sourceEventId: "dead:global", transactionHash: "", relationshipId: undefined } as unknown as ObservationEnvelope;
+  const state = {
+    ...createSliceBState(),
+    observations: new Map([...r1.observations, ...r2.observations]),
+    evidence: new Map([...r1.evidence, ...r2.evidence]),
+    canonical: new Map([...r1.canonical, ...r2.canonical]),
+    provenance: [...r1.provenance, ...r2.provenance],
+    reconciliations: new Map([...r1.reconciliations, ...r2.reconciliations]),
+    checkpoints: new Map([...r1.checkpoints, ...r2.checkpoints]),
+    blockHistory: new Map([...r1.blockHistory, ...r2.blockHistory]),
+    replayHistory: [...r1.replayHistory, ...r2.replayHistory],
+    graphs: new Map([...r1.graphs, ...r2.graphs]),
+    deadLetters: [...r1.deadLetters, ...r2.deadLetters],
+  };
+  const withGlobal = ingestObservation(state, globalMalformed);
+  const api = createSliceBApi(withGlobal);
+  const all = api.investigations();
+  const onlyR1 = api.investigations("r1");
+  const onlyR2 = api.investigations("r2");
+  assert.equal(all.some((item) => (item as { relationshipId?: string }).relationshipId === "r1"), true);
+  assert.equal(all.some((item) => (item as { relationshipId?: string }).relationshipId === "r2"), true);
+  assert.equal(onlyR1.every((item) => (item as { relationshipId?: string | null }).relationshipId === "r1"), true);
+  assert.equal(onlyR2.every((item) => (item as { relationshipId?: string | null }).relationshipId === "r2"), true);
+  assert.equal(onlyR1.some((item) => (item as { relationshipId?: string }).relationshipId === "r2"), false);
+  assert.equal(onlyR2.some((item) => (item as { relationshipId?: string }).relationshipId === "r1"), false);
+  assert.equal(all.some((item) => (item as { relationshipId?: string | null }).relationshipId === null), true);
 });
 
 test("snapshot restore preserves deterministic state across restart", () => {
