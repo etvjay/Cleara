@@ -2,7 +2,9 @@
 
 ## Status
 
-`CHANGES_REQUIRED` was the starting status for this hardening cycle. Local verification now passes for implementation commit `a5dbdf07acdb4495a0348135fdeb2472b5856995`; exact-head PR CI is pending for the final pushed tree.
+`VERIFIED_REMOTE` for implementation commit `a5dbdf07acdb4495a0348135fdeb2472b5856995` and exact-head PR checks on `044a65e47484539519b2db3380630ffe55751540`.
+
+The hardening implementation is in `a5dbdf07acdb4495a0348135fdeb2472b5856995`; the exact PR verification head also contains the reconciled documentation.
 
 ## Repository
 
@@ -49,7 +51,14 @@ forge test -vvv                               PASS, 96 tests
 
 Forge was available in the verification environment. Existing timestamp and unsafe-cast warnings remain; no protected contract changed. Local Node is `22.23.2`; the repository declares `24.19.0`.
 
-## Adversarial assertions
+## Exact-head PR checks
+
+All checks passed on `044a65e47484539519b2db3380630ffe55751540`:
+
+- [Contracts](https://github.com/etvjay/Cleara/actions/runs/34689240789) — `success`
+- [Multichain Execution Projection](https://github.com/etvjay/Cleara/actions/runs/34689240797) — `success`
+- [Read-only Workbench](https://github.com/etvjay/Cleara/actions/runs/34689240783) — `success`
+
 
 The repaired suite covers:
 

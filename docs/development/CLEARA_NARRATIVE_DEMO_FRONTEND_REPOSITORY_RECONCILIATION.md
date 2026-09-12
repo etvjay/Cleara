@@ -5,7 +5,7 @@
 **Branch:** `verification/slice-b`
 **Base:** `c1065cedb2ae62543bb253d0bad9af23ffd99261`
 **Repair implementation:** `a5dbdf07acdb4495a0348135fdeb2472b5856995`
-**Verification status:** local hardening gates pass; exact-head PR CI pending for the final pushed tree.
+**Verification status:** local hardening gates and exact-head PR CI pass on `044a65e47484539519b2db3380630ffe55751540`.
 
 ## A. Current narrative truth
 
