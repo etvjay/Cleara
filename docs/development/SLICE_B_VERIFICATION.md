@@ -2,7 +2,9 @@
 
 ## Status
 
-`CHANGES_REQUIRED` was the starting status for this repair. The implementation repair is now committed at `701022d0df6e74f22c39d54d6a80ec9671e1b0b9`; final promotion remains gated on the new exact-head PR checks.
+`VERIFIED_REMOTE` for the implementation and exact-head PR checks on `e33c8d1f550b767e2bd51538cf89c3ef60e57a6a`.
+
+The implementation repair was introduced in `701022d0df6e74f22c39d54d6a80ec9671e1b0b9`; `e33c8d1f550b767e2bd51538cf89c3ef60e57a6a` is the exact PR verification head containing the repaired implementation and reconciled documentation.
 
 ## Repository
 
@@ -44,6 +46,14 @@ forge test -vvv                               PASS, 96 tests
 ```
 
 The local Node runtime is `22.23.2`; the repository declares Node `24.19.0`. Foundry is available locally. Existing Foundry timestamp and unsafe-cast warnings remain; no protected contract changed.
+
+## Exact-head PR checks
+
+All checks below passed on `e33c8d1f550b767e2bd51538cf89c3ef60e57a6a`:
+
+- [Contracts](https://github.com/etvjay/Cleara/actions/runs/34686928834) — `success`
+- [Multichain Execution Projection](https://github.com/etvjay/Cleara/actions/runs/34686928823) — `success`
+- [Read-only Workbench](https://github.com/etvjay/Cleara/actions/runs/34686928785) — `success`
 
 ## Slice B assertions
 
