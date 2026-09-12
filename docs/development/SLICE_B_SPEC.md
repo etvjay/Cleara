@@ -39,9 +39,16 @@ The implementation keeps these axes independent:
 
 No axis promotes another. `FINALIZED` is not `PROVEN`, `PROVEN` is not `ACCEPTED`, `INDEXED` is not `CANONICAL`, and `RECONCILED` is not inferred from a local snapshot alone.
 
-## Stable identity
+## Cursor and continuity semantics
 
-Source identity is:
+Slice B uses a `SPARSE_EVENT` cursor. `lastObservedBlock` means the latest indexed event block, not a complete chain-header cursor. `blockHistory` contains headers for indexed event blocks only; gaps with no relevant events are permitted. Reorg replay is stronger than ordinary sparse observation: it requires a `CANONICAL` trusted header for the superseded indexed event block, a valid parent hash, and matching checkpoint metadata. Missing or superseded trusted history blocks replay and leaves `REPLAY_REQUIRED`.
+
+Finality is monotonic. Lower or equal finality inputs cannot regress a checkpoint or demote finalized observations. Identical stale inputs are no-ops.
+
+## Evidence identity scope
+
+Attestcoin evidence IDs are globally unique in this local model. Identical content is idempotent. Conflicting content using an existing evidence ID rejects the original record without replacing it and creates an explicit relationship-scoped evidence-conflict investigation. A conflicting record is never attached to the other relationship's evidence view.
+
 
 ```text
 domain + chainKey + transactionHash + eventIndex
@@ -63,8 +70,8 @@ GET /commitments/:id
 GET /obligations/:id
 GET /settlements/:id
 GET /evidence/:id
-GET /reconciliation/exceptions
-GET /investigations
+GET /reconciliation/exceptions?relationshipId=:id
+GET /investigations?relationshipId=:id
 GET /checkpoints
 GET /snapshots/relationship:slice-b:fixture
 ```
