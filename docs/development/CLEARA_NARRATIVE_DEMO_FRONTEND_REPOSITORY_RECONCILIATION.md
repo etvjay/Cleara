@@ -5,7 +5,7 @@
 **Branch:** `verification/slice-b`
 **Base:** `c1065cedb2ae62543bb253d0bad9af23ffd99261`
 **Repair implementation:** `b2a6b8fab45eb9491aef1653ac8f0c8186bed859`
-**Verification status:** implementation hardening and exact-head PR CI pass on `b2a6b8fab45eb9491aef1653ac8f0c8186bed859`; final documentation-tree verification is pending.
+**Verification status:** implementation hardening and exact-head PR CI pass on `b2a6b8fab45eb9491aef1653ac8f0c8186bed859`; documentation-only receipt updates are complete.
 
 ## A. Current narrative truth
 

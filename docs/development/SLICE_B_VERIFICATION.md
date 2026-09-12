@@ -2,7 +2,7 @@
 
 ## Status
 
-`IMPLEMENTATION_VERIFIED_REMOTE` for hardening commit `b2a6b8fab45eb9491aef1653ac8f0c8186bed859`. The final verification-tree SHA will be the subsequent documentation commit and must receive its own exact-head checks.
+`VERIFIED_REMOTE` for hardening implementation commit `b2a6b8fab45eb9491aef1653ac8f0c8186bed859`. The exact-head implementation workflows and all local gates are recorded below. The final branch head may include documentation-only receipt updates and is reported separately.
 
 ## Repository
 
