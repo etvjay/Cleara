@@ -51,18 +51,19 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Compile Slice C integration
-        run: pnpm exec tsc --noEmit -p workers/slice-c/integration/tsconfig.json
+        run: pnpm exec tsc --noEmit -p workers/slice-c/integration/tsconfig.json --typeRoots workers/multichain-execution/node_modules/@types
 
       - name: Compile durable storage
         run: >-
           pnpm exec tsc --noEmit --target ES2022 --module NodeNext
           --moduleResolution NodeNext --strict --noUncheckedIndexedAccess
           --exactOptionalPropertyTypes --esModuleInterop --skipLibCheck
-          --types node workers/slice-c/durable-storage/src/index.ts
+          --types node --typeRoots workers/multichain-execution/node_modules/@types
+          workers/slice-c/durable-storage/src/index.ts
           workers/slice-c/durable-storage/test/durable-storage.test.ts
 
       - name: Compile retry orchestration
-        run: pnpm exec tsc --noEmit -p workers/slice-c/retry-orchestration/tsconfig.json
+        run: pnpm exec tsc --noEmit -p workers/slice-c/retry-orchestration/tsconfig.json --typeRoots workers/multichain-execution/node_modules/@types
 
       - name: Run Slice C candidate and integration tests
         run: >-
