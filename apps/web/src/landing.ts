@@ -10,18 +10,30 @@ function clearaHero(): string {
             <span>Cleara</span>
           </a>
           <nav class="reference-nav" aria-label="Primary navigation">
-            <a href="#cleara-hero">Platform</a>
-            <a href="#cleara-hero">Workflows</a>
-            <a href="#cleara-hero">Evidence</a>
-            <a href="#cleara-hero">Company</a>
-            <a class="reference-nav-pill" href="#cleara-hero">Explore</a>
+            <a href="#cleara-model">Platform</a>
+            <a href="#cleara-coordination">Workflows</a>
+            <a href="#cleara-proof">Evidence</a>
+            <a class="reference-nav-pill" href="/try">Enter Cleara</a>
           </nav>
           <div class="reference-utilities">
-            <button class="reference-language" type="button" aria-label="Language: English">EN <span aria-hidden="true">⌄</span></button>
-            <a class="reference-cart" href="#cleara-hero">Menu</a>
-            <a class="reference-bag" href="#cleara-hero" aria-label="Open Cleara menu"><span aria-hidden="true">⌑</span></a>
+            <button class="reference-menu" type="button" aria-expanded="false" aria-controls="cleara-mobile-menu">Menu</button>
           </div>
         </header>
+        <div class="reference-menu-overlay" id="cleara-mobile-menu" hidden>
+          <button class="reference-menu-scrim" type="button" data-menu-close aria-label="Close menu"></button>
+          <aside class="reference-menu-panel" role="dialog" aria-modal="true" aria-labelledby="cleara-menu-title">
+            <div class="reference-menu-head">
+              <p id="cleara-menu-title">EXPLORE CLEARA</p>
+              <button class="reference-menu-close" type="button" data-menu-close aria-label="Close menu">×</button>
+            </div>
+            <nav class="reference-menu-links" aria-label="Mobile navigation">
+              <a href="#cleara-model">Platform <span aria-hidden="true">↗</span></a>
+              <a href="#cleara-coordination">Workflows <span aria-hidden="true">↗</span></a>
+              <a href="#cleara-proof">Evidence <span aria-hidden="true">↗</span></a>
+              <a class="reference-menu-enter" href="/try">Enter Cleara <span aria-hidden="true">↗</span></a>
+            </nav>
+          </aside>
+        </div>
         <div class="reference-hero-copy">
           <p>A proof-native financial coordination protocol built on Creditcoin and Attestcoin</p>
           <h1><span>Financial relationships,</span><span>coherent across domains.</span></h1>

@@ -69,6 +69,37 @@ if (carousel) {
   next?.addEventListener("click", () => paint(active + 1, true));
 }
 
+const menuButton = document.querySelector<HTMLButtonElement>(".reference-menu");
+const menuOverlay = document.querySelector<HTMLElement>("#cleara-mobile-menu");
+const menuClose = menuOverlay?.querySelector<HTMLButtonElement>(".reference-menu-close");
+if (menuButton && menuOverlay) {
+  let closeTimer: number | undefined;
+  const setMenuOpen = (open: boolean) => {
+    if (closeTimer) window.clearTimeout(closeTimer);
+    menuButton.setAttribute("aria-expanded", String(open));
+    document.body.classList.toggle("menu-open", open);
+    if (open) {
+      menuOverlay.hidden = false;
+      window.requestAnimationFrame(() => menuOverlay.classList.add("is-open"));
+      window.setTimeout(() => menuClose?.focus(), 0);
+      return;
+    }
+    menuOverlay.classList.remove("is-open");
+    closeTimer = window.setTimeout(() => {
+      if (!menuOverlay.classList.contains("is-open")) menuOverlay.hidden = true;
+    }, 420);
+    menuButton.focus();
+  };
+  menuButton.addEventListener("click", () => setMenuOpen(true));
+  menuOverlay.addEventListener("click", (event) => {
+    if ((event.target as HTMLElement).closest("[data-menu-close]")) setMenuOpen(false);
+  });
+  menuOverlay.querySelectorAll<HTMLAnchorElement>("a").forEach((link) => link.addEventListener("click", () => setMenuOpen(false)));
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !menuOverlay.hidden) setMenuOpen(false);
+  });
+}
+
 const revealTargets = Array.from(document.querySelectorAll<HTMLElement>(".coordination-section, .relationship-promo-section, .proof-section, .principles-section, .coordination-cta-section, .loop-section, .mechanism-section, footer.landing-footer"));
 const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 if (revealTargets.length && !prefersReducedMotion && "IntersectionObserver" in window) {
