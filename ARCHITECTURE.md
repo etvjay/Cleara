@@ -37,7 +37,7 @@ observations
 → deterministic snapshot/API
 ```
 
-The Slice B graph, checkpoint, API, and projection are non-authoritative. They cannot authorize clearing, execute settlement, or promote local state over Creditcoin. The projection keeps current reconciliation state separate from append-only reconciliation history, records an ordered replay range with one canonical header per chain height, and validates every public boundary before mutation. Earlier-block replay advances from block 10 to block 11 only after each selected replacement is finalized and parent-consistent; missing history remains blocked but recoverable through `backfillReplayHeader`. Graph and API reads are rebuilt from current state, so later observation, finality, evidence, reconciliation, and replay changes cannot be served as silently stale current data. These are local read-model concerns, not authority state.
+The Slice B graph, checkpoint, API, and projection are non-authoritative. They cannot authorize clearing, execute settlement, or promote local state over Creditcoin. Every state is bootstrapped from an explicit source-scope descriptor and trusted anchor. The projection keeps current reconciliation state separate from append-only reconciliation history, records an ordered replay range with one canonical header per complete source scope and height, validates every public boundary before mutation, and rejects caller-derived provenance. Earlier-block replay advances from block 10 to block 11 only after each selected replacement is finalized and parent-consistent; missing history remains blocked but recoverable through `backfillReplayHeader`. Graph and API reads are rebuilt from current state, so later observation, finality, evidence, reconciliation, and replay changes cannot be served as silently stale current data. These are local read-model concerns, not authority state.
 
 The graph is intentionally narrow in this slice. It represents a relationship-to-object projection with provenance and validity labels. Supported edge types are `DERIVED_FROM`, `PROVEN_BY`, `SETTLED_BY`, and `RECONCILES`. It does not claim to materialize every facility, allocation, commitment, obligation, clearing, residual, and settlement edge.
 
@@ -51,5 +51,6 @@ The graph is intentionally narrow in this slice. It represents a relationship-to
 - Historical evidence: `evidence/runtime/`
 - Architecture: `docs/architecture/`
 - Slice B contract: `docs/development/SLICE_B_SPEC.md`
+- Slice B frozen consumer contract: `docs/development/SLICE_B_COMPATIBILITY_CONTRACT.md`
 
 See `docs/canonical/GROUND_TRUTH.md` for authoritative implementation and evidence status.

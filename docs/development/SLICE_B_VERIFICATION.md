@@ -2,177 +2,87 @@
 
 ## Status
 
-`VERIFIED_REMOTE` for implementation parent `4d78498133ecda75dc69a5e0b49a9b373d8f49de`; the exact-head workflows below all passed on that SHA. This documentation-only receipt is part of the final branch tree and receives its own fresh exact-head checks after push.
+`VERIFIED_LOCAL_CANDIDATE`: the repair worktree has passed the current local gates. Exact-head remote CI is not claimed until the final repair tree is pushed and each workflow `headSha` is read back. Browser verification remains `BROWSER_VERIFICATION_BLOCKED`. Hosted deployment remains `DEPLOYMENT_NOT_VERIFIED`.
 
 ## Repository
 
 ```text
 Repository: etvjay/Cleara
-Branch: verification/slice-b
-Base: c1065cedb2ae62543bb253d0bad9af23ffd99261
-Implementation hardening commit: 4d78498133ecda75dc69a5e0b49a9b373d8f49de
-Final pushed implementation SHA: 4d78498133ecda75dc69a5e0b49a9b373d8f49de
-Documentation receipt: this final documentation commit; its exact-head runs are read back separately
-Draft PR: https://github.com/etvjay/Cleara/pull/1
+Repair branch: verification/slice-b-repair
+Starting head: f3ceae3d829bd0bb2b065e057de1f84d92f5ecd2
+Verified local checkpoint: 37072a72a361ab4f8ce2ca890135d104d5bd7dc7
+Frozen consumer contract: slice-b-read-model-contract-v1
+Final pushed SHA: pending
+Final exact-head workflow IDs: pending
 ```
 
-Historical M3-M11 and M11-Lifecycle runs remain separately evidenced. No uninterrupted M3-to-M11 execution is claimed.
+The prior `verification/slice-b` receipts are historical evidence for that earlier tree and are not reused as evidence for this repair branch.
 
-## Repaired invariants
+## Scope
 
-- Replay owns an ordered `replayTargets` range. The first target is validated against its own canonical old header, and a successful block-10 replay advances the pending cursor to block 11 without changing the original target prematurely.
-- Finality advancement never selects fork candidates; competing same-height hashes remain auditable `CANDIDATE` until validated replay selects one, and at most one header per `(chainKey, blockNumber)` is `CANONICAL`.
-- Missing, superseded, parentless, or metadata-inconsistent trusted history leaves the checkpoint `REPLAY_REQUIRED` and replay `BLOCKED`; `backfillReplayHeader` is the explicit recovery path for missing trusted history.
-- Replacement identity, predecessor parent, finality, cursor, conflict state, and command shape are validated before promotion or `NOOP`.
-- Reorged observations remain auditable history, selected old headers become `SUPERSEDED`, old evidence becomes `STALE`, dependent reconciliation becomes `REORG_DETECTED`, and replay provenance is preserved.
-- A range cannot become `CURRENT` while any affected indexed block lacks a finalized, parent-consistent selected replacement; incomplete ranges retain owner, recovery role, reason, and next action.
-- Boundary validation rejects metadata drift, nonfinite/fractional values, invalid identifiers, unsafe payloads, and invalid enums before projection mutation, recording typed recovery/dead-letter records.
-- Evidence-first and observation-first ingestion converge only on complete source identity; mismatched evidence never attaches and conflicting payloads remain retrievable in full.
-- Graph/API reads are rebuilt from current state, so cached projections cannot silently remain current after mutations.
-- Reconciliation current state is stored separately from append-only `reconciliationHistory` with per-scope sequence/occurred-at chronology.
-- Snapshot restore preserves literal strings, restores only known bigint fields, validates restored records and canonical-height uniqueness, normalizes legacy keys, and remains backward-compatible for older fields.
+Slice B remains local, deterministic, in-memory, read-only, and non-production. Creditcoin CC3 remains the canonical financial authority. Source chains remain authoritative for native actions. Attestcoin is evidence and continuity, not financial judgment or execution authority. Nomos remains conceptual. No wallet, signer, RPC write, proof request, deployment, bridge, custody, settlement adapter, or live workflow was used.
 
-## Local gates
+Slice C work is isolated from this branch and cannot be used to close Slice B. The serialized consumer contract is [`SLICE_B_COMPATIBILITY_CONTRACT.md`](./SLICE_B_COMPATIBILITY_CONTRACT.md).
 
-Executed on the final implementation tree:
+## Repaired and demonstrated invariants
+
+- Unknown, null, primitive, malformed, cyclic, and unsafe public inputs produce bounded typed recovery/dead-letter records or typed errors. They do not escape through field dereferences.
+- Source scope is configured explicitly with chain ID, source domain, adapter/schema, finality policy, cursor mode, and a trusted anchor. The first observation cannot poison those values or bypass parent continuity.
+- Fork candidates can retain source finality, but canonical header selection and graph currentness remain separate. Finality never promotes a candidate.
+- Evidence requires complete source identity, including recomputed source-event identity. Mismatched, late, stale, and reorged evidence cannot appear accepted/current. Evidence-first and observation-first valid arrivals converge deterministically.
+- Replay `NOOP` is bound to the complete replacement envelope, options, and pre-command checkpoint. Changed timestamps, references, metadata, parents, targets, or scope cannot reuse an old command.
+- Replay ranges remain ordered. Incomplete or missing trusted history stays `REPLAY_REQUIRED`/`BLOCKED` with recovery metadata.
+- Snapshot restore validates raw map keys, duplicate entries, source-scope/checkpoint agreement, canonical uniqueness, graph edges, provenance references, replay hashes, dead-letter fields, and known bigint fields before returning. Rejection is atomic.
+- Block and projector keys include complete source scope, preventing same-height collisions across chain/domain/adapter/schema interpretations.
+- Caller-supplied derived references are cleared at ingestion and can only be attached by validated state transitions.
+- Resource routes enforce expected object type, scope, read-only method behavior, safe path decoding, and bounded malformed-request responses.
+- Reconciliation chronology and graph/API reads remain deterministic and fresh after mutations.
+
+## Local verification matrix
+
+Executed from the repair worktree:
 
 ```text
-corepack pnpm install --frozen-lockfile       PASS
-corepack pnpm check:projection                PASS, 59 worker tests
-corepack pnpm web:check                       PASS, 15 web tests, build, HTTP smoke, scan
-node --import tsx scripts/slice-b/demo.ts    PASS, six assertion-backed scenarios
-node scripts/slice-b/smoke.mjs                PASS, checkpoint/evidence/investigation/read-only assertions
-node --import tsx scripts/slice-b/adversarial.mjs PASS, 10 explicit invariant scenarios
-git diff --check                              PASS
-forge fmt --check                             PASS
-forge build --sizes                           PASS
-forge test -vvv                               PASS, 96 tests
+corepack pnpm install --frozen-lockfile       PASS, baseline and repair tree
+corepack pnpm --filter @cleara/multichain-execution typecheck PASS
+node --import tsx --test workers/multichain-execution/test/*.test.ts PASS
+node --import tsx scripts/slice-b/demo.ts    PASS
+node --import tsx scripts/slice-b/adversarial.mjs PASS
+node scripts/slice-b/smoke.mjs                PASS
+corepack pnpm check:projection                pending final matrix
+corepack pnpm web:check                       pending final matrix
+git diff --check                              PASS before final docs
+git diff --no-index protected-path audit      pending final tree
+forge fmt --check                             pending final matrix
+forge build --sizes                           pending final matrix
+forge test -vvv                               pending final matrix
 ```
 
-Forge was available in the verification environment. Existing timestamp and unsafe-cast warnings remain; no protected contract changed. Local Node is `22.23.2`; the repository declares `24.19.0`.
+The focused red/green regression set covers bootstrap poisoning, null boundaries, strict evidence identity, late/reorg evidence, full replay identity, snapshot corruption, graph/provenance dangling references, projector scope collisions, route typing, untrusted references, chronology, and insertion-order determinism.
 
-## Exact-head implementation-parent checks
+## API boundary
 
-All checks passed on `4d78498133ecda75dc69a5e0b49a9b373d8f49de`:
-
-- [Contracts](https://github.com/etvjay/Cleara/actions/runs/34704456532) - `success`, `headSha = 4d78498133ecda75dc69a5e0b49a9b373d8f49de`
-- [Multichain Execution Projection](https://github.com/etvjay/Cleara/actions/runs/34704456461) - `success`, `headSha = 4d78498133ecda75dc69a5e0b49a9b373d8f49de`
-- [Read-only Workbench](https://github.com/etvjay/Cleara/actions/runs/34704456467) - `success`, `headSha = 4d78498133ecda75dc69a5e0b49a9b373d8f49de`
-
-The final documentation-only commit must receive fresh exact-head checks; no older receipt is reused as final-tree CI evidence.
-
-## Adversarial assertions
-
-The repaired suite covers:
-
-- empty block history;
-- missing target history before candidate ingestion;
-- missing old canonical header;
-- superseded old header;
-- missing trusted parent hash;
-- checkpoint parent mismatch;
-- replacement parent mismatch;
-- trusted-header metadata mismatch;
-- wrong chain key and chain ID;
-- wrong source domain, adapter version, schema version, and block number;
-- unfinalized replacement;
-- earlier-block replay using the target old hash;
-- complete two-block replay reaching `CURRENT` and incomplete replay remaining `REPLAY_REQUIRED` with owner/action;
-- ordered out-of-order candidates, pending-target advancement, missing-history `backfillReplayHeader`, and replay restart from snapshot;
-- one canonical header per chain height, unselected candidates never promoted by finality, same-block event preservation, and candidate ordering;
-- strict malformed metadata, nonfinite/fractional values, empty identifiers, payload shape, enum, identity, and typed dead-letter rejection;
-- evidence-first/observation-first convergence, full source identity mismatches, conflict payload retrieval, and reorg evidence/reconciliation invalidation;
-- graph/API freshness after observation, finality, evidence, canonical, reconciliation, and replay mutations;
-- forged replay commands changing relationship, object, chain, domain, parent, height, hash, adapter, schema, or finality cannot return `NOOP`;
-- invalid replacement parent;
-- successful replay preserving historical reorg data and the latest tip;
-- repeated successful replay returning `NOOP`;
-- multiple replacement events at one block remain distinct;
-- negative, lower, equal, and higher finality inputs;
-- global evidence behavior and relationship-scoped conflict isolation;
-- `PENDING → MISMATCH → RECONCILED` current-state replacement and investigation cleanup;
-- sparse event blocks without fabricated contiguous-header claims;
-- same global evidence ID across relationships;
-- original evidence preservation and multiple distinct conflict records;
-- relationship-scoped replay attempts, dead letters, objects, and investigations;
-- global dead-letter context in unscoped investigations;
-- current reconciliation versus append-only history, including repeated state cycles;
-- canonical-header preservation for additional same-block events;
-- delimiter-collision-resistant keys and hashes;
-- backward-compatible snapshot restore with legacy keys and fields;
-- literal strings that resemble bigint values;
-- insertion-order determinism, graph selection/freshness, meaningful hash changes, malformed path encoding, invalid scope parameters, malformed snapshot rejection, and read-only boundaries.
-
-The standalone adversarial command prints 10 explicit `PASS` lines and exits nonzero on any failure.
-
-## API readback
-
-```text
-GET /health
-GET /relationships/:id
-GET /relationships/:id/timeline
-GET /relationships/:id/graph
-GET /evidence/:id
-GET /facilities/:id?relationshipId=:id
-GET /commitments/:id?relationshipId=:id
-GET /obligations/:id?relationshipId=:id
-GET /settlements/:id?relationshipId=:id
-GET /reconciliation/exceptions?relationshipId=:id
-GET /investigations?relationshipId=:id
-GET /checkpoints
-GET /snapshots/:id
-```
-
-The local fixture exposes a current `SPARSE_EVENT` checkpoint with chain key `1`, Sepolia chain ID `11155111`, source domain `ethereum-sepolia`, block `10n`, explicit `CURRENT` replay status, and adapter/schema versions. Scoped object routes exclude unrelated and global evidence; unscoped ambiguous objects return `409 AMBIGUOUS_OBJECT_SCOPE`. Graph reads are rebuilt from current state after mutations. All API routes remain read-only.
-
-Expected behavior includes:
-
-```text
-known evidence                     200
-known relationship                 200
-scoped investigations              200
-scoped reconciliation exceptions   200
-checkpoints                        200, populated
-unknown object                     404 NOT_INDEXED
-ambiguous object scope             409 AMBIGUOUS_OBJECT_SCOPE
-malformed path encoding            404 NOT_INDEXED
-empty/whitespace scope parameter   400 INVALID_PARAMETER
-POST /health                       405 READ_ONLY
-```
-
-Creditcoin remains canonical financial authority. The API is projection-scoped.
+The local server exposes only read routes. Object routes map resource names to expected object types. A wrong-type identifier is not returned as a successful object. `POST`, unknown resources, malformed scopes, traversal-like paths, and malformed encodings remain bounded read-only errors.
 
 ## Evidence classification
 
-- Existing M3-M11 and M11-Lifecycle records: historical `TESTED_TESTNET`, separately evidenced.
-- Combined Slice A workbench: `COMPOSITE_FIXTURE`.
-- Slice B worker/API/demo/adversarial harness: `IMPLEMENTED_LOCAL` and `LOCAL_PROJECTION`.
-- Exact PR workflows: `VERIFIED_REMOTE` for the final pushed tree only after exact-head readback; not live financial evidence.
-- Browser verification: `BROWSER_VERIFICATION_BLOCKED`.
+- Slice B code and regression tests: `IMPLEMENTED_LOCAL` until final exact-head remote verification.
+- Local demo, adversarial, and HTTP smoke: `VERIFIED_LOCAL` for the exact worktree commands.
+- Exact PR workflows: `VERIFIED_REMOTE` only after final pushed SHA and run `headSha` readback.
+- Browser: `BROWSER_VERIFICATION_BLOCKED`.
 - Hosted deployment: `DEPLOYMENT_NOT_VERIFIED`.
-- New Attestcoin proof: not requested.
-- New Creditcoin state transition: not performed.
-- Production persistence/indexing/workers, compliance, custody, ERP/GL, live integrations, and production settlement: deferred.
+- Historical M3-M11 and M11-Lifecycle records: separate historical `TESTED_TESTNET` evidence.
+- Slice C lanes: independent candidates, not Slice B evidence.
 
 ## Security and authority
 
-- No wallet or private-key access.
-- No secrets read or printed.
-- No RPC writes.
-- No proof requests.
-- No funds moved.
-- No signing or broadcasting.
-- No mutation API route.
-- M9 and M11 contracts were not modified.
-- No Nomos package or Nomos authority contract exists. Nomos remains conceptual.
+No secrets, private keys, wallets, browser profiles, or credential values were accessed or added. No chain write, proof request, signing, broadcast, fund movement, deployment, or live workflow dispatch occurred. Protected paths remain excluded: `contracts/**`, `test/**`, `evidence/runtime/**`, `docs/canonical/GROUND_TRUTH.md`, and unrelated protocol expansion.
 
 ## Remaining limits
 
-- Checkpoints, block history, reconciliation history, and replay state are deterministic local read-model state, not production durable storage.
-- Sparse event semantics do not claim complete chain-header continuity outside indexed event blocks.
-- No live RPC backfill or external provider adapter is connected.
-- No production retry/dead-letter service exists.
-- Browser verification is `BROWSER_VERIFICATION_BLOCKED` because the browser harness could not attach to Chromium.
-- Hosted deployment is `DEPLOYMENT_NOT_VERIFIED`.
-- No production indexer, API, or frontend claim is made.
-- No custody, compliance, ERP/GL, mainnet, or production settlement claim is made.
+- Slice B has no durable persistence, external provider adapter, production backfill worker, or operational retry/dead-letter service.
+- Sparse-event cursors do not claim complete chain-header continuity outside indexed event blocks.
+- No new live Attestcoin or Creditcoin evidence was generated.
+- Browser verification is blocked by unavailable browser attachment.
+- Hosted deployment was not performed.
+- No production indexer, custody, compliance, ERP/GL, mainnet, or production settlement claim is made.

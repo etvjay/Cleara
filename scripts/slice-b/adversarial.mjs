@@ -111,4 +111,27 @@ run("malformed snapshots are rejected", () => {
   assert.throws(() => restoreSnapshot(JSON.stringify(parsed)), /INVALID_SNAPSHOT_BIGINT/);
 });
 
+run("null boundaries return typed recovery state", () => {
+  const state = createSliceBState();
+  assert.doesNotThrow(() => ingestObservation(state, null));
+  assert.doesNotThrow(() => recordEvidence(state, null));
+  assert.doesNotThrow(() => reconcile(state, null));
+  assert.equal(replayReorg(state, null, null).outcome, "BLOCKED");
+});
+
+run("explicit bootstrap rejects metadata poisoning and caller references", () => {
+  const poisoned = { ...observation({ transactionHash: "0xpoison" }), chainId: 999, evidenceId: "evidence:forged", creditcoinReference: "cc3:forged", projectionReference: "projection:forged", reconciliationReference: "reconciliation:forged" };
+  const state = ingestObservation(createSliceBState(), poisoned);
+  assert.equal(state.observations.size, 0);
+  assert.equal(state.deadLetters.some((item) => item.code === "SOURCE_METADATA_MISMATCH"), true);
+  const accepted = ingestObservation(createSliceBState(), observation({ transactionHash: "0xrefs" }));
+  assert.equal(accepted.observations.values().next().value.evidenceId, null);
+});
+
+run("snapshot key corruption is not silently normalized", () => {
+  const parsed = JSON.parse(snapshot(ingestObservation(createSliceBState(), observation())));
+  parsed.blockHistory[0][0] = "wrong:block:key";
+  assert.throws(() => restoreSnapshot(JSON.stringify(parsed)), /SNAPSHOT_KEY_MISMATCH/);
+});
+
 if (process.exitCode) process.exit(process.exitCode);

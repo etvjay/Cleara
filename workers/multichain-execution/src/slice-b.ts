@@ -1095,8 +1095,16 @@ function isLegacyBlockKey(key: string, header: BlockHeader): boolean {
   return key === `${header.chainKey}:${header.blockNumber.toString()}:${header.blockHash}`;
 }
 
-export function restoreSnapshot(serialized: string): SliceBState {
-  const parsed = JSON.parse(serialized) as {
+export function restoreSnapshot(serialized: unknown): SliceBState {
+  let rawParsed: unknown;
+  try {
+    if (typeof serialized !== "string") throw new Error("INVALID_SNAPSHOT_INPUT");
+    rawParsed = JSON.parse(serialized);
+  } catch (error) {
+    if (error instanceof Error && error.message === "INVALID_SNAPSHOT_INPUT") throw error;
+    throw new Error("INVALID_SNAPSHOT_JSON");
+  }
+  const parsed = rawParsed as {
     schemaVersion: SliceBState["schemaVersion"];
     sourceScopes?: [number, Record<string, unknown>][];
     observations?: [string, ObservationEnvelope][];

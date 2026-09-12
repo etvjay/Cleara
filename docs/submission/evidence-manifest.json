@@ -281,6 +281,8 @@
     {
       "id": "slice-b-read-model",
       "milestone": "SLICE-B",
+      "contractVersion": "slice-b-read-model-contract-v1",
+      "verificationStatus": "VERIFIED_LOCAL_CANDIDATE",
       "evidenceLevel": "IMPLEMENTED_LOCAL",
       "evidenceMode": "implemented_local",
       "workflowRun": null,

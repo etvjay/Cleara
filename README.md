@@ -108,6 +108,7 @@ of the repository, UI, or uploaded evidence.
   replayable relationship read-model contract.
 - [`SLICE_B_VERIFICATION.md`](docs/development/SLICE_B_VERIFICATION.md) — local
   Slice B verification and limitations.
+- [`SLICE_B_COMPATIBILITY_CONTRACT.md`](docs/development/SLICE_B_COMPATIBILITY_CONTRACT.md) — frozen serialized read-only handoff for isolated Slice C consumers.
 - [`WEBAPP_SURFACE.md`](docs/development/WEBAPP_SURFACE.md) — narrow local
   read-only workbench implemented; complete participant/operator surface remains
   proposed.

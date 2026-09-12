@@ -6,6 +6,8 @@ Slice B is a finality-aware, replayable, provenance-linked indexed relationship 
 
 It is `IMPLEMENTED_LOCAL`. It is not a production indexer, proof-submission worker, Creditcoin write path, settlement engine, or canonical database.
 
+The public handoff is frozen as `slice-b-read-model-contract-v1` in [`SLICE_B_COMPATIBILITY_CONTRACT.md`](./SLICE_B_COMPATIBILITY_CONTRACT.md). Slice C may consume the serialized read-only surface only; it may not import or mutate Slice B internals.
+
 ## Product outcome
 
 An institution can inspect what happened, what is proven, what Creditcoin recognizes, what remains uncertain, and what must happen next.
@@ -45,6 +47,12 @@ Slice B uses a `SPARSE_EVENT` cursor. `lastObservedBlock` means the latest index
 
 Finality is monotonic across observation advancement and replay promotion. Lower or equal finality inputs cannot regress a checkpoint or demote finalized observations. Negative, nonfinite, fractional, or otherwise invalid values create typed finality rejection records without mutating projection state. Identical valid replay commands return `NOOP` only after command shape, identity, target, trusted history, parent, finality, and indexed replacement validation.
 
+## Explicit source-scope bootstrap
+
+Each state is created with one or more explicit `SourceScopeDescriptor` records. A descriptor fixes `chainKey`, source `chainId`, source domain, adapter version, observation schema, finality policy, cursor mode, and a trusted anchor block/hash. The first observation must match the descriptor and must link to the configured anchor. The first observation cannot define or replace those values. A wrong initial parent remains a noncanonical candidate and cannot become a current graph node. Candidate source finality is kept separate from canonical header selection.
+
+Every block/header identity includes the complete source scope, not only chain key and height. Observation caller-supplied evidence, Creditcoin, projection, and reconciliation references are cleared at ingestion and can be attached only through validated state transitions. Invalid inputs produce bounded records with stable error codes, recovery role, and next action rather than uncaught exceptions.
+
 ## Evidence identity scope
 
 Attestcoin evidence IDs are globally unique in this local model. Evidence linkage requires the complete source identity: source domain, chain key and chain ID, transaction hash, event index, block number, block hash, source event ID, and relationship policy. Evidence-first and observation-first arrival converge when those fields match exactly. Mismatched evidence is retained only as an unlinked/rejected record with recovery ownership; global evidence is never relabeled as relationship evidence. Identical content is idempotent. Conflicting content using an existing evidence ID preserves the original record byte-for-byte and creates an explicit conflict containing the complete accepted and conflicting payloads, not hashes alone. A conflicting record is never attached to the other relationship's evidence view. On reorg, evidence linked only to superseded observations becomes `STALE`, and dependent current reconciliation becomes `REORG_DETECTED` until replacement evidence is supplied.
@@ -59,7 +67,7 @@ Observation identity additionally includes event type. Duplicate observations re
 
 `reconciliations` is the current record for each typed relationship/source-event/canonical-object scope. Each transition receives a stable per-scope `sequence` and deterministic `occurredAt`; `reconciliationHistory` preserves semantic order within a scope while scopes are ordered deterministically for snapshots. A state transition replaces only that current entry and appends the transition to history. Investigation reads use current reconciliation state, while relationship reads expose both current state and append-only history. This prevents stale historical mismatches from being presented as current state and preserves `PENDING → MISMATCH → PENDING` across restart.
 
-Canonical, block-history, and reconciliation map keys use typed length-prefixed composite encoding. Hash inputs use the same component-boundary principle, so delimiter characters in relationship IDs, object IDs, block hashes, or source identities cannot merge distinct records.
+Canonical, block-history, and reconciliation map keys use typed length-prefixed composite encoding. Hash inputs use the same component-boundary principle, so delimiter characters in relationship IDs, object IDs, block hashes, or source identities cannot merge distinct records. Snapshot restore validates raw map keys, duplicate entries, source-scope/checkpoint agreement, canonical-height uniqueness, graph edges, provenance references, replay command hashes, and dead-letter fields before returning a state. It is atomic: a rejected snapshot cannot partially modify the caller's state. Named legacy key formats are migrated only when their value identity matches exactly.
 
 ## Read-only API
 

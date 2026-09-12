@@ -935,6 +935,7 @@ test("null and primitive public inputs become typed recovery records", () => {
   for (const [label, run] of cases) {
     assert.doesNotThrow(run, label);
   }
+  assert.throws(() => restoreSnapshot(null), /INVALID_SNAPSHOT_INPUT/);
   assert.ok(state.deadLetters.length >= 0);
 });
 

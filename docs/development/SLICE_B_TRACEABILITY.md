@@ -17,7 +17,12 @@
 | Deterministic snapshots | `snapshot`, `snapshotHash`, `restoreSnapshot`, `canonicalize` | independent insertion-order, graph, dead-letter, replay-history, evidence-conflict, meaningful-change, literal-string, legacy-restore tests | `VERIFIED_LOCAL` | no durable artifact store |
 | Evidence lookup | `api.evidence`, `/evidence/:id` | known/unknown evidence tests and API smoke | `VERIFIED_LOCAL` | no live proof request |
 | Relationship scope | typed composite keys and relationship filters in `api.ts` | same-object, delimiter-collision, scoped-object, investigation/dead-letter/replay tests | `VERIFIED_LOCAL` | global records must be explicit |
-| Runtime validation and recovery | public ingestion/finality/evidence/canonical/reconciliation/replay/snapshot boundaries | 59 worker tests plus `scripts/slice-b/adversarial.mjs` | `VERIFIED_LOCAL` | no durable rejection queue |
+| Runtime validation and recovery | public ingestion/finality/evidence/canonical/reconciliation/replay/snapshot boundaries | 66 worker tests plus `scripts/slice-b/adversarial.mjs` | `VERIFIED_LOCAL` | no durable rejection queue |
+| Explicit source-scope bootstrap | `SourceScopeDescriptor`, configured anchor/checkpoint, metadata and parent continuity validation | bootstrap metadata/parent poisoning and sparse-anchor tests | `VERIFIED_LOCAL` | configured local scopes only |
+| Replay command identity | full replacement/options request hash plus pre-command checkpoint hash | exact-repeat and timestamp/reference mutation tests | `VERIFIED_LOCAL` | no distributed command store |
+| Snapshot integrity | raw key, duplicate, graph/provenance, checkpoint, and atomic restore validation | wrong-key, dangling-reference, prototype, literal-string, and legacy migration tests | `VERIFIED_LOCAL` | durable persistence deferred |
+| Projector source scope | composite chain/domain/adapter/schema block keys and safe envelope validation | scope collision and malformed-event tests | `VERIFIED_LOCAL` | local projector only |
+| Frozen Slice B consumer contract | `docs/development/SLICE_B_COMPATIBILITY_CONTRACT.md`, typed `createSliceBApi` read methods | compatibility fixture and serialized snapshot test | `VERIFIED_LOCAL` | Slice C remains isolated/unmerged |
 | Read-only API | `scripts/slice-b/server.ts`, `api.ts` | local HTTP readback, 405, path traversal, malformed-encoding, invalid scope, and scoped-object smoke | `VERIFIED_LOCAL` | no hosted API |
 | Pending proof scenario | `scripts/slice-b/demo.ts` | demo output | `IMPLEMENTED_LOCAL` | fixture-only |
 | Mismatch scenario | `scripts/slice-b/demo.ts` | demo output | `IMPLEMENTED_LOCAL` | fixture-only |

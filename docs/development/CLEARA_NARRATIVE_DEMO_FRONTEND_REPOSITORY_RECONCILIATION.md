@@ -2,11 +2,10 @@
 
 **Purpose:** Slice B repair and independent-verification scope lock.
 **Repository:** `etvjay/Cleara`
-**Branch:** `verification/slice-b`
-**Base:** `c1065cedb2ae62543bb253d0bad9af23ffd99261`
-**Repair implementation:** `4d78498133ecda75dc69a5e0b49a9b373d8f49de`
-**Final pushed implementation SHA:** `4d78498133ecda75dc69a5e0b49a9b373d8f49de`
-**Verification status:** implementation parent `4d78498133ecda75dc69a5e0b49a9b373d8f49de` has exact-head remote CI success; this final documentation receipt requires fresh exact-head checks. Browser and hosted deployment remain unverified.
+**Branch:** `verification/slice-b-repair`
+**Base:** `f3ceae3d829bd0bb2b065e057de1f84d92f5ecd2`
+**Repair checkpoint:** `37072a72a361ab4f8ce2ca890135d104d5bd7dc7`
+**Verification status:** local Slice B candidate; exact-head remote CI is pending on the final pushed repair tree. Browser and hosted deployment remain unverified.
 
 ## A. Current narrative truth
 
@@ -41,6 +40,7 @@ No continuous M3-M11 execution, production indexer, hosted deployment, live UI w
 Slice B now provides:
 
 - normalized observation envelopes;
+- explicit source-scope bootstrap with trusted anchors and immutable metadata;
 - stable source-event identity;
 - separate observation, finality, evidence, canonical, projection, and reconciliation states;
 - explicit reorg detection;
@@ -52,7 +52,8 @@ Slice B now provides:
 - deterministic recursively canonical snapshots and hashes with backward-compatible field-aware restore;
 - a narrow derived relationship projection;
 - assertion-backed demo scenarios;
-- a local read-only API.
+- a local read-only API;
+- a frozen serialized Slice B consumer contract for isolated Slice C work; Slice C candidates remain independently gated and unmerged.
 
 ## E. Frontend boundary
 
