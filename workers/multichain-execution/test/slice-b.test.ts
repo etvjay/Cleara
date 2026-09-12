@@ -120,6 +120,21 @@ test("reconciliation current state is distinct from reconciliation history", () 
   assert.deepEqual(state.reconciliationHistory.map((record) => record.state), ["PENDING", "MISMATCH", "PENDING"]);
 });
 
+test("reconciliation terminal transitions replace current state and close investigations", () => {
+  const pending = { relationshipId: "relationship:terminal", sourceEventId: "source:terminal", canonicalObjectId: "object:terminal", state: "PENDING" as const, observationAmount: "100", canonicalAmount: null, authority: "projection" as const, nextAction: "Wait", recoveryRole: "operator", reason: "awaiting canonical state" };
+  const mismatch = { ...pending, state: "MISMATCH" as const, canonicalAmount: "90", nextAction: "Pause", reason: "amount differs" };
+  const reconciled = { ...pending, state: "RECONCILED" as const, canonicalAmount: "100", nextAction: "No action", reason: "amount agrees" };
+  let state = reconcile(createSliceBState(), pending);
+  state = reconcile(state, mismatch);
+  state = reconcile(state, reconciled);
+  assert.equal(state.reconciliations.size, 1);
+  assert.equal([...state.reconciliations.values()][0]?.state, "RECONCILED");
+  assert.deepEqual(state.reconciliationHistory.map((record) => record.state), ["PENDING", "MISMATCH", "RECONCILED"]);
+  assert.equal(createSliceBApi(state).investigations("relationship:terminal").some((item) => (item as { canonicalObjectId?: string }).canonicalObjectId === "object:terminal"), false);
+  const restored = restoreSnapshot(snapshot(state));
+  assert.equal(snapshotHash(restored), snapshotHash(state));
+});
+
 test("a second event in an already canonical block does not demote its trusted header", () => {
   let state = ingestObservation(createSliceBState(), baseObservation(10n, "h10", "0xfirst-event", "relationship:block-events", "commitment:first", "h9", 1, 11155111, "ethereum-sepolia", "test", "slice-b-observation-v1", 0));
   state = advanceFinality(state, 1, 10n, 2);
@@ -247,6 +262,15 @@ test("evidence lookup is explicit and relationship scope is isolated", () => {
   assert.equal(api.evidence("evidence:missing"), null);
   assert.equal(api.object("evidence:r2", "r1"), null);
 });
+test("global evidence is visible only to unscoped lookup", () => {
+  const global = { evidenceId: "global-object", relationshipId: null, sourceEventId: "source:global", mode: "implemented_local" as const, sourceDomain: "ethereum-sepolia", chainKey: 1, transactionHash: "0xglobal", blockNumber: 1n, attestcoinReference: null, status: "ACCEPTED" as const, linkedCreditcoinTransition: null, sourceReference: "global fixture", reason: null };
+  const api = createSliceBApi(recordEvidence(createSliceBState(), global));
+  assert.equal(api.evidence("global-object")?.relationshipId, null);
+  assert.equal(api.object("global-object", "r1"), null);
+  assert.equal((api.object("global-object") as { relationshipId: string | null }).relationshipId, null);
+  assert.equal((api.relationship("r1") as { evidence: EvidenceRecord[] }).evidence.length, 0);
+});
+
 test("same object IDs remain scoped to both relationships", () => {
   let state = createSliceBState();
   const r1 = { relationshipId: "r1", creditcoinChainId: 102031, contractAddress: "0xcc3-r1", transactionHash: null, blockNumber: null, blockHash: null, objectId: "object:same", state: "ACTIVE", readStatus: "READ" as const, expectedState: "ACTIVE", readAt: 3 };
@@ -273,6 +297,10 @@ test("composite canonical identifiers cannot collide at delimiter boundaries", (
   let state = recordCanonical(createSliceBState(), first);
   state = recordCanonical(state, second);
   assert.equal(state.canonical.size, 2);
+  const globalReference = { relationshipId: null, creditcoinChainId: 1, contractAddress: "0xglobal", transactionHash: null, blockNumber: null, blockHash: null, objectId: "same", state: "ACTIVE", readStatus: "READ" as const, expectedState: "ACTIVE", readAt: 1 };
+  const namedGlobalReference = { ...globalReference, relationshipId: "global", contractAddress: "0xnamed-global" };
+  const scopedState = recordCanonical(recordCanonical(createSliceBState(), globalReference), namedGlobalReference);
+  assert.equal(scopedState.canonical.size, 2);
   const api = createSliceBApi(state);
   assert.equal((api.object("c", "a:b") as { canonicalReference: { contractAddress: string } }).canonicalReference.contractAddress, "0xfirst");
   assert.equal((api.object("b:c", "a") as { canonicalReference: { contractAddress: string } }).canonicalReference.contractAddress, "0xsecond");
@@ -308,6 +336,8 @@ test("evidence conflicts preserve the original and retain distinct conflict hist
   reversed = recordEvidence(reversed, conflictTwo);
   reversed = recordEvidence(reversed, conflictOne);
   assert.deepEqual(state.evidenceConflicts.map((conflict) => conflict.id), reversed.evidenceConflicts.map((conflict) => conflict.id));
+  const restored = restoreSnapshot(snapshot(state));
+  assert.equal(snapshotHash(restored), snapshotHash(state));
   state = recordEvidence(state, conflictOne);
   assert.equal(state.evidenceConflicts.length, 2);
 });
@@ -453,6 +483,17 @@ test("successful replay cannot regress an already higher finality checkpoint", (
   const replayed = replayReorg(state, state.observations.get(replacement.observationId)!, { finalizedBlock: 10n, observedAt: 5 });
   assert.equal(replayed.outcome, "REPLAYED");
   assert.equal(replayed.state.checkpoints.get(1)?.lastFinalizedBlock, 11n);
+});
+
+test("successful replay advances finality when the replay input is higher", () => {
+  let state = ingestObservation(createSliceBState(), baseObservation());
+  state = advanceFinality(state, 1, 10n, 2);
+  const replacement = baseObservation(10n, "replacement-higher-finality", "0xreplacement-higher-finality", "relationship:higher-finality", "commitment:higher-finality", "h9");
+  state = ingestObservation(state, replacement);
+  state = advanceFinality(state, 1, 10n, 3);
+  const replayed = replayReorg(state, state.observations.get(replacement.observationId)!, { finalizedBlock: 12n, observedAt: 4 });
+  assert.equal(replayed.outcome, "REPLAYED");
+  assert.equal(replayed.state.checkpoints.get(1)?.lastFinalizedBlock, 12n);
 });
 
 test("earlier replacement with missing target history remains replay-required and blocked", () => {
