@@ -27,6 +27,10 @@ const server = createServer((request, response) => {
     if (file !== root && !file.startsWith(`${root}${sep}`)) {
       response.writeHead(400); response.end("bad path"); return;
     }
+    if (statSync(file).isDirectory()) file = realpathSync(resolve(file, "index.html"));
+    if (file !== root && !file.startsWith(`${root}${sep}`)) {
+      response.writeHead(400); response.end("bad path"); return;
+    }
     if (!statSync(file).isFile()) {
       response.writeHead(404); response.end("not found"); return;
     }

@@ -1,9 +1,42 @@
 import { renderLanding } from "./landing.js";
+import { renderTryPage, TRY_MODES } from "./try.js";
 
 const app = document.querySelector<HTMLElement>("#app");
 if (!app) throw new Error("missing #app");
 
-app.innerHTML = renderLanding();
+const isTryPage = window.location.pathname.replace(/\/+$/, "") === "/try";
+app.innerHTML = isTryPage ? renderTryPage() : renderLanding();
+
+if (isTryPage) {
+  const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-try-mode]"));
+  const status = document.querySelector<HTMLElement>(".try-context-status");
+  const title = document.querySelector<HTMLElement>("[data-try-detail-title]");
+  const control = document.querySelector<HTMLElement>("[data-try-detail-control]");
+  const cleara = document.querySelector<HTMLElement>("[data-try-detail-cleara]");
+  const will = document.querySelector<HTMLElement>("[data-try-detail-will]");
+  const wont = document.querySelector<HTMLElement>("[data-try-detail-wont]");
+  const time = document.querySelector<HTMLElement>("[data-try-detail-time]");
+  const preview = document.querySelector<HTMLElement>("[data-try-preview]");
+  const paintTryMode = (mode: (typeof TRY_MODES)[number]) => {
+    buttons.forEach((button) => button.classList.toggle("is-active", button.dataset.tryMode === mode.id));
+    if (status) status.textContent = mode.status;
+    if (title) title.textContent = mode.title;
+    if (control) control.textContent = mode.control;
+    if (cleara) cleara.textContent = mode.cleara;
+    if (will) will.textContent = mode.will;
+    if (wont) wont.textContent = mode.willNot;
+    if (time) time.textContent = mode.time;
+    if (preview) preview.innerHTML = mode.preview.map(([label, value]) => `<div class="try-preview-row"><span>${label}</span><strong>${value}</strong></div>`).join("");
+    window.history.replaceState({}, "", `/try?mode=${encodeURIComponent(mode.id)}`);
+  };
+  const requestedMode = new URLSearchParams(window.location.search).get("mode");
+  const initial = TRY_MODES.find((mode) => mode.id === requestedMode) ?? TRY_MODES.find((mode) => mode.id === "guided") ?? TRY_MODES[0];
+  buttons.forEach((button) => button.addEventListener("click", () => {
+    const mode = TRY_MODES.find((item) => item.id === button.dataset.tryMode);
+    if (mode) paintTryMode(mode);
+  }));
+  if (initial) paintTryMode(initial);
+}
 
 const carousel = document.querySelector<HTMLElement>("[data-principles-carousel]");
 if (carousel) {
