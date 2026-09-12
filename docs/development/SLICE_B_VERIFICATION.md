@@ -10,7 +10,7 @@
 Repository: etvjay/Cleara
 Repair branch: verification/slice-b-repair
 Starting head: f3ceae3d829bd0bb2b065e057de1f84d92f5ecd2
-Verified local checkpoint: 37072a72a361ab4f8ce2ca890135d104d5bd7dc7
+Verified local checkpoint: b3f4288af9b6e1d59e8ce5a98294121dad148fa4
 Frozen consumer contract: slice-b-read-model-contract-v1
 Final pushed SHA: pending
 Final exact-head workflow IDs: pending
@@ -45,17 +45,16 @@ Executed from the repair worktree:
 ```text
 corepack pnpm install --frozen-lockfile       PASS, baseline and repair tree
 corepack pnpm --filter @cleara/multichain-execution typecheck PASS
-node --import tsx --test workers/multichain-execution/test/*.test.ts PASS
+node --import tsx --test workers/multichain-execution/test/*.test.ts PASS, 66 tests
 node --import tsx scripts/slice-b/demo.ts    PASS
-node --import tsx scripts/slice-b/adversarial.mjs PASS
+node --import tsx scripts/slice-b/adversarial.mjs PASS, 13 scenarios
 node scripts/slice-b/smoke.mjs                PASS
-corepack pnpm check:projection                pending final matrix
-corepack pnpm web:check                       pending final matrix
-git diff --check                              PASS before final docs
-git diff --no-index protected-path audit      pending final tree
-forge fmt --check                             pending final matrix
-forge build --sizes                           pending final matrix
-forge test -vvv                               pending final matrix
+corepack pnpm check:projection                PASS, 66 worker tests
+corepack pnpm web:check                       PASS, 15 web tests, build, HTTP smoke, scan
+git diff --check                              PASS
+forge fmt --check                             PASS
+forge build --sizes                           PASS
+forge test -vvv                               PASS, 96 tests
 ```
 
 The focused red/green regression set covers bootstrap poisoning, null boundaries, strict evidence identity, late/reorg evidence, full replay identity, snapshot corruption, graph/provenance dangling references, projector scope collisions, route typing, untrusted references, chronology, and insertion-order determinism.
