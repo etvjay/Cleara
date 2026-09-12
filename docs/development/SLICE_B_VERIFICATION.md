@@ -2,7 +2,7 @@
 
 ## Status
 
-`VERIFIED_REMOTE` for implementation parent `f21b8fdedecfbc32ba1aac7b0493f91c7e5618d2`; the exact-head workflows below all passed on that SHA. This documentation-only receipt is part of the final branch tree and receives its own fresh exact-head checks after push.
+`VERIFIED_REMOTE` for implementation parent `4d78498133ecda75dc69a5e0b49a9b373d8f49de`; the exact-head workflows below all passed on that SHA. This documentation-only receipt is part of the final branch tree and receives its own fresh exact-head checks after push.
 
 ## Repository
 
@@ -10,8 +10,8 @@
 Repository: etvjay/Cleara
 Branch: verification/slice-b
 Base: c1065cedb2ae62543bb253d0bad9af23ffd99261
-Implementation hardening commit: 0255a1756e07ed6a8d3b5d2a2ed8967a60d97593
-Final pushed implementation SHA: f21b8fdedecfbc32ba1aac7b0493f91c7e5618d2
+Implementation hardening commit: 4d78498133ecda75dc69a5e0b49a9b373d8f49de
+Final pushed implementation SHA: 4d78498133ecda75dc69a5e0b49a9b373d8f49de
 Documentation receipt: this final documentation commit; its exact-head runs are read back separately
 Draft PR: https://github.com/etvjay/Cleara/pull/1
 ```
@@ -53,11 +53,11 @@ Forge was available in the verification environment. Existing timestamp and unsa
 
 ## Exact-head implementation-parent checks
 
-All checks passed on `f21b8fdedecfbc32ba1aac7b0493f91c7e5618d2`:
+All checks passed on `4d78498133ecda75dc69a5e0b49a9b373d8f49de`:
 
-- [Contracts](https://github.com/etvjay/Cleara/actions/runs/34703943332) - `success`, `headSha = f21b8fdedecfbc32ba1aac7b0493f91c7e5618d2`
-- [Multichain Execution Projection](https://github.com/etvjay/Cleara/actions/runs/34703943370) - `success`, `headSha = f21b8fdedecfbc32ba1aac7b0493f91c7e5618d2`
-- [Read-only Workbench](https://github.com/etvjay/Cleara/actions/runs/34703943328) - `success`, `headSha = f21b8fdedecfbc32ba1aac7b0493f91c7e5618d2`
+- [Contracts](https://github.com/etvjay/Cleara/actions/runs/34704456532) - `success`, `headSha = 4d78498133ecda75dc69a5e0b49a9b373d8f49de`
+- [Multichain Execution Projection](https://github.com/etvjay/Cleara/actions/runs/34704456461) - `success`, `headSha = 4d78498133ecda75dc69a5e0b49a9b373d8f49de`
+- [Read-only Workbench](https://github.com/etvjay/Cleara/actions/runs/34704456467) - `success`, `headSha = 4d78498133ecda75dc69a5e0b49a9b373d8f49de`
 
 The final documentation-only commit must receive fresh exact-head checks; no older receipt is reused as final-tree CI evidence.
 
