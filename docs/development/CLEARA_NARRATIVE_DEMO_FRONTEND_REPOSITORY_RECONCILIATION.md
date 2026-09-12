@@ -4,8 +4,9 @@
 **Repository:** `etvjay/Cleara`
 **Branch:** `verification/slice-b`
 **Base:** `c1065cedb2ae62543bb253d0bad9af23ffd99261`
-**Repair implementation:** `b2a6b8fab45eb9491aef1653ac8f0c8186bed859`
-**Verification status:** implementation hardening and exact-head PR CI pass on `b2a6b8fab45eb9491aef1653ac8f0c8186bed859`; documentation-only receipt updates are complete.
+**Repair implementation:** `6bc35c20b6079212253f5a00ce3f685fb5462e2b`
+**Final pushed SHA:** `6bc35c20b6079212253f5a00ce3f685fb5462e2b`
+**Verification status:** final implementation and exact-head PR CI pass on `6bc35c20b6079212253f5a00ce3f685fb5462e2b`; browser and hosted deployment remain unverified.
 
 ## A. Current narrative truth
 
@@ -43,7 +44,7 @@ Slice B now provides:
 - stable source-event identity;
 - separate observation, finality, evidence, canonical, projection, and reconciliation states;
 - explicit reorg detection;
-- explicit replay with trusted canonical block-header continuity, target-block identity, sparse-event cursor semantics, finality monotonicity, provenance, and idempotency checks;
+- explicit replay with trusted canonical block-header continuity, target-block identity, sparse-event cursor semantics, narrow fail-closed handling for later affected blocks, finality monotonicity, provenance, and idempotency checks;
 - globally unique evidence IDs with explicit conflict investigations that preserve the original record;
 - relationship-scoped evidence, canonical, replay, dead-letter, object, and investigation reads;
 - current reconciliation state separated from append-only reconciliation history;

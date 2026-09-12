@@ -2,7 +2,7 @@
 
 ## Status
 
-`VERIFIED_REMOTE` for hardening implementation commit `b2a6b8fab45eb9491aef1653ac8f0c8186bed859`. The exact-head implementation workflows and all local gates are recorded below. The final branch head may include documentation-only receipt updates and is reported separately.
+`VERIFIED_REMOTE` for final pushed commit `6bc35c20b6079212253f5a00ce3f685fb5462e2b`. The exact-head workflows and all local gates below were read back against this final tree.
 
 ## Repository
 
@@ -10,7 +10,8 @@
 Repository: etvjay/Cleara
 Branch: verification/slice-b
 Base: c1065cedb2ae62543bb253d0bad9af23ffd99261
-Implementation hardening commit: b2a6b8fab45eb9491aef1653ac8f0c8186bed859
+Implementation hardening commit: 6bc35c20b6079212253f5a00ce3f685fb5462e2b
+Final pushed SHA: 6bc35c20b6079212253f5a00ce3f685fb5462e2b
 Draft PR: https://github.com/etvjay/Cleara/pull/1
 ```
 
@@ -24,8 +25,9 @@ Historical M3-M11 and M11-Lifecycle runs remain separately evidenced. No uninter
 - Missing, superseded, parentless, or metadata-inconsistent trusted history leaves the checkpoint `REPLAY_REQUIRED` and replay `BLOCKED`.
 - Replacement identity, predecessor parent, finality, cursor, and conflict state are validated before promotion.
 - Reorged observations remain auditable history and replay provenance is preserved.
+- Narrow fail-closed replay preserves the latest observed tip. If later indexed blocks are affected, later observations remain `REORGED`, later headers are `SUPERSEDED`, `replayReason` records `additional replacement observations required for affected indexed range`, and the checkpoint stays `REPLAY_REQUIRED`.
 - Multiple replacement events at one block do not reorg one another; old-fork observations are the records superseded by replay.
-- `advanceFinality` and successful replay are monotonic. Lower inputs cannot regress finalized height or demote observations. Equal stale inputs are no-ops.
+- `advanceFinality` and successful replay are monotonic. Lower, equal, or negative inputs cannot regress finalized height or demote observations. Equal stale inputs are no-ops.
 - Cursor semantics are explicitly `SPARSE_EVENT`: latest observed event block, not a complete chain-header cursor. Replay still requires indexed canonical history for the superseded event block.
 - Reconciliation current state is stored separately from append-only `reconciliationHistory`; investigations use current state while relationship reads expose both.
 - Attestcoin evidence IDs are globally unique. Identical records are idempotent; conflicting content preserves the original and records every distinct conflict without replacing trusted evidence.
@@ -40,7 +42,7 @@ Executed on the final implementation tree:
 
 ```text
 corepack pnpm install --frozen-lockfile       PASS
-corepack pnpm check:projection                PASS, 40 worker tests
+corepack pnpm check:projection                PASS, 44 worker tests
 corepack pnpm web:check                       PASS, 15 web tests, build, HTTP smoke, scan
 node --import tsx scripts/slice-b/demo.ts    PASS, six assertion-backed scenarios
 node scripts/slice-b/smoke.mjs                PASS, checkpoint/evidence/investigation/read-only assertions
@@ -52,15 +54,15 @@ forge test -vvv                               PASS, 96 tests
 
 Forge was available in the verification environment. Existing timestamp and unsafe-cast warnings remain; no protected contract changed. Local Node is `22.23.2`; the repository declares `24.19.0`.
 
-## Exact-head implementation PR checks
+## Exact-head final PR checks
 
-All checks passed on `b2a6b8fab45eb9491aef1653ac8f0c8186bed859`:
+All checks passed on `6bc35c20b6079212253f5a00ce3f685fb5462e2b`:
 
-- [Contracts](https://github.com/etvjay/Cleara/actions/runs/34692283747) - `success`
-- [Multichain Execution Projection](https://github.com/etvjay/Cleara/actions/runs/34692283754) - `success`
-- [Read-only Workbench](https://github.com/etvjay/Cleara/actions/runs/34692283749) - `success`
+- [Contracts](https://github.com/etvjay/Cleara/actions/runs/34693689201) - `success`, `headSha = 6bc35c20b6079212253f5a00ce3f685fb5462e2b`
+- [Multichain Execution Projection](https://github.com/etvjay/Cleara/actions/runs/34693689230) - `success`, `headSha = 6bc35c20b6079212253f5a00ce3f685fb5462e2b`
+- [Read-only Workbench](https://github.com/etvjay/Cleara/actions/runs/34693689235) - `success`, `headSha = 6bc35c20b6079212253f5a00ce3f685fb5462e2b`
 
-The run API readback confirmed each `headSha` matched the implementation commit.
+The prior hardening checkpoint `b2a6b8fab45eb9491aef1653ac8f0c8186bed859` is historical context only; it is not the final pushed tree.
 
 ## Adversarial assertions
 
@@ -78,10 +80,14 @@ The repaired suite covers:
 - wrong source domain, adapter version, schema version, and block number;
 - unfinalized replacement;
 - earlier-block replay using the target old hash;
-- successful replay preserving historical reorg data;
+- latest-tip replay and narrow fail-closed replay over multiple affected indexed blocks;
+- later replacement candidates retaining the original replay cursor;
+- wrong stored old block hash and wrong replay target;
+- invalid replacement parent;
+- successful replay preserving historical reorg data and the latest tip;
 - repeated successful replay returning `NOOP`;
-- multiple replacement events at one block;
-- lower/equal finality regression and idempotency, including replay success;
+- multiple replacement events at one block remain distinct;
+- negative, lower, equal, and higher finality inputs;
 - sparse event blocks without fabricated contiguous-header claims;
 - same global evidence ID across relationships;
 - original evidence preservation and multiple distinct conflict records;
@@ -102,17 +108,17 @@ GET /relationships/:id
 GET /relationships/:id/timeline
 GET /relationships/:id/graph
 GET /evidence/:id
-GET /facilities/:id
-GET /commitments/:id
-GET /obligations/:id
-GET /settlements/:id
+GET /facilities/:id?relationshipId=:id
+GET /commitments/:id?relationshipId=:id
+GET /obligations/:id?relationshipId=:id
+GET /settlements/:id?relationshipId=:id
 GET /reconciliation/exceptions?relationshipId=:id
 GET /investigations?relationshipId=:id
 GET /checkpoints
 GET /snapshots/:id
 ```
 
-The local fixture exposes a current `SPARSE_EVENT` checkpoint with chain key `1`, Sepolia chain ID `11155111`, source domain `ethereum-sepolia`, block `10n`, explicit `CURRENT` replay status, and adapter/schema versions. All API routes remain read-only.
+The local fixture exposes a current `SPARSE_EVENT` checkpoint with chain key `1`, Sepolia chain ID `11155111`, source domain `ethereum-sepolia`, block `10n`, explicit `CURRENT` replay status, and adapter/schema versions. Scoped object routes exclude unrelated evidence; unscoped ambiguous objects return `409 AMBIGUOUS_OBJECT_SCOPE`. All API routes remain read-only.
 
 Expected behavior includes:
 
