@@ -1,11 +1,13 @@
 # Slice C parallel handoff
 
-Status: `LOCAL_INTEGRATION_CANDIDATE / CANDIDATES_VERIFIED_REMOTE`
+Status: `VERIFIED_REMOTE_INTEGRATION_UNMERGED`
 
 Slice C integration branch: `verification/slice-c-integration`
 Integration base: `6f05b10e5e016b5f8fdbbfd0bd7ce3a12ba6fc7e`
+Final integration tree: `41d0d09f860c51586b1e2757be2933eac46fd1f8`
+Draft PR: [#3](https://github.com/etvjay/Cleara/pull/3), open and unmerged
+Integration checks: `34722839926` and `34722841590`, both exact-head success
 Integration coordinator/spec: `docs/development/SLICE_C_INTEGRATION.md`
-
 Slice C was developed in isolated worktrees from the frozen Slice B checkpoint:
 
 ```text

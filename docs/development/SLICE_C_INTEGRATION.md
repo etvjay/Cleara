@@ -1,8 +1,10 @@
 # Slice C integration verification
 
-Status: `IMPLEMENTED_LOCAL / INTEGRATION_CANDIDATE`
+Status: `VERIFIED_REMOTE_CANDIDATE`
 
 Integration branch: `verification/slice-c-integration`
+Final integration tree: `41d0d09f860c51586b1e2757be2933eac46fd1f8`
+Draft PR: [#3](https://github.com/etvjay/Cleara/pull/3), open and unmerged
 Starting Slice B tree: `6f05b10e5e016b5f8fdbbfd0bd7ce3a12ba6fc7e`
 Frozen Slice B contract checkpoint: `37072a72a361ab4f8ce2ca890135d104d5bd7dc7`
 Contract version: `slice-b-read-model-contract-v1`
@@ -51,9 +53,14 @@ git diff --check
 
 The dedicated workflow is `.github/workflows/slice-c-integration.yml`. It is read-only, uses frozen dependencies, and performs no secret access or live dispatch.
 
+Final exact-head workflow readbacks:
+
+- push run [34722839926](https://github.com/etvjay/Cleara/actions/runs/34722839926): `success`, `headSha=41d0d09f860c51586b1e2757be2933eac46fd1f8`;
+- pull-request run [34722841590](https://github.com/etvjay/Cleara/actions/runs/34722841590): `success`, `headSha=41d0d09f860c51586b1e2757be2933eac46fd1f8`.
+
 ## Evidence ceiling
 
-This is `VERIFIED_LOCAL` integration evidence when the commands above pass. It does not prove:
+This is `VERIFIED_REMOTE_CANDIDATE` for the exact integration branch/PR checks, with `VERIFIED_LOCAL` implementation evidence below. It does not prove:
 
 - production filesystem/database durability;
 - hosted queue or worker durability;
