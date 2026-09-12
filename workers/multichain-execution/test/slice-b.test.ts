@@ -251,8 +251,8 @@ test("read-only API exposes projection boundary and checkpoints", () => {
 
 test("evidence lookup is explicit and relationship scope is isolated", () => {
   let state = createSliceBState();
-  state = recordEvidence(state, { evidenceId: "evidence:r1", relationshipId: "r1", sourceEventId: "source:r1", mode: "implemented_local", sourceDomain: "ethereum-sepolia", chainKey: 1, transactionHash: "0xr1", blockNumber: 1n, attestcoinReference: "attest:r1", status: "ACCEPTED", linkedCreditcoinTransition: "cc3:r1", sourceReference: "fixture:r1", reason: null });
-  state = recordEvidence(state, { evidenceId: "evidence:r2", relationshipId: "r2", sourceEventId: "source:r2", mode: "implemented_local", sourceDomain: "ethereum-sepolia", chainKey: 1, transactionHash: "0xr2", blockNumber: 2n, attestcoinReference: "attest:r2", status: "PENDING", linkedCreditcoinTransition: null, sourceReference: "fixture:r2", reason: null });
+  state = recordEvidence(state, { evidenceId: "evidence:r1", relationshipId: "r1", sourceEventId: "source:r1", mode: "implemented_local", sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, eventIndex: 0, blockHash: "evidence:r1-block", transactionHash: "0xr1", blockNumber: 1n, attestcoinReference: "attest:r1", status: "ACCEPTED", linkedCreditcoinTransition: "cc3:r1", sourceReference: "fixture:r1", reason: null });
+  state = recordEvidence(state, { evidenceId: "evidence:r2", relationshipId: "r2", sourceEventId: "source:r2", mode: "implemented_local", sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, eventIndex: 0, blockHash: "evidence:r2-block", transactionHash: "0xr2", blockNumber: 2n, attestcoinReference: "attest:r2", status: "PENDING", linkedCreditcoinTransition: null, sourceReference: "fixture:r2", reason: null });
   state = recordCanonical(state, { relationshipId: "r1", creditcoinChainId: 102031, contractAddress: "0xcc3-r1", transactionHash: null, blockNumber: null, blockHash: null, objectId: "object:r1", state: "ACTIVE", readStatus: "READ", expectedState: "ACTIVE", readAt: 3 });
   state = recordCanonical(state, { relationshipId: "r2", creditcoinChainId: 102031, contractAddress: "0xcc3-r2", transactionHash: null, blockNumber: null, blockHash: null, objectId: "object:r2", state: "ACTIVE", readStatus: "READ", expectedState: "ACTIVE", readAt: 3 });
   const api = createSliceBApi(state);
@@ -264,7 +264,7 @@ test("evidence lookup is explicit and relationship scope is isolated", () => {
   assert.equal(api.object("evidence:r2", "r1"), null);
 });
 test("global evidence is visible only to unscoped lookup", () => {
-  const global = { evidenceId: "global-object", relationshipId: null, sourceEventId: "source:global", mode: "implemented_local" as const, sourceDomain: "ethereum-sepolia", chainKey: 1, transactionHash: "0xglobal", blockNumber: 1n, attestcoinReference: null, status: "ACCEPTED" as const, linkedCreditcoinTransition: null, sourceReference: "global fixture", reason: null };
+  const global = { evidenceId: "global-object", relationshipId: null, sourceEventId: "source:global", mode: "implemented_local" as const, sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, eventIndex: 0, blockHash: "global-object-block", transactionHash: "0xglobal", blockNumber: 1n, attestcoinReference: null, status: "ACCEPTED" as const, linkedCreditcoinTransition: null, sourceReference: "global fixture", reason: null };
   const api = createSliceBApi(recordEvidence(createSliceBState(), global));
   assert.equal(api.evidence("global-object")?.relationshipId, null);
   assert.equal(api.object("global-object", "r1"), null);
@@ -309,7 +309,7 @@ test("composite canonical identifiers cannot collide at delimiter boundaries", (
 });
 
 test("identical evidence recording is idempotent and conflicting evidence is explicit", () => {
-  const evidence = { evidenceId: "evidence:idempotent", relationshipId: "r1", sourceEventId: "source:idempotent", mode: "implemented_local" as const, sourceDomain: "ethereum-sepolia", chainKey: 1, transactionHash: "0xidempotent", blockNumber: 1n, attestcoinReference: "attest:idempotent", status: "ACCEPTED" as const, linkedCreditcoinTransition: "cc3:idempotent", sourceReference: "fixture:idempotent", reason: null };
+  const evidence = { evidenceId: "evidence:idempotent", relationshipId: "r1", sourceEventId: "source:idempotent", mode: "implemented_local" as const, sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, eventIndex: 0, blockHash: "evidence:idempotent-block", transactionHash: "0xidempotent", blockNumber: 1n, attestcoinReference: "attest:idempotent", status: "ACCEPTED" as const, linkedCreditcoinTransition: "cc3:idempotent", sourceReference: "fixture:idempotent", reason: null };
   const once = recordEvidence(createSliceBState(), evidence);
   const twice = recordEvidence(once, evidence);
   assert.equal(snapshotHash(twice), snapshotHash(once));
@@ -324,7 +324,7 @@ test("identical evidence recording is idempotent and conflicting evidence is exp
 });
 
 test("evidence conflicts preserve the original and retain distinct conflict history", () => {
-  const original = { evidenceId: "evidence:preserve", relationshipId: "r1", sourceEventId: "source:original", mode: "implemented_local" as const, sourceDomain: "ethereum-sepolia", chainKey: 1, transactionHash: "0xoriginal", blockNumber: 1n, attestcoinReference: "attest:original", status: "ACCEPTED" as const, linkedCreditcoinTransition: null, sourceReference: "fixture:original", reason: null };
+  const original = { evidenceId: "evidence:preserve", relationshipId: "r1", sourceEventId: "source:original", mode: "implemented_local" as const, sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, eventIndex: 0, blockHash: "evidence:preserve-block", transactionHash: "0xoriginal", blockNumber: 1n, attestcoinReference: "attest:original", status: "ACCEPTED" as const, linkedCreditcoinTransition: null, sourceReference: "fixture:original", reason: null };
   const conflictOne = { ...original, relationshipId: "r2", sourceEventId: "source:conflict-one", transactionHash: "0xconflict-one", status: "REJECTED" as const, reason: "wrong source" };
   const conflictTwo = { ...original, relationshipId: "r3", sourceEventId: "source:conflict-two", transactionHash: "0xconflict-two", status: "PENDING" as const, reason: null };
   let state = recordEvidence(createSliceBState(), original);
@@ -657,6 +657,11 @@ test("evidence linkage is identity-safe and arrival-order independent", () => {
   const mismatched = recordEvidence(observationFirst, wrong);
   assert.equal(mismatched.observations.get(observation.observationId)?.evidenceId, evidence.evidenceId);
   assert.equal(mismatched.evidence.get(wrong.evidenceId)?.evidenceId, wrong.evidenceId);
+  const { chainId: _chainId, eventIndex: _eventIndex, blockHash: _blockHash, ...evidenceWithoutIdentity } = evidence;
+  const missingIdentity = { ...evidenceWithoutIdentity, evidenceId: "evidence:missing-identity" };
+  const rejected = recordEvidence(createSliceBState(), missingIdentity);
+  assert.equal(rejected.evidence.has(missingIdentity.evidenceId), false);
+  assert.equal(rejected.deadLetters.some((item) => item.kind === "EVIDENCE" && item.observationId === `evidence:${missingIdentity.evidenceId}`), true);
 });
 
 test("reorg invalidates old evidence and current reconciliation", () => {
@@ -706,7 +711,7 @@ test("API graph reads are rebuilt after later mutations", () => {
   assert.equal(after.nodes.some((node) => node.id === second.objectId), true);
 });
 test("global evidence IDs reject cross-relationship conflicts without leaking scope", () => {
-  const first = { evidenceId: "evidence:global", relationshipId: "r1", sourceEventId: "source:r1", mode: "implemented_local" as const, sourceDomain: "ethereum-sepolia", chainKey: 1, transactionHash: "0xr1", blockNumber: 1n, attestcoinReference: "attest:r1", status: "ACCEPTED" as const, linkedCreditcoinTransition: null, sourceReference: "fixture:r1", reason: null };
+  const first = { evidenceId: "evidence:global", relationshipId: "r1", sourceEventId: "source:r1", mode: "implemented_local" as const, sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, eventIndex: 0, blockHash: "evidence:global-block", transactionHash: "0xr1", blockNumber: 1n, attestcoinReference: "attest:r1", status: "ACCEPTED" as const, linkedCreditcoinTransition: null, sourceReference: "fixture:r1", reason: null };
   const conflicting = { ...first, relationshipId: "r2", sourceEventId: "source:r2", transactionHash: "0xr2" };
   let state = recordEvidence(createSliceBState(), first);
   state = recordEvidence(state, conflicting);
@@ -720,7 +725,7 @@ test("global evidence IDs reject cross-relationship conflicts without leaking sc
 });
 
 test("evidence conflict investigations are visible to both affected relationships", () => {
-  const original = { evidenceId: "evidence:scope-conflict", relationshipId: "r1", sourceEventId: "source:scope-r1", mode: "implemented_local" as const, sourceDomain: "ethereum-sepolia", chainKey: 1, transactionHash: "0xscope-r1", blockNumber: 1n, attestcoinReference: "attest:scope-r1", status: "ACCEPTED" as const, linkedCreditcoinTransition: null, sourceReference: "fixture:scope-r1", reason: null };
+  const original = { evidenceId: "evidence:scope-conflict", relationshipId: "r1", sourceEventId: "source:scope-r1", mode: "implemented_local" as const, sourceDomain: "ethereum-sepolia", chainKey: 1, chainId: 11155111, eventIndex: 0, blockHash: "evidence:scope-conflict-block", transactionHash: "0xscope-r1", blockNumber: 1n, attestcoinReference: "attest:scope-r1", status: "ACCEPTED" as const, linkedCreditcoinTransition: null, sourceReference: "fixture:scope-r1", reason: null };
   const conflicting = { ...original, relationshipId: "r2", sourceEventId: "source:scope-r2", transactionHash: "0xscope-r2" };
   const state = recordEvidence(recordEvidence(createSliceBState(), original), conflicting);
   const api = createSliceBApi(state);
