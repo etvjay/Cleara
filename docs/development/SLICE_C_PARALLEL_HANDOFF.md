@@ -1,7 +1,14 @@
 # Slice C parallel handoff
 
-Status: `VERIFIED_REMOTE_CANDIDATES_UNMERGED`
+Status: `VERIFIED_REMOTE_INTEGRATION_UNMERGED`
 
+Slice C integration branch: `verification/slice-c-integration`
+Integration base: `6f05b10e5e016b5f8fdbbfd0bd7ce3a12ba6fc7e`
+Code-bearing integration commit: `41f3f7ab274b054eed229027ff04543f536c8b3d`
+Last receipt tree before repair: `63099bf71552b3db431ade260fd07e9b30c52b9b`
+Draft PR: [#3](https://github.com/etvjay/Cleara/pull/3), open and unmerged
+Integration checks for that receipt tree: `34722940665` and `34722943715`, both exact-head success
+Integration coordinator/spec: `docs/development/SLICE_C_INTEGRATION.md`
 Slice C was developed in isolated worktrees from the frozen Slice B checkpoint:
 
 ```text
@@ -10,6 +17,12 @@ Contract: slice-b-read-model-contract-v1
 ```
 
 These candidates do not prove Slice B correctness and are not merged into `verification/slice-b`.
+
+## Combined integration candidate
+
+The integrated coordinator is local and unmerged. It validates serialized snapshots through the exported Slice B restore boundary before storage/retry submission, persists per-scope checkpoints, restores retry attempts from a validated retry snapshot, preserves `REPLAY_REQUIRED`, and exposes only read-only coordinator operations. Combined assertions are in `workers/slice-c/integration/test/coordinator.test.ts`; the offline CI job is `.github/workflows/slice-c-integration.yml`.
+
+It does not add production persistence, hosted workers, financial authority, chain writes, proof requests, or settlement execution.
 
 ## Durable snapshot storage candidate
 
