@@ -16,7 +16,7 @@ These candidates do not prove Slice B correctness and are not merged into `verif
 ```text
 Branch: verification/slice-c-durable-storage
 Worktree: /home/ubuntu/cleara-slice-c-durable-storage
-Commit: 498e90228a6e5135061bef1997380af25b949414
+Commit: e801e549b78e8b62667e6c0dd694a07c07a051df
 Files:
   workers/slice-c/durable-storage/src/index.ts
   workers/slice-c/durable-storage/test/durable-storage.test.ts
@@ -25,18 +25,18 @@ Files:
 Observed parent-side verification:
 
 ```text
-Direct tsx test: PASS, 3 tests
+Direct tsx test: PASS, 5 tests
 Direct TypeScript compilation with repository Node types: PASS
 ```
 
-The lane persists only serialized Slice B snapshot bodies and hashes. It covers atomic checkpoint writes, restart recovery, stale predecessor rejection, duplicate checkpoint handling, corruption/known-bigint rejection, and scope isolation. It does not provide a production database, hosted persistence, provider backfill, or live indexer.
+The lane persists only serialized Slice B snapshot bodies and hashes. It covers atomic checkpoint writes, restart recovery, stale predecessor rejection, duplicate checkpoint handling with explicit sequence consistency, corruption/known-bigint rejection, and scope-isolated restart recovery. It does not provide a production database, hosted persistence, provider backfill, or live indexer.
 
 ## Retry/backoff orchestration candidate
 
 ```text
 Branch: verification/slice-c-retry-orchestration
 Worktree: /tmp/cleara-slice-c-retry-orchestration
-Commit: 36d8e76cbd73ed9d8d41905230f5db4b0790e1f8
+Commit: d8389bd3a480f84756132c35933a9598703d860c
 Files:
   workers/slice-c/retry-orchestration/src/canonical.ts
   workers/slice-c/retry-orchestration/src/contract.ts
@@ -50,11 +50,11 @@ Files:
 Observed parent-side verification:
 
 ```text
-Direct tsx test: PASS, 6 tests
+Direct tsx test: PASS, 9 tests
 Direct TypeScript compilation with repository Node types: PASS
 ```
 
-The lane consumes serialized contract records only. It covers deterministic delivery identity, duplicate and conflicting delivery handling, source-order processing, bounded retry/backoff, provider-outage dead-lettering, replay-required handoff, and relationship scope isolation. It does not write chains, sign, settle, authorize, or promote Slice B status axes.
+The lane consumes serialized contract records only. It covers deterministic delivery identity, duplicate and conflicting delivery handling, source-order processing, bounded retry/backoff, provider-outage dead-lettering, replay-required handoff, relationship scope isolation, canonical snapshot/known-bigint validation, and malformed delivery dead-lettering. It does not write chains, sign, settle, authorize, or promote Slice B status axes.
 
 ## Compatibility gate
 
