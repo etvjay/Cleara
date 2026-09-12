@@ -1,0 +1,110 @@
+name: Slice C Integration
+
+on:
+  push:
+    branches: [verification/slice-c-integration]
+    paths:
+      - "workers/slice-c/**"
+      - "workers/multichain-execution/**"
+      - "scripts/slice-b/**"
+      - "apps/web/**"
+      - "docs/development/SLICE_C_*.md"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/slice-c-integration.yml"
+  pull_request:
+    branches: [verification/slice-b]
+    paths:
+      - "workers/slice-c/**"
+      - "workers/multichain-execution/**"
+      - "scripts/slice-b/**"
+      - "apps/web/**"
+      - "docs/development/SLICE_C_*.md"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/slice-c-integration.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: slice-c-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.19.0
+
+      - run: corepack enable
+      - run: corepack prepare pnpm@11.24.0 --activate
+      - run: pnpm install --frozen-lockfile
+
+      - name: Compile Slice C integration
+        run: pnpm exec tsc --noEmit -p workers/slice-c/integration/tsconfig.json
+
+      - name: Compile durable storage
+        run: >-
+          pnpm exec tsc --noEmit --target ES2022 --module NodeNext
+          --moduleResolution NodeNext --strict --noUncheckedIndexedAccess
+          --exactOptionalPropertyTypes --esModuleInterop --skipLibCheck
+          --types node workers/slice-c/durable-storage/src/index.ts
+          workers/slice-c/durable-storage/test/durable-storage.test.ts
+
+      - name: Compile retry orchestration
+        run: pnpm exec tsc --noEmit -p workers/slice-c/retry-orchestration/tsconfig.json
+
+      - name: Run Slice C candidate and integration tests
+        run: >-
+          pnpm exec tsx --test
+          workers/slice-c/durable-storage/test/*.test.ts
+          workers/slice-c/retry-orchestration/test/*.test.ts
+          workers/slice-c/integration/test/*.test.ts
+
+      - name: Run Slice B compatibility fixture
+        run: node --import tsx --test workers/multichain-execution/test/slice-b-compatibility.test.ts
+
+      - name: Run Slice B projection and web checks
+        run: pnpm check:projection && pnpm web:check
+
+      - name: Verify integration scope and protected paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import subprocess
+          import re
+
+          base = "6f05b10e5e016b5f8fdbbfd0bd7ce3a12ba6fc7e"
+          names = subprocess.check_output(["git", "diff", "--name-only", f"{base}..HEAD"], text=True).splitlines()
+          allowed = ("workers/slice-c/", "docs/development/SLICE_C_", ".github/workflows/slice-c-integration.yml")
+          bad_scope = [name for name in names if not name.startswith(allowed)]
+          protected = [name for name in names if name.startswith(("contracts/", "test/", "evidence/runtime/", "docs/canonical/GROUND_TRUTH.md"))]
+          if bad_scope or protected:
+              raise SystemExit(f"scope failure: allowed={bad_scope!r} protected={protected!r}")
+
+          diff = subprocess.check_output(["git", "diff", f"{base}..HEAD", "--"], text=True)
+          additions = "\n".join(line for line in diff.splitlines() if line.startswith("+") and not line.startswith("+++"))
+          secret_patterns = [
+              r"-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----",
+              "(" + "gh" + "p_|github_" + "pat_|sk-" + r"[A-Za-z0-9])",
+              r"[A-Za-z0-9_]+_SECRET\\s*[:=]\\s*[^\\s\\[\\]`]+",
+          ]
+          matches = [pattern for pattern in secret_patterns if re.search(pattern, additions, re.I)]
+          if matches:
+              raise SystemExit(f"secret-like addition detected: {matches!r}")
+          print("scope/protected/secret scan PASS")
+          PY
+
+      - name: Verify clean diff formatting
+        run: git diff --check

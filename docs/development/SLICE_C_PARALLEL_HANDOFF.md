@@ -1,6 +1,10 @@
 # Slice C parallel handoff
 
-Status: `VERIFIED_REMOTE_CANDIDATES_UNMERGED`
+Status: `LOCAL_INTEGRATION_CANDIDATE / CANDIDATES_VERIFIED_REMOTE`
+
+Slice C integration branch: `verification/slice-c-integration`
+Integration base: `6f05b10e5e016b5f8fdbbfd0bd7ce3a12ba6fc7e`
+Integration coordinator/spec: `docs/development/SLICE_C_INTEGRATION.md`
 
 Slice C was developed in isolated worktrees from the frozen Slice B checkpoint:
 
@@ -10,6 +14,12 @@ Contract: slice-b-read-model-contract-v1
 ```
 
 These candidates do not prove Slice B correctness and are not merged into `verification/slice-b`.
+
+## Combined integration candidate
+
+The integrated coordinator is local and unmerged. It validates serialized snapshots through the exported Slice B restore boundary before storage/retry submission, persists per-scope checkpoints, restores retry attempts from a validated retry snapshot, preserves `REPLAY_REQUIRED`, and exposes only read-only coordinator operations. Combined assertions are in `workers/slice-c/integration/test/coordinator.test.ts`; the offline CI job is `.github/workflows/slice-c-integration.yml`.
+
+It does not add production persistence, hosted workers, financial authority, chain writes, proof requests, or settlement execution.
 
 ## Durable snapshot storage candidate
 

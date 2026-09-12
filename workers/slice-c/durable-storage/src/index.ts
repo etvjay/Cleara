@@ -129,7 +129,11 @@ function validateKnownBigints(parsed: Record<string, unknown>): void {
     const checkpoint = requireObject(value, "checkpoint");
     requireBigIntString(checkpoint.lastObservedBlock, "checkpoint.lastObservedBlock");
     requireBigIntString(checkpoint.lastFinalizedBlock, "checkpoint.lastFinalizedBlock", true);
-    for (const target of requireEntries(checkpoint.replayTargets, "checkpoint.replayTargets")) requireBigIntString(requireObject(target, "replayTarget").blockNumber, "replayTarget.blockNumber");
+    if (Array.isArray(checkpoint.replayTargets)) {
+      for (const target of checkpoint.replayTargets) requireBigIntString(requireObject(target, "replayTarget").blockNumber, "replayTarget.blockNumber");
+    } else if (checkpoint.replayTargets !== undefined) {
+      throw new SnapshotStoreError("CORRUPT_SNAPSHOT_BODY", "checkpoint.replayTargets must be an array");
+    }
     requireBigIntString(checkpoint.replayFromBlock, "checkpoint.replayFromBlock", true);
   }
   for (const [key, value] of requireEntries(parsed.blockHistory, "blockHistory")) requireBigIntString(requireObject(value, "blockHeader").blockNumber, "blockHeader.blockNumber");
@@ -228,8 +232,11 @@ export class DurableSnapshotStore {
 
     const current = await this.readRecord(scopeId);
     if (options.expectedPreviousHash !== undefined && options.expectedPreviousHash !== (current?.snapshot.hash ?? null)) throw new SnapshotStoreError("STALE_CHECKPOINT", "checkpoint predecessor hash does not match durable state");
-    if (current && options.sequence !== undefined && options.sequence !== current.sequence) throw new SnapshotStoreError("NON_MONOTONIC_CHECKPOINT", "duplicate checkpoint sequence does not match durable state");
-    if (current && current.snapshot.hash === snapshot.hash && current.snapshot.body === snapshot.body) return { status: "DUPLICATE", record: current };
+    const sameSnapshot = current !== null && current.snapshot.hash === snapshot.hash && current.snapshot.body === snapshot.body;
+    if (sameSnapshot) {
+      if (options.sequence !== undefined && options.sequence !== current.sequence) throw new SnapshotStoreError("NON_MONOTONIC_CHECKPOINT", "duplicate checkpoint sequence does not match durable state");
+      return { status: "DUPLICATE", record: current };
+    }
 
     const sequence = options.sequence ?? (current ? current.sequence + 1 : 1);
     validateSequence(sequence);

@@ -259,6 +259,72 @@ export class RetryOrchestrator {
     this.defaultPolicy = normalizePolicy(options.defaultPolicy);
   }
 
+  public static fromSerialized(input: unknown, options: { readonly defaultPolicy?: RetryPolicy } = {}): RetryOrchestrator {
+    if (typeof input !== "string") throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry snapshot must be a JSON string");
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(input) as unknown;
+    } catch {
+      throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry snapshot is not valid JSON");
+    }
+    if (!isPlainRecord(parsed) || parsed.schemaVersion !== SLICE_C_SCHEMA_VERSION) {
+      throw new RetryOrchestrationError("INVALID_SNAPSHOT", "unsupported retry snapshot schema");
+    }
+    const jobs = parsed.jobs;
+    const deliveries = parsed.deliveries;
+    const deadLetters = parsed.deadLetters;
+    const handoffs = parsed.handoffs;
+    if (!Array.isArray(jobs) || !Array.isArray(deliveries) || !Array.isArray(deadLetters) || !Array.isArray(handoffs)) {
+      throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry snapshot collections must be arrays");
+    }
+    const restored = new RetryOrchestrator(options);
+    const jobIds = new Set<string>();
+    for (const raw of jobs) {
+      if (!isPlainRecord(raw) || typeof raw.id !== "string" || jobIds.has(raw.id) || !isPlainRecord(raw.selector) || !isPlainRecord(raw.source) || !isPlainRecord(raw.policy)) {
+        throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry snapshot contains an invalid or duplicate job");
+      }
+      if (typeof raw.attempts !== "number" || !Number.isSafeInteger(raw.attempts) || raw.attempts < 0 || typeof raw.nextAttemptAt !== "number" || !Number.isFinite(raw.nextAttemptAt) || raw.nextAttemptAt < 0) {
+        throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry snapshot contains invalid job counters");
+      }
+      const policy = normalizePolicy(raw.policy as unknown as RetryPolicy);
+      const job = Object.freeze({
+        ...raw,
+        policy,
+        selector: Object.freeze({ ...raw.selector }),
+        source: Object.freeze({
+          ...raw.source,
+          cursor: isPlainRecord(raw.source.cursor) ? Object.freeze({ ...raw.source.cursor }) : raw.source.cursor,
+          status: isPlainRecord(raw.source.status) ? Object.freeze({ ...raw.source.status }) : raw.source.status,
+        }),
+        deliveryIds: Array.isArray(raw.deliveryIds) ? Object.freeze([...raw.deliveryIds]) : raw.deliveryIds,
+      }) as unknown as RetryJob;
+      jobIds.add(raw.id);
+      restored.jobs.set(raw.id, job);
+    }
+    const deliveryIds = new Set<string>();
+    for (const raw of deliveries) {
+      if (!isPlainRecord(raw) || typeof raw.deliveryId !== "string" || deliveryIds.has(raw.deliveryId) || (raw.jobId !== null && typeof raw.jobId !== "string") || typeof raw.requestHash !== "string") {
+        throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry snapshot contains an invalid or duplicate delivery");
+      }
+      if (raw.jobId !== null && !jobIds.has(raw.jobId)) throw new RetryOrchestrationError("INVALID_SNAPSHOT", "delivery references a missing job");
+      deliveryIds.add(raw.deliveryId);
+      restored.deliveries.set(raw.deliveryId, Object.freeze({ ...raw }) as unknown as DeliveryReceipt);
+    }
+    const deadLetterIds = new Set<string>();
+    for (const raw of deadLetters) {
+      if (!isPlainRecord(raw) || typeof raw.id !== "string" || deadLetterIds.has(raw.id)) throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry snapshot contains an invalid or duplicate dead letter");
+      deadLetterIds.add(raw.id);
+      restored.deadLetters.set(raw.id, Object.freeze({ ...raw }) as unknown as DeadLetterRecord);
+    }
+    const handoffIds = new Set<string>();
+    for (const raw of handoffs) {
+      if (!isPlainRecord(raw) || typeof raw.id !== "string" || handoffIds.has(raw.id)) throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry snapshot contains an invalid or duplicate handoff");
+      handoffIds.add(raw.id);
+      restored.handoffs.set(raw.id, Object.freeze({ ...raw }) as unknown as ReplayRequiredHandoff);
+    }
+    return restored;
+  }
+
   public submit(request: RetryRequest): DeliveryResult {
     let input: InputRecord;
     try {
@@ -413,6 +479,21 @@ export class RetryOrchestrator {
       this.deliveries.set(deliveryId, receipt);
       return { disposition: "REJECTED", job: null, receipt, deadLetter };
     }
+  }
+
+  public operatorReplay(jobId: string): RetryJob {
+    if (typeof jobId !== "string" || jobId.length === 0) throw new RetryOrchestrationError("INVALID_REPLAY", "operator replay requires a job ID");
+    const job = this.jobs.get(jobId);
+    if (!job) throw new RetryOrchestrationError("REPLAY_JOB_NOT_FOUND", "operator replay job was not found");
+    if (job.status !== "DEAD_LETTERED") throw new RetryOrchestrationError("REPLAY_NOT_TERMINAL", "operator replay requires a dead-lettered job");
+    return this.updateJob(job, {
+      status: "PENDING",
+      attempts: 0,
+      nextAttemptAt: 0,
+      lastError: null,
+      result: null,
+      handoffId: null,
+    });
   }
 
   public executeNext(provider: ReadOnlyProvider | null, now = 0): ExecutionResult {
