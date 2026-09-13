@@ -1,0 +1,68 @@
+import { SliceCIntegrationCoordinator } from "../../../slice-c/integration/src/coordinator.js";
+import { DurableSnapshotStore, type CheckpointOptions, type CheckpointResult, type PersistedSnapshotRecord, type SerializedSliceBSnapshot } from "../../../slice-c/durable-storage/src/index.js";
+import { RetryOrchestrator, type DeliveryResult, type ExecutionResult, type ReadOnlyProvider } from "../../../slice-c/retry-orchestration/src/index.js";
+import type { SourceScopeManifest } from "../../source-scope/src/manifest.js";
+import { SourceIngestionError } from "./errors.js";
+import { SliceBSerializedBoundary } from "./slice-b-boundary.js";
+import type { RetryRequestWithoutContract, SerializedSliceCBoundary } from "./types.js";
+
+export interface SerializedSliceCBoundaryOptions {
+  readonly scopeId: string;
+  readonly manifest: SourceScopeManifest;
+  readonly store: DurableSnapshotStore;
+  readonly retry: RetryOrchestrator;
+}
+
+export class SliceCSerializedBoundary implements SerializedSliceCBoundary {
+  public readonly retryOrchestrator: RetryOrchestrator;
+  private readonly scopeId: string;
+  private readonly manifest: SourceScopeManifest;
+  private readonly store: DurableSnapshotStore;
+  private readonly b: SliceBSerializedBoundary;
+  private readonly coordinator: SliceCIntegrationCoordinator;
+
+  public constructor(options: SerializedSliceCBoundaryOptions) {
+    this.scopeId = options.scopeId;
+    this.manifest = options.manifest;
+    this.store = options.store;
+    this.retryOrchestrator = options.retry;
+    this.b = new SliceBSerializedBoundary(options.manifest);
+    this.coordinator = new SliceCIntegrationCoordinator({ scopeId: options.scopeId, store: options.store, retry: options.retry });
+  }
+
+  public async checkpoint(snapshot: SerializedSliceBSnapshot, options: CheckpointOptions = {}): Promise<CheckpointResult> {
+    return this.coordinator.checkpointApi(this.b.read(snapshot), options);
+  }
+
+  public async recover(): Promise<PersistedSnapshotRecord | null> {
+    const restarted = await this.coordinator.restartReadModel();
+    return restarted?.record ?? null;
+  }
+
+  public submitRetry(snapshot: SerializedSliceBSnapshot, request: RetryRequestWithoutContract): DeliveryResult {
+    return this.coordinator.submitFromApi(this.b.read(snapshot), request);
+  }
+
+  public executeRetry(provider: ReadOnlyProvider | null, now = 0): ExecutionResult {
+    return this.coordinator.executeNext(provider, now);
+  }
+
+  public serializeRetry(): string {
+    return this.coordinator.serializeRetry();
+  }
+
+  public restartRetry(serialized: string): SerializedSliceCBoundary {
+    try {
+      const retry = RetryOrchestrator.fromSerialized(serialized);
+      return new SliceCSerializedBoundary({ scopeId: this.scopeId, manifest: this.manifest, store: this.store, retry });
+    } catch (error) {
+      throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", error instanceof Error ? error.message : "retry snapshot restore failed");
+    }
+  }
+
+  public read(snapshot: SerializedSliceBSnapshot) {
+    return this.b.read(snapshot);
+  }
+}
+
+export { SliceCSerializedBoundary as SerializedSliceCBoundary };
