@@ -1,88 +1,126 @@
-import { isRole, roleSummary, seedCase, settlementBadge, type CaseStage, type Role } from "./case.js";
+import { renderLanding } from "./landing.js";
 
-const graph = seedCase();
-let role: Role = "operator";
-let selectedStage = graph.stages.find((stage) => stage.id === "reconciliation") ?? graph.stages[0]!;
+const app = document.querySelector<HTMLElement>("#app");
+if (!app) throw new Error("missing #app");
 
-const appElement = document.querySelector<HTMLElement>("#app");
-if (!appElement) throw new Error("missing #app");
-const app: HTMLElement = appElement;
+const isTryPage = window.location.pathname.replace(/\/+$/, "") === "/try";
+if (isTryPage) {
+  const { mountTryApp } = await import("./try-app.js");
+  mountTryApp(app);
+} else {
+  app.innerHTML = renderLanding();
 
-function esc(value: string): string {
-  return value.replace(/[&<>\"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[character] ?? character);
+  const carousel = document.querySelector<HTMLElement>("[data-principles-carousel]");
+  if (carousel) {
+    const lead = carousel.querySelector<HTMLElement>("[data-principles-lead]");
+    const rest = carousel.querySelector<HTMLElement>("[data-principles-rest]");
+    const label = carousel.querySelector<HTMLElement>("[data-principles-label]");
+    const kicker = carousel.querySelector<HTMLElement>("[data-principles-kicker]");
+    const note = carousel.querySelector<HTMLElement>("[data-principles-note]");
+    const count = carousel.querySelector<HTMLElement>("[data-principles-count]");
+    const peek = carousel.querySelector<HTMLElement>("[data-principles-peek]");
+    const peekLabel = carousel.querySelector<HTMLElement>("[data-principles-peek-label]");
+    const peekCount = carousel.querySelector<HTMLElement>("[data-principles-peek-count]");
+    const story = carousel.querySelector<HTMLElement>(".principles-story");
+    const previous = document.querySelector<HTMLButtonElement>("[data-principles-prev]");
+    const next = document.querySelector<HTMLButtonElement>("[data-principles-next]");
+    const slides = [
+      {
+        lead: "Finance is distributed. Financial state is fragmented.",
+        rest: "Each system may be correct individually while the financial relationship between them remains unresolved.",
+        label: "THE PROBLEM",
+        note: "Many systems. One unresolved relationship.",
+      },
+      {
+        lead: "Keep execution native. Share the financial meaning.",
+        rest: "Attestcoin proves what happened. Nomos interprets it. Creditcoin anchors what is canonically true.",
+        label: "THE COUNTERPROPOSAL",
+        note: "Coordination without forced consolidation.",
+      },
+      {
+        lead: "Clear first. Move only what remains.",
+        rest: "Authorized clearing reduces unnecessary movement before residual settlement and reconciliation.",
+        label: "THE MECHANISM",
+        note: "Separate clearing from settlement.",
+      },
+    ];
+    let active = 0;
+    const paint = (index: number, animate = false) => {
+      active = (index + slides.length) % slides.length;
+      const current = slides[active]!;
+      const upcoming = slides[(active + 1) % slides.length]!;
+      const update = () => {
+        if (lead) lead.textContent = current.lead;
+        if (rest) rest.textContent = current.rest;
+        if (label) label.textContent = current.label;
+        if (kicker) kicker.textContent = current.label;
+        if (note) note.textContent = current.note;
+        if (count) count.textContent = `${String(active + 1).padStart(2, "0")} / ${String(slides.length).padStart(2, "0")}`;
+        if (peek) peek.textContent = upcoming.lead;
+        if (peekLabel) peekLabel.textContent = upcoming.label;
+        if (peekCount) peekCount.textContent = `${String((active + 1) % slides.length + 1).padStart(2, "0")} / ${String(slides.length).padStart(2, "0")}`;
+      };
+      if (animate && story) {
+        story.classList.add("is-changing");
+        window.setTimeout(() => {
+          update();
+          window.requestAnimationFrame(() => story.classList.remove("is-changing"));
+        }, 90);
+        return;
+      }
+      update();
+    };
+    previous?.addEventListener("click", () => paint(active - 1, true));
+    next?.addEventListener("click", () => paint(active + 1, true));
+  }
+
+  const menuButton = document.querySelector<HTMLButtonElement>(".reference-menu");
+  const menuOverlay = document.querySelector<HTMLElement>("#cleara-mobile-menu");
+  const menuClose = menuOverlay?.querySelector<HTMLButtonElement>(".reference-menu-close");
+  if (menuButton && menuOverlay) {
+    let closeTimer: number | undefined;
+    const setMenuOpen = (open: boolean) => {
+      if (closeTimer) window.clearTimeout(closeTimer);
+      menuButton.setAttribute("aria-expanded", String(open));
+      document.body.classList.toggle("menu-open", open);
+      if (open) {
+        menuOverlay.hidden = false;
+        window.requestAnimationFrame(() => menuOverlay.classList.add("is-open"));
+        window.setTimeout(() => menuClose?.focus(), 0);
+        return;
+      }
+      menuOverlay.classList.remove("is-open");
+      closeTimer = window.setTimeout(() => {
+        if (!menuOverlay.classList.contains("is-open")) menuOverlay.hidden = true;
+      }, 420);
+      menuButton.focus();
+    };
+    menuButton.addEventListener("click", () => setMenuOpen(true));
+    menuOverlay.addEventListener("click", (event) => {
+      if ((event.target as HTMLElement).closest("[data-menu-close]")) setMenuOpen(false);
+    });
+    menuOverlay.querySelectorAll<HTMLAnchorElement>("a").forEach((link) => link.addEventListener("click", () => setMenuOpen(false)));
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !menuOverlay.hidden) setMenuOpen(false);
+    });
+  }
+
+  const revealTargets = Array.from(document.querySelectorAll<HTMLElement>(".coordination-section, .relationship-promo-section, .proof-section, .principles-section, .coordination-cta-section, .loop-section, .mechanism-section, footer.landing-footer"));
+  const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (revealTargets.length && !prefersReducedMotion && "IntersectionObserver" in window) {
+    const revealObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        const target = entry.target as HTMLElement;
+        target.classList.remove("motion-enter");
+        void target.offsetWidth;
+        target.classList.add("motion-enter");
+        revealObserver.unobserve(target);
+      });
+    }, { threshold: 0.12, rootMargin: "0px 0px -8% 0px" });
+    revealTargets.forEach((target) => {
+      target.classList.add("scroll-reveal");
+      revealObserver.observe(target);
+    });
+  }
 }
-
-function badge(state: string): string {
-  const safeState = esc(state.toLowerCase());
-  return `<span class="badge badge-${safeState}">${esc(state)}</span>`;
-}
-
-function evidenceBoundary(kind: string): string {
-  return kind === "testnet" ? "fixture_from_live_evidence / TESTED_TESTNET" : `${kind} / IMPLEMENTED_LOCAL`;
-}
-
-function accountingPanel(): string {
-  return `<section class="accounting-panel"><div class="panel-head"><div><span class="eyebrow">ACCOUNTING / RECONCILIATION</span><h2>Residual settlement vector</h2></div><span class="muted">Composite fixture</span></div><div class="accounting-grid"><div><small>GROSS OBLIGATIONS</small><strong>460,000</strong></div><div><small>CLEARED INTERNALLY</small><strong>120,000</strong></div><div><small>RESIDUAL ROUTED</small><strong>340,000</strong></div><div><small>FINAL STATE</small><strong class="accounting-success">SETTLED</strong></div></div><div class="balance-line"><span>Debtor balance <b>340,000 → 0</b></span><span>Creditor balance <b>0 → 340,000</b></span></div><p class="accounting-note">The residual is shown as ROUTED until the native receipt, Attestcoin proof, canonical Creditcoin state, and reconciliation all agree. Values are testnet evidence presented through a local composite fixture.</p></section>`;
-}
-function render(): void {
-  const summary = roleSummary(role, graph);
-  const focus = new Set(summary.focus);
-  app.innerHTML = `
-    <header class="topbar">
-      <div class="brand"><span class="brand-mark">C</span><span>Cleara</span><small>WORKBENCH</small></div>
-      <div class="top-context"><span class="context-dot"></span><span>TESTNET</span><span class="context-separator">/</span><span>${esc(summary.title)}</span></div>
-      <div class="top-actions"><span class="read-only">READ-ONLY</span><button id="reset" class="text-button">Reset seed</button></div>
-    </header>
-    <main class="shell">
-      <aside class="rail">
-        <div class="rail-label">CASE</div>
-        <button class="rail-item active"><span class="rail-icon">⌂</span>Work</button>
-        <button class="rail-item"><span class="rail-icon">◌</span>Relationships</button>
-        <button class="rail-item"><span class="rail-icon">◇</span>Evidence</button>
-        <div class="rail-spacer"></div>
-        <div class="rail-label">CAPABILITIES</div>
-        <button class="rail-item"><span class="rail-icon">◎</span>Domains</button>
-        <button class="rail-item"><span class="rail-icon">?</span>Protocol</button>
-      </aside>
-      <section class="workspace">
-        <div class="workspace-head">
-          <div>
-            <div class="eyebrow">RELATIONSHIP / WORK ITEM</div>
-            <h1>${esc(graph.label)}</h1>
-            <p class="subtitle">${esc(summary.question)}</p>
-          </div>
-          <div class="case-meta"><span class="case-id">${esc(graph.id)}</span>${badge(graph.environment.toUpperCase())}<span class="fixture-label">COMPOSITE_FIXTURE</span></div>
-        </div>
-        <div class="truth-banner"><span class="truth-icon">i</span><span>${esc(graph.disclaimer)}</span></div>
-        <section class="public-explanation"><div><span class="eyebrow">WHAT CLEARA COORDINATES</span><h2>Clear reciprocal obligations before native settlement.</h2><p>Creditcoin coordinates canonical financial state. Source chains execute native actions. Attestcoin proves inclusion and continuity. This read-only casebook connects those facts without turning the projection into authority.</p></div><div class="explanation-flow"><span>obligations</span><b>→</b><span>clearing</span><b>→</b><span>residual</span><b>→</b><span>proof + reconciliation</span></div></section>
-        ${accountingPanel()}
-        <section class="work-queue"><div class="queue-head"><div><span class="eyebrow">INVESTIGATION QUEUE</span><h2>What needs attention</h2></div><span class="muted">Read-only examples</span></div><div class="queue-grid">${graph.investigations.map((item) => `<article class="queue-item"><div class="queue-top"><strong>${esc(item.title)}</strong>${badge(item.state)}</div><p>${esc(item.reason)}</p><small>Authority: ${esc(item.authority)} · Blocked: ${esc(item.blocked)}</small><small>Recovery: ${esc(item.recoveryRole)} · Next: ${esc(item.nextAction)}</small></article>`).join("")}</div></section>
-        <nav class="role-tabs" aria-label="Role views">${(["provider", "sponsor", "operator"] as Role[]).map((item) => `<button class="role-tab ${item === role ? "selected" : ""}" data-role="${item}">${esc(roleSummary(item, graph).title)}</button>`).join("")}</nav>
-        <div class="content-grid">
-          <section class="case-panel">
-            <div class="panel-head"><div><span class="eyebrow">MASTER CASE GRAPH</span><h2>One relationship, every state</h2></div><div class="settlement-state">Settlement ${badge(settlementBadge(graph))}</div></div>
-            <div class="timeline">${graph.stages.map((stage, index) => stageCard(stage, index, focus.has(stage.id))).join("")}</div>
-          </section>
-          <aside class="detail-panel">${detailPanel(selectedStage)}</aside>
-        </div>
-        <section class="capability-panel"><div class="panel-head"><div><span class="eyebrow">DOMAIN CAPABILITY</span><h2>What Cleara can and cannot do here</h2></div><span class="muted">No wallet connection required</span></div><div class="capability-grid">${graph.capabilities.map((capability) => `<div class="capability"><div class="capability-top"><strong>${esc(capability.name)}</strong>${badge(capability.status)}</div><span>${esc(capability.domain)}</span><p>${esc(capability.detail)}</p></div>`).join("")}</div></section>
-      </section>
-    </main>`;
-
-  document.querySelectorAll<HTMLButtonElement>("[data-role]").forEach((button) => button.addEventListener("click", () => {
-    const nextRole = button.dataset.role;
-    if (isRole(nextRole)) { role = nextRole; render(); }
-  }));
-  document.querySelectorAll<HTMLButtonElement>("[data-stage]").forEach((button) => button.addEventListener("click", () => { selectedStage = graph.stages.find((stage) => stage.id === button.dataset.stage) ?? selectedStage; render(); }));
-  document.querySelector<HTMLButtonElement>("#reset")?.addEventListener("click", () => { role = "operator"; selectedStage = graph.stages[0]!; render(); });
-}
-
-function stageCard(stage: CaseStage, index: number, focused: boolean): string {
-  return `<button class="stage ${focused ? "focused" : ""} ${selectedStage.id === stage.id ? "selected" : ""}" data-stage="${esc(stage.id)}"><span class="stage-index">${String(index + 1).padStart(2, "0")}</span><span class="stage-main"><strong>${esc(stage.label)}</strong><span>${esc(stage.detail)}</span></span><span class="stage-right">${badge(stage.state)}<small>${esc(stage.domain)}</small></span></button>`;
-}
-
-function detailPanel(stage: CaseStage): string {
-  return `<div class="eyebrow">SELECTED STATE</div><h2>${esc(stage.label)}</h2><div class="detail-state">${badge(stage.state)}<span>${esc(stage.domain)}</span></div><p class="detail-copy">${esc(stage.detail)}</p><div class="read-model-panel"><div class="evidence-title">SLICE B / READ-MODEL AXES</div><div class="read-model-grid"><span>Observation<strong>OBSERVED</strong></span><span>Finality<strong>${stage.evidence.some((item) => item.kind === "testnet") ? "FINALIZED / EVIDENCE" : "UNKNOWN"}</strong></span><span>Evidence<strong>${stage.state === "PENDING_PROOF" ? "PENDING" : stage.evidence.length > 0 ? "REFERENCED" : "NOT_REQUESTED"}</strong></span><span>Canonical read<strong>${stage.domain === "coordination" ? "REFERENCED / CC3" : "NOT_READ"}</strong></span><span>Projection<strong>LOCAL_PROJECTION</strong></span><span>Reconciliation<strong>${stage.id === "reconciliation" ? "RECONCILED" : stage.state === "MISMATCH" ? "MISMATCH" : "PENDING"}</strong></span></div></div><div class="evidence-title">PROVENANCE / EVIDENCE</div><div class="evidence-list">${stage.evidence.map((item) => `<article class="evidence"><div class="evidence-row"><strong>${esc(item.label)}</strong>${badge(item.kind)}</div><p>${esc(item.detail)}</p><small>Boundary: ${esc(evidenceBoundary(item.kind))}</small><small>${esc(item.source)}${item.artifact ? ` · artifact ${item.artifact}` : ""}${item.tx ? ` · tx ${item.tx}` : ""}${item.evidenceId ? ` · evidence ${item.evidenceId}` : ""}</small></article>`).join("")}</div><div class="boundary-note"><strong>Authority boundary</strong><span>This workbench is a read model. It cannot authorize or submit a financial transition.</span></div>`;
-}
-
-render();

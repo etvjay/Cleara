@@ -1,3 +1,4 @@
+import { build } from "esbuild";
 import { cp, mkdir, rm } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,6 +12,21 @@ await new Promise((resolvePromise, reject) => {
   const child = spawn("tsc", ["--project", resolve(root, "tsconfig.json"), "--outDir", dist], { cwd: root, stdio: "inherit" });
   child.on("exit", (code) => code === 0 ? resolvePromise() : reject(new Error(`tsc exited ${code}`)));
 });
+await build({
+  entryPoints: [resolve(root, "src/browser.ts")],
+  bundle: true,
+  format: "esm",
+  platform: "browser",
+  target: "es2022",
+  outdir: resolve(dist, "src"),
+  entryNames: "browser",
+  chunkNames: "chunks/[name]-[hash]",
+  assetNames: "assets/[name]-[hash]",
+  splitting: true,
+  loader: { ".css": "css" },
+});
 await cp(resolve(root, "public/index.html"), resolve(dist, "index.html"));
 await cp(resolve(root, "public/styles.css"), resolve(dist, "styles.css"));
+await cp(resolve(root, "public/assets"), resolve(dist, "assets"), { recursive: true });
+await cp(resolve(root, "public/try"), resolve(dist, "try"), { recursive: true });
 console.log(`built ${dist}`);
