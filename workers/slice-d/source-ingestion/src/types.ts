@@ -221,6 +221,7 @@ export interface SerializedBackfillState {
 
 export interface SerializedSliceBBoundary {
   readonly initialize: (anchor: SourceBlockHeader) => SerializedSliceBSnapshot;
+  readonly observeBlockHeader: (snapshot: SerializedSliceBSnapshot, header: SourceBlockHeader) => SerializedSliceBSnapshot;
   readonly ingest: (snapshot: SerializedSliceBSnapshot, observation: ObservationEnvelope) => SerializedSliceBSnapshot;
   readonly advanceFinality: (snapshot: SerializedSliceBSnapshot, finalizedBlock: number, observedAt: number) => SerializedSliceBSnapshot;
   readonly backfillReplayHeader: (snapshot: SerializedSliceBSnapshot, source: ObservationEnvelope) => SerializedSliceBSnapshot;

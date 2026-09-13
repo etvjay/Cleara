@@ -228,7 +228,7 @@ test("sparse no-event ranges advance the cursor without inventing observed event
   assert.equal(result.acceptedEvents.length, 0);
   assert.equal(result.cursor.nextBlock, 13);
   assert.equal(runner.readApi()?.health().readOnly, true);
-  assert.equal(runner.readApi()?.checkpoint(1)?.lastObservedBlock, 9n);
+  assert.equal(runner.readApi()?.checkpoint(1)?.lastObservedBlock, 12n);
 });
 
 test("finality is monotonic across lower, equal, and higher provider heights", async (t) => {

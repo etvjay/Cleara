@@ -8,6 +8,7 @@ import {
   backfillReplayHeader,
   createSliceBState,
   ingestObservation,
+  observeBlockHeader as observeBlockHeaderState,
   replayReorg,
   restoreSnapshot,
   type ObservationEnvelope,
@@ -15,6 +16,21 @@ import {
 import type { SourceScopeManifest } from "../../source-scope/src/manifest.js";
 import { SourceIngestionError } from "./errors.js";
 import type { SerializedSliceBBoundary, SourceBlockHeader } from "./types.js";
+
+function blockHeaderInput(manifest: SourceScopeManifest, header: SourceBlockHeader) {
+  return {
+    chainKey: manifest.chainKey,
+    chainId: manifest.evmChainId,
+    sourceDomain: manifest.sourceDomain,
+    blockNumber: BigInt(header.blockNumber),
+    blockHash: header.blockHash,
+    parentBlockHash: header.parentHash,
+    adapterVersion: manifest.adapterVersion,
+    payloadSchemaVersion: manifest.eventFamily.schemaVersion,
+    observationId: `block-header:${manifest.scopeId}:${header.blockNumber}:${header.blockHash}`,
+    observedAt: header.timestamp,
+  };
+}
 
 export class SliceBSerializedBoundary implements SerializedSliceBBoundary {
   public constructor(private readonly manifest: SourceScopeManifest) {
@@ -33,7 +49,12 @@ export class SliceBSerializedBoundary implements SerializedSliceBBoundary {
       anchorBlockNumber: BigInt(anchor.blockNumber),
       anchorBlockHash: anchor.blockHash,
     }]);
-    return createSliceBApi(state).serializeSnapshot();
+    return createSliceBApi(observeBlockHeaderState(state, blockHeaderInput(this.manifest, anchor))).serializeSnapshot();
+  }
+
+  public observeBlockHeader(snapshot: SerializedSliceBSnapshot, header: SourceBlockHeader): SerializedSliceBSnapshot {
+    const state = this.restore(snapshot);
+    return createSliceBApi(observeBlockHeaderState(state, blockHeaderInput(this.manifest, header))).serializeSnapshot();
   }
 
   public ingest(snapshot: SerializedSliceBSnapshot, observation: ObservationEnvelope): SerializedSliceBSnapshot {

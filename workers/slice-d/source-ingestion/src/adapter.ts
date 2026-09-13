@@ -33,10 +33,28 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   }
 }
 
+const TRUSTED_ARRAY_PROTOTYPE = Array.prototype;
+const TRUSTED_ARRAY_DESCRIPTORS = new Map(Reflect.ownKeys(TRUSTED_ARRAY_PROTOTYPE).map((key) => [key, Object.getOwnPropertyDescriptor(TRUSTED_ARRAY_PROTOTYPE, key)!]));
+
+function sameDescriptor(expected: PropertyDescriptor, actual: PropertyDescriptor | undefined): boolean {
+  if (!actual || expected.enumerable !== actual.enumerable || expected.configurable !== actual.configurable) return false;
+  if ("value" in expected || "value" in actual) return "value" in expected && "value" in actual && expected.writable === actual.writable && expected.value === actual.value;
+  return expected.get === actual.get && expected.set === actual.set;
+}
+
+function trustedArrayPrototype(): boolean {
+  try {
+    const keys = Reflect.ownKeys(TRUSTED_ARRAY_PROTOTYPE);
+    return keys.length === TRUSTED_ARRAY_DESCRIPTORS.size && [...TRUSTED_ARRAY_DESCRIPTORS].every(([key, descriptor]) => sameDescriptor(descriptor, Object.getOwnPropertyDescriptor(TRUSTED_ARRAY_PROTOTYPE, key)));
+  } catch {
+    return false;
+  }
+}
+
 function isSafeArray(value: unknown): value is readonly unknown[] {
   if (!Array.isArray(value)) return false;
   try {
-    if (Object.getPrototypeOf(value) !== Array.prototype) return false;
+    if (Object.getPrototypeOf(value) !== TRUSTED_ARRAY_PROTOTYPE || !trustedArrayPrototype()) return false;
     const keys = Reflect.ownKeys(value);
     for (const key of keys) {
       if (key === "length") continue;
@@ -197,6 +215,12 @@ function validateReceipt(value: unknown, expectedBlock: SourceBlockHeader): Sour
   const transactionIndex = safeInteger(receiptValue.transactionIndex, "receipt.transactionIndex");
   if (blockNumber !== expectedBlock.blockNumber || blockHash !== expectedBlock.blockHash) throw new SourceIngestionError("INCONSISTENT_SOURCE_DATA", "receipt is not included in the event block");
   const logs = receiptValue.logs.map((item, index) => validateLog(item, `receipt.logs[${index}]`, expectedBlock));
+  const logIndexes = new Set<number>();
+  for (const receiptLog of logs) {
+    if (receiptLog.transactionHash !== transactionHash || receiptLog.transactionIndex !== transactionIndex) throw new SourceIngestionError("INCONSISTENT_SOURCE_DATA", "receipt log transaction identity differs from the receipt");
+    if (logIndexes.has(receiptLog.logIndex)) throw new SourceIngestionError("INCONSISTENT_SOURCE_DATA", "receipt contains duplicate log indexes");
+    logIndexes.add(receiptLog.logIndex);
+  }
   return { transactionHash, status, blockNumber, blockHash, transactionIndex, logs };
 }
 
@@ -307,6 +331,7 @@ export class CapitalCommittedAdapter {
       chainId: identity.evmChainId,
       contractAddress: log.address,
       transactionHash: log.transactionHash,
+      transactionIndex: log.transactionIndex,
       eventIndex: log.logIndex,
       blockNumber: BigInt(block.blockNumber),
       blockHash: block.blockHash,

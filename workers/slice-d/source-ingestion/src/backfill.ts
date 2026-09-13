@@ -65,19 +65,35 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   }
 }
 
+const TRUSTED_ARRAY_PROTOTYPE = Array.prototype;
+const TRUSTED_ARRAY_DESCRIPTORS = new Map(Reflect.ownKeys(TRUSTED_ARRAY_PROTOTYPE).map((key) => [key, Object.getOwnPropertyDescriptor(TRUSTED_ARRAY_PROTOTYPE, key)!]));
+
+function sameArrayDescriptor(expected: PropertyDescriptor, actual: PropertyDescriptor | undefined): boolean {
+  if (!actual || expected.enumerable !== actual.enumerable || expected.configurable !== actual.configurable) return false;
+  if ("value" in expected || "value" in actual) return "value" in expected && "value" in actual && expected.writable === actual.writable && expected.value === actual.value;
+  return expected.get === actual.get && expected.set === actual.set;
+}
+
+function trustedArrayPrototype(): boolean {
+  try {
+    const keys = Reflect.ownKeys(TRUSTED_ARRAY_PROTOTYPE);
+    return keys.length === TRUSTED_ARRAY_DESCRIPTORS.size && [...TRUSTED_ARRAY_DESCRIPTORS].every(([key, descriptor]) => sameArrayDescriptor(descriptor, Object.getOwnPropertyDescriptor(TRUSTED_ARRAY_PROTOTYPE, key)));
+  } catch {
+    return false;
+  }
+}
+
 function isSafeArray(value: unknown): value is readonly unknown[] {
   if (!Array.isArray(value)) return false;
   try {
-    if (Object.getPrototypeOf(value) !== Array.prototype) return false;
+    if (Object.getPrototypeOf(value) !== TRUSTED_ARRAY_PROTOTYPE || !trustedArrayPrototype()) return false;
     for (const key of Reflect.ownKeys(value)) {
       if (key === "length") continue;
       if (typeof key !== "string" || !/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= value.length) return false;
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
       if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) return false;
     }
-    for (let index = 0; index < value.length; index += 1) {
-      if (!Object.prototype.hasOwnProperty.call(value, String(index))) return false;
-    }
+    for (let index = 0; index < value.length; index += 1) if (!Object.prototype.hasOwnProperty.call(value, String(index))) return false;
     return true;
   } catch {
     return false;
@@ -110,12 +126,14 @@ function validateAcceptedRecord(value: unknown, field: string): void {
   if (!isPlainRecord(value)) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", `${field} must be a plain object`);
   exactStateKeys(value, ["eventId", "sourceEventId", "observationId", "relationshipId", "objectId", "blockNumber", "blockHash", "transactionHash", "transactionIndex", "logIndex", "eventIndex", "payloadHash", "finalityState", "evidenceStatus", "reconciliationStatus"], field);
   for (const key of ["eventId", "sourceEventId", "observationId", "relationshipId", "objectId", "evidenceStatus", "reconciliationStatus"]) stateString(value[key], `${field}.${key}`);
+  if (value.evidenceStatus !== "PENDING_PROOF" || value.reconciliationStatus !== "RECONCILIATION_PENDING") throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", `${field} status axes are unsupported`);
   stateInteger(value.blockNumber, `${field}.blockNumber`);
   stateHash(value.blockHash, `${field}.blockHash`);
   stateHash(value.transactionHash, `${field}.transactionHash`);
   for (const key of ["transactionIndex", "logIndex", "eventIndex"]) stateInteger(value[key], `${field}.${key}`);
+  if (value.logIndex !== value.eventIndex) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", `${field}.logIndex must equal eventIndex`);
   stateHash(value.payloadHash, `${field}.payloadHash`, false);
-  if (!["UNKNOWN", "FINALITY_PENDING", "FINALIZED", "REORGED"].includes(String(value.finalityState))) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", `${field}.finalityState is unsupported`);
+  if (typeof value.finalityState !== "string" || !["UNKNOWN", "FINALITY_PENDING", "FINALIZED", "REORGED"].includes(value.finalityState)) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", `${field}.finalityState is unsupported`);
   if (value.eventId !== value.observationId) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", `${field}.eventId must equal observationId`);
 }
 
@@ -154,7 +172,17 @@ function validateStateEnvelope(value: unknown, manifestHash: string, scopeId: st
   if (value.schemaVersion !== "slice-d-source-ingestion-v1" || value.manifestHash !== manifestHash) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "backfill state schema or manifest binding is invalid");
   stateHash(value.manifestHash, "backfill state manifestHash", false);
   if (!isSafeArray(value.acceptedEvents) || !isSafeArray(value.rejectedEvents) || !isSafeArray(value.duplicateEvents) || !isSafeArray(value.providerErrors)) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "backfill state collections must be dense safe arrays");
-  value.acceptedEvents.forEach((item, index) => validateAcceptedRecord(item, `acceptedEvents[${index}]`));
+  const acceptedEventIds = new Set<string>();
+  const acceptedCoordinates = new Set<string>();
+  value.acceptedEvents.forEach((raw, index) => {
+    validateAcceptedRecord(raw, `acceptedEvents[${index}]`);
+    const item = raw as AcceptedEventRecord;
+    if (acceptedEventIds.has(item.eventId)) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "backfill state has duplicate accepted event IDs");
+    const coordinateKey = `${item.transactionHash}:${item.eventIndex}`;
+    if (acceptedCoordinates.has(coordinateKey)) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "backfill state has duplicate accepted source coordinates");
+    acceptedEventIds.add(item.eventId);
+    acceptedCoordinates.add(coordinateKey);
+  });
   value.rejectedEvents.forEach((item, index) => validateRejectedRecord(item, `rejectedEvents[${index}]`));
   value.duplicateEvents.forEach((item, index) => validateDuplicateRecord(item, `duplicateEvents[${index}]`));
   value.providerErrors.forEach((item, index) => validateProviderErrorRecord(item, `providerErrors[${index}]`));
@@ -276,17 +304,34 @@ function rejectionId(log: SourceLog): string {
   return `source-coordinate:${log.transactionHash}:${log.logIndex}`;
 }
 
-function acceptedMatchesObservation(record: AcceptedEventRecord, value: unknown): boolean {
+function acceptedMatchesObservation(record: AcceptedEventRecord, value: unknown, manifest: SourceScopeManifest): boolean {
   if (!isPlainRecord(value)) return false;
-  if (value.observationId !== record.observationId || value.sourceEventId !== record.sourceEventId || value.relationshipId !== record.relationshipId || value.objectId !== record.objectId || value.blockHash !== record.blockHash || value.transactionHash !== record.transactionHash || value.eventIndex !== record.eventIndex) return false;
+  if (value.observationId !== record.observationId || value.sourceEventId !== record.sourceEventId || value.relationshipId !== record.relationshipId || value.objectId !== record.objectId || value.objectType !== "Commitment" || value.eventType !== "CapitalCommitted" || value.sourceDomain !== manifest.sourceDomain || value.chainKey !== manifest.chainKey || value.chainId !== manifest.evmChainId || value.adapterVersion !== manifest.adapterVersion || value.payloadSchemaVersion !== manifest.eventFamily.schemaVersion || value.blockHash !== record.blockHash || value.transactionHash !== record.transactionHash || value.transactionIndex !== record.transactionIndex || value.eventIndex !== record.eventIndex) return false;
   if (typeof value.blockNumber !== "bigint" || value.blockNumber !== BigInt(record.blockNumber)) return false;
   if (!isPlainRecord(value.normalizedPayload)) return false;
   const observedPayloadHash = createHash("sha256").update(canonicalJson(value.normalizedPayload), "utf8").digest("hex");
   if (observedPayloadHash !== record.payloadHash) return false;
+  if (["CONFLICTING", "MALFORMED", "REJECTED", "UNAVAILABLE"].includes(String(value.observationState))) return false;
   if (record.finalityState === "REORGED") return value.finalityState === "REORGED";
   return value.finalityState === record.finalityState;
 }
 
+function publicObservationMatches(normalized: NormalizedSourceObservation, value: unknown): boolean {
+  if (!isPlainRecord(value)) return false;
+  if (value.observationId !== normalized.observationId || value.sourceEventId !== normalized.sourceEventId || value.relationshipId !== normalized.observation.relationshipId || value.objectId !== normalized.observation.objectId || value.objectType !== normalized.observation.objectType || value.eventType !== normalized.observation.eventType || value.sourceDomain !== normalized.observation.sourceDomain || value.chainKey !== normalized.observation.chainKey || value.chainId !== normalized.observation.chainId || value.contractAddress !== normalized.observation.contractAddress || value.transactionHash !== normalized.observation.transactionHash || value.transactionIndex !== normalized.observation.transactionIndex || value.eventIndex !== normalized.observation.eventIndex || value.blockNumber !== normalized.observation.blockNumber || value.blockHash !== normalized.observation.blockHash || value.parentBlockHash !== normalized.observation.parentBlockHash || value.payloadSchemaVersion !== normalized.observation.payloadSchemaVersion || value.adapterVersion !== normalized.observation.adapterVersion) return false;
+  if (!isPlainRecord(value.normalizedPayload)) return false;
+  if (createHash("sha256").update(canonicalJson(value.normalizedPayload), "utf8").digest("hex") !== normalized.payloadHash) return false;
+  return value.observationState === "OBSERVED" && value.finalityState !== "REORGED";
+}
+function validateSnapshotBinding(snapshot: SerializedSliceBSnapshot, api: ReturnType<SliceBSerializedBoundary["read"]>, manifest: SourceScopeManifest, cursor: BackfillCursor | null): void {
+  const checkpoint = api.checkpoint(manifest.chainKey);
+  if (!checkpoint || checkpoint.chainKey !== manifest.chainKey || checkpoint.chainId !== manifest.evmChainId || checkpoint.sourceDomain !== manifest.sourceDomain || checkpoint.adapterVersion !== manifest.adapterVersion || checkpoint.observationSchemaVersion !== manifest.eventFamily.schemaVersion || checkpoint.finalityPolicyVersion !== manifest.finalityPolicy.version || checkpoint.cursorMode !== manifest.cursor.mode || checkpoint.projectionSchemaVersion !== "slice-b-read-model-v1") throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "serialized Slice B snapshot is not bound to the D0 source descriptor");
+  if (cursor) {
+    const bootstrapCursor = cursor.lastCompletedBlock === null && BigInt(cursor.nextBlock) === checkpoint.lastObservedBlock;
+    const resumedCursor = BigInt(cursor.nextBlock) === checkpoint.lastObservedBlock + 1n && (cursor.lastCompletedBlock === null || BigInt(cursor.lastCompletedBlock) === checkpoint.lastObservedBlock);
+    if (!bootstrapCursor && !resumedCursor) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "serialized cursor does not match the public Slice B checkpoint");
+  }
+}
 function markReorged(values: Map<string, AcceptedEventRecord>, targets: readonly { readonly blockNumber: bigint; readonly oldBlockHash: string | null }[]): Map<string, AcceptedEventRecord> {
   const next = new Map(values);
   for (const [key, record] of values) {
@@ -360,14 +405,14 @@ export class SourceBackfill {
     }
 
     const previousNext = this.cursor?.nextBlock ?? request.startBlock;
-    const scanStart = Math.min(request.startBlock, previousNext);
+    const scanStart = request.startBlock;
     let currentCursor: BackfillCursor = {
       scope: request.scope,
       mode: "SPARSE_EVENT",
       requestedStart: request.startBlock,
       requestedEnd: request.endBlock,
       nextBlock: previousNext < request.startBlock ? request.startBlock : previousNext,
-      lastCompletedBlock: this.cursor?.lastCompletedBlock ?? scanStart - 1,
+      lastCompletedBlock: this.cursor?.lastCompletedBlock ?? (scanStart > 0 ? scanStart - 1 : null),
       sequence: this.cursor?.sequence ?? 0,
     };
 
@@ -401,10 +446,18 @@ export class SourceBackfill {
     let workingAccepted = new Map(this.accepted);
     let workingIdentities = new Map(this.identities);
     const finalityHeight = latest - this.manifest.finalityPolicy.depth;
-    let lastCompletedForRun: number | null = scanStart - 1;
+    let lastCompletedForRun: number | null = scanStart > 0 ? scanStart - 1 : null;
     let blockedAt: number | null = null;
 
     for (let blockNumber = scanStart; blockNumber <= request.endBlock; blockNumber += 1) {
+      if (blockNumber > latest) {
+        const failure = this.failure("getBlockHeader", new SourceIngestionError("NOT_FOUND", "requested block is above the provider latest block"), blockNumber);
+        runProviderErrors.push(failure);
+        this.providerErrors.push(failure);
+        blockedAt = blockNumber;
+        retry = this.maybeScheduleRetry(failure, this.snapshot);
+        break;
+      }
       let block: SourceBlockHeader;
       let parent: SourceBlockHeader | null;
       let logs: SourceLog[];
@@ -426,7 +479,7 @@ export class SourceBackfill {
           fromBlock: blockNumber,
           toBlock: blockNumber,
         }), blockNumber);
-        if (!Array.isArray(rawLogs)) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "getLogs must return an array");
+        if (!isSafeArray(rawLogs)) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "getLogs must return a dense safe array");
         logs = rawLogs.map((raw, index) => validateLog(raw, `logs[${index}]`, block)).sort((left, right) => left.transactionIndex - right.transactionIndex || left.logIndex - right.logIndex || left.transactionHash.localeCompare(right.transactionHash));
       } catch (error) {
         const method: ProviderErrorRecord["method"] = error instanceof SourceIngestionError && error.code === "MISSING_TRUSTED_HISTORY" ? "getBlockHeader" : errorMethod(error, readMethod);
@@ -439,7 +492,7 @@ export class SourceBackfill {
       }
 
       const receiptCache = new Map<string, unknown>();
-      let workingBlockSnapshot = workingSnapshot;
+      let workingBlockSnapshot = this.b.observeBlockHeader(workingSnapshot, block);
       let workingBlockAccepted = new Map(workingAccepted);
       const workingBlockIdentities = new Map(workingIdentities);
       const blockAccepted: string[] = [];
@@ -465,7 +518,10 @@ export class SourceBackfill {
             }
             continue;
           }
-          workingBlockSnapshot = this.b.ingest(workingBlockSnapshot, normalized.observation);
+          const nextSnapshot = this.b.ingest(workingBlockSnapshot, normalized.observation);
+          const indexed = this.b.read(nextSnapshot).timeline(normalized.observation.relationshipId).filter((item) => publicObservationMatches(normalized, item));
+          if (indexed.length !== 1) throw new SourceIngestionError("INCONSISTENT_SOURCE_DATA", "Slice B did not index the normalized source observation exactly once");
+          workingBlockSnapshot = nextSnapshot;
           const record = observationSummary(normalized, finalityHeight);
           workingBlockAccepted.set(key, record);
           workingBlockIdentities.set(key, record);
@@ -549,6 +605,7 @@ export class SourceBackfill {
         break;
       }
 
+      const blockSnapshotChanged = workingBlockSnapshot.hash !== workingSnapshot.hash;
       workingAccepted = this.updateFinality(workingBlockAccepted, effectiveFinalityHeight ?? -1, new Set(blockAccepted), finalityHeight);
       workingIdentities = workingBlockIdentities;
       workingSnapshot = workingBlockSnapshot;
@@ -560,7 +617,6 @@ export class SourceBackfill {
       runDuplicates.push(...blockDuplicates);
       this.rejected.push(...blockRejected);
       lastCompletedForRun = blockNumber;
-      const blockSnapshotChanged = workingBlockSnapshot.hash !== workingSnapshot.hash;
       const advancedState = blockNumber >= previousNext || blockAccepted.length > 0 || blockRejected.length > 0 || blockSnapshotChanged;
       currentCursor = Object.freeze({ ...currentCursor, nextBlock: Math.max(currentCursor.nextBlock, blockNumber + 1), lastCompletedBlock: Math.max(currentCursor.lastCompletedBlock ?? -1, blockNumber), sequence: currentCursor.sequence + (advancedState ? 1 : 0) });
       this.cursor = currentCursor;
@@ -670,8 +726,9 @@ export class SourceBackfill {
     if (state.snapshot) {
       this.c.read(state.snapshot);
       const api = this.b.read(state.snapshot);
+      validateSnapshotBinding(state.snapshot, api, this.manifest, state.cursor);
       for (const record of state.acceptedEvents) {
-        const matches = api.timeline(record.relationshipId).filter((item) => acceptedMatchesObservation(record, item));
+        const matches = api.timeline(record.relationshipId).filter((item) => acceptedMatchesObservation(record, item, this.manifest));
         if (matches.length !== 1) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", `accepted event ${record.observationId} does not match the public Slice B snapshot`);
       }
     } else if (state.acceptedEvents.length > 0) {
@@ -694,7 +751,7 @@ export class SourceBackfill {
   }
 
   private newCursor(request: BackfillRequest): BackfillCursor {
-    return Object.freeze({ scope: request.scope, mode: "SPARSE_EVENT", requestedStart: request.startBlock, requestedEnd: request.endBlock, nextBlock: request.startBlock, lastCompletedBlock: request.startBlock - 1, sequence: 0 });
+    return Object.freeze({ scope: request.scope, mode: "SPARSE_EVENT", requestedStart: request.startBlock, requestedEnd: request.endBlock, nextBlock: request.startBlock, lastCompletedBlock: request.startBlock > 0 ? request.startBlock - 1 : null, sequence: 0 });
   }
 
   private validateRequest(request: BackfillRequest): void {
@@ -706,6 +763,7 @@ export class SourceBackfill {
     if (!isSafeBlock(request.startBlock) || !isSafeBlock(request.endBlock) || request.startBlock > request.endBlock) throw new SourceIngestionError("INVALID_BACKFILL_REQUEST", "backfill range must be ordered safe nonnegative integers");
     const range = request.endBlock - request.startBlock + 1;
     if (range > this.manifest.cursor.maxRange) throw new SourceIngestionError("INVALID_BACKFILL_REQUEST", "backfill range exceeds the D0 maximum");
+    if (this.cursor && request.startBlock > this.cursor.nextBlock) throw new SourceIngestionError("CURSOR_NOT_ADVANCED", "backfill range skips unprocessed source blocks");
     if (request.maxRange !== undefined && (!isSafeBlock(request.maxRange) || request.maxRange < range || request.maxRange > this.manifest.cursor.maxRange)) throw new SourceIngestionError("INVALID_BACKFILL_REQUEST", "request maxRange must bound the range and not exceed the D0 maximum");
     if (request.finalityPolicy) {
       if (!isPlainRecord(request.finalityPolicy) || Object.keys(request.finalityPolicy).sort().join(",") !== "depth,version" || typeof request.finalityPolicy.version !== "string" || !isSafeBlock(request.finalityPolicy.depth)) throw new SourceIngestionError("INVALID_BACKFILL_REQUEST", "finality policy shape is invalid");

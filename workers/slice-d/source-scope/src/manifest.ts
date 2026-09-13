@@ -159,6 +159,41 @@ export class SourceScopeManifestError extends Error {
   }
 }
 
+const TRUSTED_ARRAY_PROTOTYPE = Array.prototype;
+const TRUSTED_ARRAY_DESCRIPTORS = new Map(Reflect.ownKeys(TRUSTED_ARRAY_PROTOTYPE).map((key) => [key, Object.getOwnPropertyDescriptor(TRUSTED_ARRAY_PROTOTYPE, key)!]));
+
+function sameDescriptor(expected: PropertyDescriptor, actual: PropertyDescriptor | undefined): boolean {
+  if (!actual || expected.enumerable !== actual.enumerable || expected.configurable !== actual.configurable) return false;
+  if ("value" in expected || "value" in actual) return "value" in expected && "value" in actual && expected.writable === actual.writable && expected.value === actual.value;
+  return expected.get === actual.get && expected.set === actual.set;
+}
+
+function trustedArrayPrototype(): boolean {
+  try {
+    const keys = Reflect.ownKeys(TRUSTED_ARRAY_PROTOTYPE);
+    return keys.length === TRUSTED_ARRAY_DESCRIPTORS.size && [...TRUSTED_ARRAY_DESCRIPTORS].every(([key, descriptor]) => sameDescriptor(descriptor, Object.getOwnPropertyDescriptor(TRUSTED_ARRAY_PROTOTYPE, key)));
+  } catch {
+    return false;
+  }
+}
+
+function isSafeArray(value: unknown): value is readonly unknown[] {
+  if (!Array.isArray(value)) return false;
+  try {
+    if (Object.getPrototypeOf(value) !== TRUSTED_ARRAY_PROTOTYPE || !trustedArrayPrototype()) return false;
+    for (const key of Reflect.ownKeys(value)) {
+      if (key === "length") continue;
+      if (typeof key !== "string" || !/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= value.length) return false;
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) return false;
+    }
+    for (let index = 0; index < value.length; index += 1) if (!Object.prototype.hasOwnProperty.call(value, String(index))) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const ROOT_KEYS = [
   "adapterVersion",
   "chainKey",
@@ -188,10 +223,10 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   try {
     const prototype = Object.getPrototypeOf(value);
     if (prototype !== Object.prototype && prototype !== null) return false;
-    return Object.keys(value).every((key) => {
-      if (["__proto__", "constructor", "prototype"].includes(key)) return false;
+    return Reflect.ownKeys(value).every((key) => {
+      if (typeof key !== "string" || ["__proto__", "constructor", "prototype"].includes(key)) return false;
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
-      return descriptor !== undefined && "value" in descriptor;
+      return descriptor !== undefined && descriptor.enumerable && "value" in descriptor;
     });
   } catch {
     return false;
@@ -206,10 +241,15 @@ function canonicalize(value: unknown, ancestors = new Set<object>()): unknown {
   }
   if (typeof value !== "object") fail("UNSAFE_VALUE", "manifest contains an unsupported value type");
   if (ancestors.has(value)) fail("UNSAFE_INPUT", "manifest contains a cycle");
-  if (!isPlainRecord(value) && !Array.isArray(value)) fail("UNSAFE_INPUT", "manifest contains an unsafe object");
+  if (!isPlainRecord(value) && !isSafeArray(value)) fail("UNSAFE_INPUT", "manifest contains an unsafe object");
   const nextAncestors = new Set(ancestors).add(value);
-  if (Array.isArray(value)) return value.map((item) => canonicalize(item, nextAncestors));
-  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalize(value[key], nextAncestors)]));
+  if (isSafeArray(value)) {
+    const items: unknown[] = [];
+    for (let index = 0; index < value.length; index += 1) items.push(canonicalize(value[index], nextAncestors));
+    return items;
+  }
+  const recordValue = value as Record<string, unknown>;
+  return Object.fromEntries(Object.keys(recordValue).sort().map((key) => [key, canonicalize(recordValue[key], nextAncestors)]));
 }
 
 function record(value: unknown, field: string): Record<string, unknown> {
@@ -255,7 +295,7 @@ function exactString(value: unknown, expected: string, field: string): string {
 }
 
 function expectedFields(value: unknown, expected: readonly EventField[], field: string): readonly EventField[] {
-  if (!Array.isArray(value) || value.length !== expected.length) fail("UNSUPPORTED_EVENT", `${field} has the wrong field count`);
+  if (!isSafeArray(value) || value.length !== expected.length) fail("UNSUPPORTED_EVENT", `${field} has the wrong field count`);
   const actual = value.map((item, index) => {
     const entry = record(item, `${field}[${index}]`);
     exactKeys(entry, ["indexed", "name", "topic", "type"], `${field}[${index}]`);
@@ -336,7 +376,7 @@ function parseManifest(input: unknown): SourceScopeManifest {
   exactString(cursor.unit, "BLOCK", "cursor.unit");
   const maxRange = integerValue(cursor.maxRange, "cursor.maxRange", 1, 1_000_000);
 
-  if (!Array.isArray(root.relationshipMappings) || root.relationshipMappings.length === 0) fail("MISSING_MAPPING", "at least one relationship mapping is required");
+  if (!isSafeArray(root.relationshipMappings) || root.relationshipMappings.length === 0) fail("MISSING_MAPPING", "at least one relationship mapping is required");
   const mappingIds = new Set<string>();
   const mappingKeys = new Set<string>();
   const relationshipMappings = root.relationshipMappings.map((item, index) => {
