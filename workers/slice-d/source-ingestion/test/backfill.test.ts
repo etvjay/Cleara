@@ -11,7 +11,7 @@ import { SourceIngestionError } from "../src/errors.js";
 import { SourceBackfill, type BackfillRequest } from "../src/backfill.js";
 import { DeterministicFixtureProvider } from "../src/fixture-provider.js";
 import { SerializedSliceCBoundary } from "../src/slice-c-boundary.js";
-import { defaultEvents, fixtureDataset, makeEvent, manifest, replacementDataset, replacementDatasetMultiple } from "./fixtures.js";
+import { defaultEvents, fixtureDataset, hexWord, makeEvent, manifest, replacementDataset, replacementDatasetMultiple, replacementDatasetTwoBlocks, secondProviderAddress } from "./fixtures.js";
 
 function request(overrides: Partial<BackfillRequest> = {}): BackfillRequest {
   return {
@@ -313,6 +313,30 @@ test("backfill state serializes and restores the cursor, dedupe set, and B snaps
   const overlap = await restored.run(request());
   assert.equal(overlap.snapshot!.hash, first.snapshot!.hash);
   assert.equal(overlap.duplicateEvents.length, 2);
+});
+
+test("multi-block replay refreshes the next target after the first replacement", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "cleara-d1-multi-target-replay-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const originalEvents = [makeEvent({ blockNumber: 10, sourceCommitmentId: hexWord(1) }), makeEvent({ blockNumber: 11, sourceCommitmentId: hexWord(2), provider: secondProviderAddress, logIndex: 1 })];
+  let active = new DeterministicFixtureProvider(fixtureDataset({ latestBlockNumber: 13, events: originalEvents }));
+  const switchingProvider = {
+    getChainIdentity: async (scope: Parameters<DeterministicFixtureProvider["getChainIdentity"]>[0]) => active.getChainIdentity(scope),
+    getLatestBlockNumber: async (scope: Parameters<DeterministicFixtureProvider["getLatestBlockNumber"]>[0]) => active.getLatestBlockNumber(scope),
+    getBlockHeader: async (scope: Parameters<DeterministicFixtureProvider["getBlockHeader"]>[0], blockNumber: number) => active.getBlockHeader(scope, blockNumber),
+    getLogs: async (scope: Parameters<DeterministicFixtureProvider["getLogs"]>[0], filter: Parameters<DeterministicFixtureProvider["getLogs"]>[1]) => active.getLogs(scope, filter),
+    getTransactionReceipt: async (scope: Parameters<DeterministicFixtureProvider["getTransactionReceipt"]>[0], transactionHash: string) => active.getTransactionReceipt(scope, transactionHash),
+  };
+  const runner = new SourceBackfill({ manifest, provider: switchingProvider, c: await boundary(root) });
+  const initial = await runner.run(request({ endBlock: 11 }));
+  assert.equal(initial.status, "COMPLETED");
+
+  active = new DeterministicFixtureProvider(replacementDatasetTwoBlocks());
+  const replaced = await runner.run(request({ endBlock: 11 }));
+  assert.equal(replaced.status, "COMPLETED");
+  assert.equal(replaced.replayStatus, "CURRENT");
+  assert.equal(replaced.replayTargets.length, 0);
+  assert.equal(replaced.replayHistory.filter((attempt) => attempt.status === "SUCCEEDED").length, 2);
 });
 
 test("backfill preserves multiple events in one replacement block", async (t) => {

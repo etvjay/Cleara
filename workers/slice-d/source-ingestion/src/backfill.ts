@@ -382,21 +382,29 @@ export class SourceBackfill {
       const checkpoint = checkpointState(workingBlockSnapshot, this.c, this.manifest);
       if (checkpoint?.replayStatus === "REPLAY_REQUIRED" && this.autoReplay && finalityHeight >= 0) {
         const seen = new Set<string>();
-        const targets = checkpoint.replayTargets;
-        for (const target of targets) {
-          const candidates = [
-            ...replacementCandidates.map((candidate) => candidate.observation),
-            ...this.findReplayCandidates(workingBlockSnapshot, target, workingBlockAccepted.values()),
-          ];
-          for (const candidate of candidates) {
-            if (seen.has(candidate.observationId)) continue;
-            seen.add(candidate.observationId);
-            if (candidate.blockNumber !== target.blockNumber || candidate.blockHash === target.oldBlockHash || (target.oldBlockHash !== null && candidate.parentBlockHash !== target.expectedParentBlockHash)) continue;
-            const replay = this.b.replay(workingBlockSnapshot, candidate, finalityHeight, block.timestamp);
-            workingBlockSnapshot = replay.snapshot;
-            if (replay.outcome === "REPLAYED") break;
+        let progress = true;
+        while (progress) {
+          progress = false;
+          const currentCheckpoint = checkpointState(workingBlockSnapshot, this.c, this.manifest);
+          if (currentCheckpoint?.replayStatus !== "REPLAY_REQUIRED") break;
+          for (const target of currentCheckpoint.replayTargets) {
+            const candidates = [
+              ...replacementCandidates.map((candidate) => candidate.observation),
+              ...this.findReplayCandidates(workingBlockSnapshot, target, workingBlockAccepted.values()),
+            ];
+            for (const candidate of candidates) {
+              if (seen.has(candidate.observationId)) continue;
+              seen.add(candidate.observationId);
+              if (candidate.blockNumber !== target.blockNumber || candidate.blockHash === target.oldBlockHash || (target.oldBlockHash !== null && candidate.parentBlockHash !== target.expectedParentBlockHash)) continue;
+              const replay = this.b.replay(workingBlockSnapshot, candidate, finalityHeight, block.timestamp);
+              workingBlockSnapshot = replay.snapshot;
+              if (replay.outcome === "REPLAYED") {
+                progress = true;
+                break;
+              }
+            }
+            if (progress) break;
           }
-          if (checkpointState(workingBlockSnapshot, this.c, this.manifest)?.replayStatus !== "REPLAY_REQUIRED") break;
         }
       }
 

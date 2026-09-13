@@ -147,6 +147,18 @@ export function createReplacementDatasetMultiple(): FixtureDataset {
   return { ...base, logs: [second.log, first.log], receipts: [second.receipt, first.receipt] };
 }
 
+export function createReplacementDatasetTwoBlocks(): FixtureDataset {
+  const first = makeEvent({ blockNumber: 10, blockHash: hexWord(0xc010), transactionHash: txHash(110), sourceCommitmentId: hexWord(3) });
+  const second = makeEvent({ blockNumber: 11, blockHash: hexWord(0xc011), transactionHash: txHash(111), sourceCommitmentId: hexWord(4), logIndex: 1, provider: secondProviderAddress });
+  const blocks = [
+    ...[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((number) => makeBlock(number)),
+    makeBlock(10, { blockHash: hexWord(0xc010) }),
+    makeBlock(11, { blockHash: hexWord(0xc011), parentHash: hexWord(0xc010) }),
+    makeBlock(12, { parentHash: hexWord(0xc011) }),
+  ];
+  return { scopeId: manifest.scopeId, identity, latestBlockNumber: 13, blocks, logs: [second.log, first.log], receipts: [second.receipt, first.receipt] };
+}
+
 export function manifestCopy(): SourceScopeManifest {
   return JSON.parse(JSON.stringify(manifest)) as SourceScopeManifest;
 }
