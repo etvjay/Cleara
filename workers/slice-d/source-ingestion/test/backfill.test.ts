@@ -441,6 +441,8 @@ test("a replacement ingested before finality replays when a later overlap reache
   const pending = await runner.run({ scope: manifest.scopeId, startBlock: 10, endBlock: 10 });
   assert.equal(pending.status, "REPLAY_REQUIRED");
   assert.equal(pending.acceptedEvents.length, 1);
+  const pendingState = JSON.parse(runner.serializeState()) as { acceptedEvents: Array<{ blockHash: string; finalityState: string }> };
+  assert.equal(pendingState.acceptedEvents.find((event) => event.blockHash === hexWord(0xc010))?.finalityState, "FINALITY_PENDING");
 
   active = new DeterministicFixtureProvider(replacementDataset());
   const completed = await runner.run({ scope: manifest.scopeId, startBlock: 10, endBlock: 10 });

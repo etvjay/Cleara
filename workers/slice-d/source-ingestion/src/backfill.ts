@@ -549,7 +549,7 @@ export class SourceBackfill {
         break;
       }
 
-      workingAccepted = this.updateFinality(workingBlockAccepted, effectiveFinalityHeight ?? -1);
+      workingAccepted = this.updateFinality(workingBlockAccepted, effectiveFinalityHeight ?? -1, new Set(blockAccepted), finalityHeight);
       workingIdentities = workingBlockIdentities;
       workingSnapshot = workingBlockSnapshot;
       this.snapshot = workingSnapshot;
@@ -790,9 +790,9 @@ export class SourceBackfill {
     }
   }
 
-  private updateFinality(values: Map<string, AcceptedEventRecord>, finality: number): Map<string, AcceptedEventRecord> {
+  private updateFinality(values: Map<string, AcceptedEventRecord>, finality: number, newlyAccepted = new Set<string>(), observedFinality = finality): Map<string, AcceptedEventRecord> {
     const next = new Map<string, AcceptedEventRecord>();
-    for (const [key, value] of values) next.set(key, value.finalityState === "REORGED" ? value : withFinality(value, finality));
+    for (const [key, value] of values) next.set(key, value.finalityState === "REORGED" ? value : withFinality(value, newlyAccepted.has(key) ? observedFinality : finality));
     return next;
   }
 
