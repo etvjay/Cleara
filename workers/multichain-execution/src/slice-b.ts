@@ -31,6 +31,8 @@ export interface ObservationEnvelope {
   readonly chainId: number;
   readonly contractAddress: string;
   readonly transactionHash: string;
+  /** Source receipt transaction position, when provided by a source adapter. */
+  readonly transactionIndex?: number;
   readonly eventIndex: number;
   readonly blockNumber: bigint;
   readonly blockHash: string;
@@ -159,6 +161,18 @@ export interface BlockHeader {
   readonly status: "CANONICAL" | "CANDIDATE" | "SUPERSEDED";
 }
 
+export interface BlockHeaderObservation {
+  readonly chainKey: number;
+  readonly chainId: number;
+  readonly sourceDomain: string;
+  readonly blockNumber: bigint;
+  readonly blockHash: string;
+  readonly parentBlockHash: string | null;
+  readonly adapterVersion: string;
+  readonly payloadSchemaVersion: string;
+  readonly observationId: string;
+  readonly observedAt: number;
+}
 export interface Checkpoint {
   readonly chainKey: number;
   readonly sourceDomain: string | null;
@@ -214,6 +228,7 @@ export interface SourceScopeDescriptor {
   readonly cursorMode: "SPARSE_EVENT";
   readonly anchorBlockNumber: bigint;
   readonly anchorBlockHash: string;
+  readonly sourceScopeHash?: string;
 }
 
 export const DEFAULT_SOURCE_SCOPE: SourceScopeDescriptor = {
@@ -356,19 +371,67 @@ const reconciliationStates = new Set<ReconciliationState>(["UNKNOWN", "PENDING",
 const authorities = new Set<ReconciliationRecord["authority"]>(["creditcoin", "source-chain", "attestcoin", "projection"]);
 const objectTypes = new Set<ObjectType>(["Claim", "Facility", "Allocation", "Commitment", "Obligation", "ClearingEpoch", "Residual", "Settlement", "Evidence", "ExternalExecution"]);
 
-function requireInputObject(value: unknown, field: string): asserts value is Record<string, unknown> {
+const SAFE_OBJECT_PROTOTYPE_KEYS = new Set(["constructor", "__defineGetter__", "__defineSetter__", "hasOwnProperty", "__lookupGetter__", "__lookupSetter__", "isPrototypeOf", "propertyIsEnumerable", "toString", "valueOf", "__proto__", "toLocaleString"]);
+const SAFE_ARRAY_PROTOTYPE_KEYS = new Set(["length", "constructor", "at", "concat", "copyWithin", "fill", "find", "findIndex", "findLast", "findLastIndex", "lastIndexOf", "pop", "push", "reverse", "shift", "unshift", "slice", "sort", "splice", "includes", "indexOf", "join", "keys", "entries", "values", "forEach", "filter", "flat", "flatMap", "map", "every", "some", "reduce", "reduceRight", "toReversed", "toSorted", "toSpliced", "with", "toLocaleString", "toString"]);
+
+function safeIntrinsicPrototypes(): boolean {
   try {
-    if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error();
-    const prototype = Object.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) throw new Error();
-    for (const key of Object.keys(value)) {
-      if (["__proto__", "constructor", "prototype"].includes(key)) throw new Error();
-      const descriptor = Object.getOwnPropertyDescriptor(value, key);
-      if (!descriptor || !("value" in descriptor)) throw new Error();
-    }
+    const objectKeys = Reflect.ownKeys(Object.prototype);
+    const arrayKeys = Reflect.ownKeys(Array.prototype);
+    const arrayStrings = arrayKeys.filter((key): key is string => typeof key === "string");
+    const arraySymbols = arrayKeys.filter((key): key is symbol => typeof key === "symbol");
+    return objectKeys.length === SAFE_OBJECT_PROTOTYPE_KEYS.size
+      && objectKeys.every((key) => typeof key === "string" && SAFE_OBJECT_PROTOTYPE_KEYS.has(key))
+      && arrayStrings.length === SAFE_ARRAY_PROTOTYPE_KEYS.size
+      && arrayStrings.every((key) => SAFE_ARRAY_PROTOTYPE_KEYS.has(key))
+      && arraySymbols.length === 2
+      && arraySymbols.includes(Symbol.iterator)
+      && arraySymbols.includes(Symbol.unscopables);
   } catch {
-    throw new SliceBValidationError(`${field} must be a safe plain object`);
+    return false;
   }
+}
+
+function assertSafeBoundaryValue(value: unknown, field: string, ancestors = new Set<object>()): void {
+  if (value === null || typeof value === "string" || typeof value === "boolean" || typeof value === "number" || typeof value === "bigint") return;
+  if (typeof value !== "object") throw new SliceBValidationError(`${field} contains an unsupported value`);
+  if (!safeIntrinsicPrototypes()) throw new SliceBValidationError(`${field} uses a polluted intrinsic prototype`);
+  if (ancestors.has(value)) throw new SliceBValidationError(`${field} contains a cycle`);
+  const next = new Set(ancestors).add(value);
+  if (Array.isArray(value)) {
+    if (Object.getPrototypeOf(value) !== Array.prototype) throw new SliceBValidationError(`${field} must use the intrinsic array prototype`);
+    const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
+    if (!lengthDescriptor || !("value" in lengthDescriptor) || typeof lengthDescriptor.value !== "number" || !Number.isSafeInteger(lengthDescriptor.value) || lengthDescriptor.value < 0) throw new SliceBValidationError(`${field} has an invalid array length`);
+    const length = lengthDescriptor.value;
+    for (const key of Reflect.ownKeys(value)) {
+      if (key === "length") continue;
+      if (typeof key !== "string" || !/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= length) throw new SliceBValidationError(`${field} contains an unsafe array property`);
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) throw new SliceBValidationError(`${field} contains an accessor or hidden array property`);
+    }
+    for (let index = 0; index < length; index += 1) {
+      if (!Object.prototype.hasOwnProperty.call(value, String(index))) throw new SliceBValidationError(`${field} is sparse`);
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+      if (!descriptor || !("value" in descriptor)) throw new SliceBValidationError(`${field}[${index}] contains an accessor`);
+      assertSafeBoundaryValue(descriptor.value, `${field}[${index}]`, next);
+    }
+    try { structuredClone(value); } catch { throw new SliceBValidationError(`${field} contains a proxy or non-cloneable object`); }
+    return;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) throw new SliceBValidationError(`${field} must use a plain object prototype`);
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== "string" || ["__proto__", "constructor", "prototype"].includes(key)) throw new SliceBValidationError(`${field} contains an unsafe key`);
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) throw new SliceBValidationError(`${field} contains an accessor or hidden property`);
+    assertSafeBoundaryValue(descriptor.value, `${field}.${key}`, next);
+  }
+  try { structuredClone(value); } catch { throw new SliceBValidationError(`${field} contains a proxy or non-cloneable object`); }
+}
+
+function requireInputObject(value: unknown, field: string): asserts value is Record<string, unknown> {
+  assertSafeBoundaryValue(value, field);
+  if (value === null || typeof value !== "object" || Array.isArray(value)) throw new SliceBValidationError(`${field} must be a safe plain object`);
 }
 
 function requireString(value: unknown, field: string, allowEmpty = false): asserts value is string {
@@ -387,17 +450,18 @@ function requireEnum<T>(value: unknown, values: ReadonlySet<T>, field: string): 
   if (!values.has(value as T)) throw new SliceBValidationError(`${field} is not a supported enum value`);
 }
 function requirePlainRecord(value: unknown, field: string): asserts value is Record<string, unknown> {
+  assertSafeBoundaryValue(value, field);
   if (value === null || typeof value !== "object" || Array.isArray(value) || !([Object.prototype, null] as unknown[]).includes(Object.getPrototypeOf(value))) throw new SliceBValidationError(`${field} must be a plain object`);
-  for (const key of Object.keys(value)) {
-    if (["__proto__", "constructor", "prototype"].includes(key)) throw new SliceBValidationError(`${field} contains an unsafe key`);
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== "string" || ["__proto__", "constructor", "prototype"].includes(key)) throw new SliceBValidationError(`${field} contains an unsafe key`);
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    if (!descriptor || !("value" in descriptor)) throw new SliceBValidationError(`${field} contains an accessor`);
+    if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) throw new SliceBValidationError(`${field} contains an accessor or hidden property`);
     if (typeof descriptor.value !== "string") throw new SliceBValidationError(`${field}.${key} must be a string`);
   }
 }
 function validateObservation(input: unknown): asserts input is ObservationEnvelope {
   requireInputObject(input, "observation");
-  requireString(input.observationId, "observationId"); requireString(input.sourceEventId, "sourceEventId"); requireString(input.relationshipId, "relationshipId"); requireString(input.objectId, "objectId"); requireEnum(input.objectType, objectTypes, "objectType"); requireString(input.eventType, "eventType"); requireString(input.sourceDomain, "sourceDomain"); requireFiniteNumber(input.chainKey, "chainKey", true); requireFiniteNumber(input.chainId, "chainId", true, true); requireString(input.contractAddress, "contractAddress"); requireString(input.transactionHash, "transactionHash"); requireFiniteNumber(input.eventIndex, "eventIndex", true); requireBigInt(input.blockNumber, "blockNumber"); requireString(input.blockHash, "blockHash"); requireNullableString(input.parentBlockHash, "parentBlockHash"); requireFiniteNumber(input.observedAt, "observedAt"); requirePlainRecord(input.normalizedPayload, "normalizedPayload"); requireString(input.payloadSchemaVersion, "payloadSchemaVersion"); requireEnum(input.observationState, observationStates, "observationState"); requireEnum(input.finalityState, finalityStates, "finalityState"); requireEnum(input.evidenceMode, evidenceModes, "evidenceMode"); requireString(input.adapterVersion, "adapterVersion"); requireFiniteNumber(input.createdAt, "createdAt"); requireFiniteNumber(input.updatedAt, "updatedAt");
+  requireString(input.observationId, "observationId"); requireString(input.sourceEventId, "sourceEventId"); requireString(input.relationshipId, "relationshipId"); requireString(input.objectId, "objectId"); requireEnum(input.objectType, objectTypes, "objectType"); requireString(input.eventType, "eventType"); requireString(input.sourceDomain, "sourceDomain"); requireFiniteNumber(input.chainKey, "chainKey", true); requireFiniteNumber(input.chainId, "chainId", true, true); requireString(input.contractAddress, "contractAddress"); requireString(input.transactionHash, "transactionHash"); if (input.transactionIndex !== undefined) requireFiniteNumber(input.transactionIndex, "transactionIndex", true); requireFiniteNumber(input.eventIndex, "eventIndex", true); requireBigInt(input.blockNumber, "blockNumber"); requireString(input.blockHash, "blockHash"); requireNullableString(input.parentBlockHash, "parentBlockHash"); requireFiniteNumber(input.observedAt, "observedAt"); requirePlainRecord(input.normalizedPayload, "normalizedPayload"); requireString(input.payloadSchemaVersion, "payloadSchemaVersion"); requireEnum(input.observationState, observationStates, "observationState"); requireEnum(input.finalityState, finalityStates, "finalityState"); requireEnum(input.evidenceMode, evidenceModes, "evidenceMode"); requireString(input.adapterVersion, "adapterVersion"); requireFiniteNumber(input.createdAt, "createdAt"); requireFiniteNumber(input.updatedAt, "updatedAt");
   const identity = { domain: input.sourceDomain, chainKey: input.chainKey, transactionHash: input.transactionHash, eventIndex: input.eventIndex };
   if (input.sourceEventId !== sourceEventId(identity) || input.observationId !== observationId(identity, input.eventType)) throw new SliceBValidationError("observation identity hash does not match its source fields");
 }
@@ -455,6 +519,7 @@ function validateSourceScope(scope: SourceScopeDescriptor): void {
   if (scope.cursorMode !== "SPARSE_EVENT") throw new SliceBValidationError("sourceScope.cursorMode is not supported");
   requireBigInt(scope.anchorBlockNumber, "sourceScope.anchorBlockNumber");
   requireString(scope.anchorBlockHash, "sourceScope.anchorBlockHash");
+  if (scope.sourceScopeHash !== undefined && !/^[0-9a-f]{64}$/.test(scope.sourceScopeHash)) throw new SliceBValidationError("sourceScope.sourceScopeHash must be a SHA-256 hex digest");
 }
 
 function checkpointFromPrevious(chainKey: number, previous: Checkpoint | undefined, overrides: Partial<Checkpoint>): Checkpoint {
@@ -485,11 +550,11 @@ function checkpointFromPrevious(chainKey: number, previous: Checkpoint | undefin
   };
 }
 
-function blockHeaderFor(input: ObservationEnvelope, status: BlockHeader["status"]): BlockHeader {
+function blockHeaderFor(input: BlockHeaderObservation, status: BlockHeader["status"]): BlockHeader {
   return { chainKey: input.chainKey, chainId: input.chainId, sourceDomain: input.sourceDomain, blockNumber: input.blockNumber, blockHash: input.blockHash, parentBlockHash: input.parentBlockHash, adapterVersion: input.adapterVersion, payloadSchemaVersion: input.payloadSchemaVersion, observationId: input.observationId, status };
 }
 
-function upsertBlockHeader(blockHistory: ReadonlyMap<string, BlockHeader>, input: ObservationEnvelope, status: BlockHeader["status"]): ReadonlyMap<string, BlockHeader> {
+function upsertBlockHeader(blockHistory: ReadonlyMap<string, BlockHeader>, input: BlockHeaderObservation, status: BlockHeader["status"]): ReadonlyMap<string, BlockHeader> {
   const next = new Map(blockHistory);
   const key = blockKey(input.chainKey, input.chainId, input.sourceDomain, input.adapterVersion, input.payloadSchemaVersion, input.blockNumber, input.blockHash);
   const existing = next.get(key);
@@ -582,7 +647,7 @@ function invalidateReorgDependencies(state: SliceBState, affected: readonly Obse
 }
 
 function observationIdentity(input: ObservationEnvelope): Record<string, unknown> {
-  return { observationId: input.observationId, sourceEventId: input.sourceEventId, relationshipId: input.relationshipId, objectId: input.objectId, objectType: input.objectType, eventType: input.eventType, sourceDomain: input.sourceDomain, chainKey: input.chainKey, chainId: input.chainId, contractAddress: input.contractAddress, transactionHash: input.transactionHash, eventIndex: input.eventIndex, blockNumber: input.blockNumber, blockHash: input.blockHash, parentBlockHash: input.parentBlockHash, normalizedPayload: input.normalizedPayload, payloadSchemaVersion: input.payloadSchemaVersion, evidenceMode: input.evidenceMode, adapterVersion: input.adapterVersion };
+  return { observationId: input.observationId, sourceEventId: input.sourceEventId, relationshipId: input.relationshipId, objectId: input.objectId, objectType: input.objectType, eventType: input.eventType, sourceDomain: input.sourceDomain, chainKey: input.chainKey, chainId: input.chainId, contractAddress: input.contractAddress, transactionHash: input.transactionHash, transactionIndex: input.transactionIndex, eventIndex: input.eventIndex, blockNumber: input.blockNumber, blockHash: input.blockHash, parentBlockHash: input.parentBlockHash, normalizedPayload: input.normalizedPayload, payloadSchemaVersion: input.payloadSchemaVersion, evidenceMode: input.evidenceMode, adapterVersion: input.adapterVersion };
 }
 
 function sameReplayIdentity(left: ObservationEnvelope, right: ObservationEnvelope): boolean {
@@ -616,6 +681,67 @@ function untrustedNumber(value: unknown, field: string): number | undefined {
 
 function safeDiagnosticId(value: unknown): string {
   try { return hash(stableJson(value).slice(0, 512)); } catch { return hash(typeof value, Object.prototype.toString.call(value)); }
+}
+
+function validateBlockHeaderObservation(input: unknown): asserts input is BlockHeaderObservation {
+  requireInputObject(input, "block header observation");
+  requireString(input.observationId, "blockHeader.observationId");
+  requireFiniteNumber(input.chainKey, "blockHeader.chainKey", true);
+  requireFiniteNumber(input.chainId, "blockHeader.chainId", true, true);
+  requireString(input.sourceDomain, "blockHeader.sourceDomain");
+  requireBigInt(input.blockNumber, "blockHeader.blockNumber");
+  requireString(input.blockHash, "blockHeader.blockHash");
+  requireNullableString(input.parentBlockHash, "blockHeader.parentBlockHash");
+  requireString(input.adapterVersion, "blockHeader.adapterVersion");
+  requireString(input.payloadSchemaVersion, "blockHeader.payloadSchemaVersion");
+  requireFiniteNumber(input.observedAt, "blockHeader.observedAt");
+}
+
+export function observeBlockHeader(state: SliceBState, rawInput: unknown): SliceBState {
+  try {
+    validateBlockHeaderObservation(rawInput);
+  } catch (error) {
+    const reason = error instanceof SliceBValidationError ? error.reason : "invalid block header observation";
+    return markDeadLetter(state, `header:${safeDiagnosticId(rawInput)}`, null, reason, "source adapter operator", "repair block header and retry", "REPLAY", "INVALID_BLOCK_HEADER");
+  }
+  const input = rawInput as BlockHeaderObservation;
+  const sourceScope = state.sourceScopes.get(input.chainKey);
+  if (!sourceScope) return markDeadLetter(state, `header:${input.observationId}`, null, "block header source scope is not configured", "source adapter operator", "register the exact source scope before header observation", "REPLAY", "UNKNOWN_SOURCE_SCOPE");
+  if (sourceScope.chainId !== input.chainId || sourceScope.sourceDomain !== input.sourceDomain || sourceScope.adapterVersion !== input.adapterVersion || sourceScope.observationSchemaVersion !== input.payloadSchemaVersion) return markDeadLetter(state, `header:${input.observationId}`, null, "block header metadata does not match configured source scope", "source adapter operator", "repair block header metadata and retry", "REPLAY", "SOURCE_METADATA_MISMATCH");
+  const checkpoint = state.checkpoints.get(input.chainKey);
+  if (!checkpoint) return markDeadLetter(state, `header:${input.observationId}`, null, "block header checkpoint is unavailable", "source adapter operator", "initialize the exact source scope before header observation", "REPLAY", "MISSING_CHECKPOINT");
+  const canonical = canonicalHeaderAt(state, input.chainKey, input.blockNumber);
+  const sameCanonical = canonical?.blockHash === input.blockHash && canonical.parentBlockHash === input.parentBlockHash;
+  const sameCheckpointAnchor = !canonical && input.blockNumber === checkpoint.lastObservedBlock && input.blockHash === checkpoint.lastObservedBlockHash;
+  const headerKey = blockKey(input.chainKey, input.chainId, input.sourceDomain, input.adapterVersion, input.payloadSchemaVersion, input.blockNumber, input.blockHash);
+  if (sameCanonical || sameCheckpointAnchor) {
+    if (state.blockHistory.has(headerKey)) return state;
+    return clone(state, { blockHistory: upsertBlockHeader(state.blockHistory, input, "CANONICAL") });
+  }
+  if (checkpoint.replayStatus === "REPLAY_REQUIRED") return clone(state, { blockHistory: upsertBlockHeader(state.blockHistory, input, "CANDIDATE") });
+  if (input.blockNumber === checkpoint.lastObservedBlock + 1n && input.parentBlockHash === checkpoint.lastObservedBlockHash) {
+    const blockHistory = upsertBlockHeader(state.blockHistory, input, "CANONICAL");
+    const checkpoints = new Map(state.checkpoints);
+    checkpoints.set(input.chainKey, checkpointFromPrevious(input.chainKey, checkpoint, { lastObservedBlock: input.blockNumber, lastObservedBlockHash: input.blockHash, updatedAt: input.observedAt }));
+    return clone(state, { blockHistory, checkpoints });
+  }
+  if (input.blockNumber > checkpoint.lastObservedBlock + 1n) return markDeadLetter(state, `header:${input.observationId}`, null, "block header skips unobserved trusted history", "source adapter operator", "backfill every intervening block header before continuing", "REPLAY", "MISSING_TRUSTED_HISTORY");
+
+  const targets = replayTargetsFromState(state, input.chainKey, input.blockNumber);
+  const replayOldBlockHash = targets[0]?.oldBlockHash ?? null;
+  const missingHistory = targets.some((target) => target.oldBlockHash === null);
+  const observations = new Map(state.observations);
+  for (const [id, item] of observations) if (item.chainKey === input.chainKey && item.blockNumber >= input.blockNumber) observations.set(id, { ...item, finalityState: "REORGED", projectionReference: `reorg:superseded:${id}` });
+  const dependencyState = invalidateReorgDependencies(state, [...observations.values()].filter((item) => item.chainKey === input.chainKey && item.blockNumber >= input.blockNumber));
+  const blockHistory = upsertBlockHeader(dependencyState.blockHistory, input, "CANDIDATE");
+  const checkpoints = new Map(dependencyState.checkpoints);
+  checkpoints.set(input.chainKey, checkpointFromPrevious(input.chainKey, checkpoint, {
+    ...replayCheckpointOverrides(targets, missingHistory ? "trusted canonical block history is unavailable" : "header replacement detected for affected indexed range", missingHistory ? "backfill trusted canonical headers before replay" : "submit a finalized replacement for the next affected indexed block"),
+    replayOldBlockHash,
+    replayParentBlockHash: targets[0]?.expectedParentBlockHash ?? null,
+    updatedAt: input.observedAt,
+  }));
+  return clone(dependencyState, { observations, checkpoints, blockHistory });
 }
 
 export function ingestObservation(state: SliceBState, rawInput: unknown): SliceBState {
@@ -730,16 +856,15 @@ export function advanceFinality(state: SliceBState, chainKey: number, finalizedB
   const previousFinalized = previous?.lastFinalizedBlock ?? sourceScope.anchorBlockNumber;
   const effectiveFinalizedBlock = previousFinalized > finalizedBlock ? previousFinalized : finalizedBlock;
   const replayRequired = previous?.replayStatus === "REPLAY_REQUIRED";
+  const itemFinalityBlock = replayRequired ? finalizedBlock : effectiveFinalizedBlock;
   let changed = false;
-  let latestObserved: { item: ObservationEnvelope; id: string } | null = null;
   let latestFinalized: { item: ObservationEnvelope; id: string } | null = null;
 
   for (const [id, item] of observations) {
     if (item.chainKey !== chainKey || item.finalityState === "REORGED" || ["CONFLICTING", "MALFORMED", "REJECTED", "UNAVAILABLE"].includes(item.observationState)) continue;
     const header = blockHistory.get(blockKey(item.chainKey, item.chainId, item.sourceDomain, item.adapterVersion, item.payloadSchemaVersion, item.blockNumber, item.blockHash));
     const isCanonical = header?.status === "CANONICAL";
-    if (isCanonical && (!latestObserved || item.blockNumber > latestObserved.item.blockNumber || (item.blockNumber === latestObserved.item.blockNumber && id.localeCompare(latestObserved.id) > 0))) latestObserved = { item, id };
-    if (item.blockNumber <= effectiveFinalizedBlock) {
+    if (item.blockNumber <= itemFinalityBlock) {
       const finalized = item.finalityState === "FINALIZED" ? item : { ...item, finalityState: "FINALIZED" as const, updatedAt: observedAt };
       if (finalized !== item) { observations.set(id, finalized); changed = true; }
       if (isCanonical && (!latestFinalized || item.blockNumber > latestFinalized.item.blockNumber || (item.blockNumber === latestFinalized.item.blockNumber && id.localeCompare(latestFinalized.id) > 0))) latestFinalized = { item: finalized, id };
@@ -749,15 +874,21 @@ export function advanceFinality(state: SliceBState, chainKey: number, finalizedB
     }
   }
 
+  let latestCanonicalHeader: BlockHeader | null = null;
+  for (const header of blockHistory.values()) {
+    if (header.chainKey !== chainKey || header.chainId !== sourceScope.chainId || header.sourceDomain !== sourceScope.sourceDomain || header.adapterVersion !== sourceScope.adapterVersion || header.payloadSchemaVersion !== sourceScope.observationSchemaVersion || header.status !== "CANONICAL") continue;
+    if (!latestCanonicalHeader || header.blockNumber > latestCanonicalHeader.blockNumber || (header.blockNumber === latestCanonicalHeader.blockNumber && header.blockHash.localeCompare(latestCanonicalHeader.blockHash) > 0)) latestCanonicalHeader = header;
+  }
+
   const checkpoints = new Map(state.checkpoints);
   const checkpoint = checkpointFromPrevious(chainKey, previous, {
-    sourceDomain: replayRequired ? previous!.sourceDomain : (latestFinalized?.item.sourceDomain ?? previous?.sourceDomain ?? null),
-    chainId: replayRequired ? previous!.chainId : (latestFinalized?.item.chainId ?? previous?.chainId ?? null),
-    lastObservedBlock: replayRequired ? previous!.lastObservedBlock : (latestObserved?.item.blockNumber ?? previous?.lastObservedBlock ?? 0n),
-    lastObservedBlockHash: replayRequired ? previous!.lastObservedBlockHash : (latestObserved?.item.blockHash ?? previous?.lastObservedBlockHash ?? ""),
+    sourceDomain: replayRequired ? previous!.sourceDomain : (latestCanonicalHeader?.sourceDomain ?? latestFinalized?.item.sourceDomain ?? previous?.sourceDomain ?? null),
+    chainId: replayRequired ? previous!.chainId : (latestCanonicalHeader?.chainId ?? latestFinalized?.item.chainId ?? previous?.chainId ?? null),
+    lastObservedBlock: replayRequired ? previous!.lastObservedBlock : (latestCanonicalHeader?.blockNumber ?? previous?.lastObservedBlock ?? 0n),
+    lastObservedBlockHash: replayRequired ? previous!.lastObservedBlockHash : (latestCanonicalHeader?.blockHash ?? previous?.lastObservedBlockHash ?? ""),
     lastFinalizedBlock: effectiveFinalizedBlock,
-    adapterVersion: replayRequired ? previous!.adapterVersion : (latestFinalized?.item.adapterVersion ?? previous?.adapterVersion ?? ""),
-    observationSchemaVersion: replayRequired ? previous!.observationSchemaVersion : (latestFinalized?.item.payloadSchemaVersion ?? previous?.observationSchemaVersion ?? ""),
+    adapterVersion: replayRequired ? previous!.adapterVersion : (latestCanonicalHeader?.adapterVersion ?? latestFinalized?.item.adapterVersion ?? previous?.adapterVersion ?? ""),
+    observationSchemaVersion: replayRequired ? previous!.observationSchemaVersion : (latestCanonicalHeader?.payloadSchemaVersion ?? latestFinalized?.item.payloadSchemaVersion ?? previous?.observationSchemaVersion ?? ""),
     updatedAt: changed ? observedAt : (previous?.updatedAt ?? observedAt),
     replayStatus: replayRequired ? "REPLAY_REQUIRED" : "CURRENT",
     replayReason: replayRequired ? previous!.replayReason : null,

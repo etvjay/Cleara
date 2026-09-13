@@ -58,12 +58,20 @@ export interface SourceCursor {
 
 export interface RetrySourceView {
   readonly snapshotHash: string;
+  readonly snapshotBody: string;
   readonly schemaVersion: typeof SLICE_B_SCHEMA_VERSION;
   readonly recordKind: SliceBRecordKind;
   readonly recordId: string;
   readonly relationshipId: RelationshipId;
   readonly cursor: SourceCursor;
-  /** Slice B markers are copied, never interpreted as orchestration state. */
+  readonly sourceScopeHash: string | null;
+  readonly snapshotBindingHash: string;
+  readonly sourceDomain: string;
+  readonly chainId: number;
+  readonly adapterVersion: string;
+  readonly observationSchemaVersion: string;
+  readonly finalityPolicyVersion: string;
+  readonly cursorMode: "SPARSE_EVENT";
   readonly status: Readonly<Record<string, string | null>>;
   readonly replay: ReplayMetadata | null;
 }

@@ -41,6 +41,7 @@ export interface ParsedSliceBRecord {
 export interface ParsedSliceBContract {
   readonly hash: string;
   readonly body: Readonly<Record<string, unknown>>;
+  readonly serializedBody: string;
   readonly records: readonly ParsedSliceBRecord[];
 }
 
@@ -336,7 +337,7 @@ export function parseSerializedSliceBContract(input: unknown): ParsedSliceBContr
   }
 
   const records = RECORD_KINDS.flatMap((kind) => recordsFor(kind, bodyRecord));
-  return Object.freeze({ hash, body: Object.freeze({ ...bodyRecord }), records });
+  return Object.freeze({ hash, body: Object.freeze({ ...bodyRecord }), serializedBody: body, records });
 }
 
 export function selectContractRecord(

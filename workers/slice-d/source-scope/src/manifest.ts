@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isPlainRecord, isSafeArray, isStructuredCloneable } from "./safety.js";
 
 export const SOURCE_SCOPE_MANIFEST_VERSION = "slice-d-source-scope-v1" as const;
 export const SOURCE_DOMAIN = "ethereum-sepolia" as const;
@@ -183,21 +184,6 @@ function fail(code: ManifestErrorCode, message: string): never {
   throw new SourceScopeManifestError(code, message);
 }
 
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  try {
-    const prototype = Object.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) return false;
-    return Object.keys(value).every((key) => {
-      if (["__proto__", "constructor", "prototype"].includes(key)) return false;
-      const descriptor = Object.getOwnPropertyDescriptor(value, key);
-      return descriptor !== undefined && "value" in descriptor;
-    });
-  } catch {
-    return false;
-  }
-}
-
 function canonicalize(value: unknown, ancestors = new Set<object>()): unknown {
   if (value === null || typeof value === "string" || typeof value === "boolean") return value;
   if (typeof value === "number") {
@@ -206,10 +192,15 @@ function canonicalize(value: unknown, ancestors = new Set<object>()): unknown {
   }
   if (typeof value !== "object") fail("UNSAFE_VALUE", "manifest contains an unsupported value type");
   if (ancestors.has(value)) fail("UNSAFE_INPUT", "manifest contains a cycle");
-  if (!isPlainRecord(value) && !Array.isArray(value)) fail("UNSAFE_INPUT", "manifest contains an unsafe object");
+  if (!isPlainRecord(value) && !isSafeArray(value)) fail("UNSAFE_INPUT", "manifest contains an unsafe object");
   const nextAncestors = new Set(ancestors).add(value);
-  if (Array.isArray(value)) return value.map((item) => canonicalize(item, nextAncestors));
-  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalize(value[key], nextAncestors)]));
+  if (isSafeArray(value)) {
+    const items: unknown[] = [];
+    for (let index = 0; index < value.length; index += 1) items.push(canonicalize(value[index], nextAncestors));
+    return items;
+  }
+  const recordValue = value as Record<string, unknown>;
+  return Object.fromEntries(Object.keys(recordValue).sort().map((key) => [key, canonicalize(recordValue[key], nextAncestors)]));
 }
 
 function record(value: unknown, field: string): Record<string, unknown> {
@@ -255,7 +246,7 @@ function exactString(value: unknown, expected: string, field: string): string {
 }
 
 function expectedFields(value: unknown, expected: readonly EventField[], field: string): readonly EventField[] {
-  if (!Array.isArray(value) || value.length !== expected.length) fail("UNSUPPORTED_EVENT", `${field} has the wrong field count`);
+  if (!isSafeArray(value) || value.length !== expected.length) fail("UNSUPPORTED_EVENT", `${field} has the wrong field count`);
   const actual = value.map((item, index) => {
     const entry = record(item, `${field}[${index}]`);
     exactKeys(entry, ["indexed", "name", "topic", "type"], `${field}[${index}]`);
@@ -270,9 +261,21 @@ function expectedFields(value: unknown, expected: readonly EventField[], field: 
   return actual;
 }
 
+function deepFreeze<T>(value: T, seen = new Set<object>()): T {
+  if (value === null || typeof value !== "object" || seen.has(value)) return value;
+  seen.add(value);
+  for (const key of Reflect.ownKeys(value)) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor && "value" in descriptor) deepFreeze(descriptor.value, seen);
+  }
+  Object.freeze(value);
+  return value;
+}
+
 function parseManifest(input: unknown): SourceScopeManifest {
   let normalized: unknown;
   try {
+    if (!isStructuredCloneable(input)) fail("UNSAFE_INPUT", "manifest contains a proxy or non-cloneable object");
     normalized = canonicalize(input);
   } catch (error) {
     if (error instanceof SourceScopeManifestError) throw error;
@@ -336,7 +339,7 @@ function parseManifest(input: unknown): SourceScopeManifest {
   exactString(cursor.unit, "BLOCK", "cursor.unit");
   const maxRange = integerValue(cursor.maxRange, "cursor.maxRange", 1, 1_000_000);
 
-  if (!Array.isArray(root.relationshipMappings) || root.relationshipMappings.length === 0) fail("MISSING_MAPPING", "at least one relationship mapping is required");
+  if (!isSafeArray(root.relationshipMappings) || root.relationshipMappings.length === 0) fail("MISSING_MAPPING", "at least one relationship mapping is required");
   const mappingIds = new Set<string>();
   const mappingKeys = new Set<string>();
   const relationshipMappings = root.relationshipMappings.map((item, index) => {
@@ -400,7 +403,7 @@ function parseManifest(input: unknown): SourceScopeManifest {
     if (liveDeployment.contractAddress !== contractAddress || liveDeployment.tokenAddress !== tokenAddress) fail("LIVE_CONFIG_MISSING", "live deployment fields must match contract and token identities");
   }
 
-  return Object.freeze({
+  return deepFreeze({
     manifestVersion: SOURCE_SCOPE_MANIFEST_VERSION,
     scopeId,
     sourceDomain: SOURCE_DOMAIN,

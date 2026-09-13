@@ -1,0 +1,139 @@
+name: Slice D1 Source Ingestion
+
+on:
+  push:
+    branches: [verification/slice-d-source-ingestion]
+    paths:
+      - "workers/slice-d/source-ingestion/**"
+      - "workers/slice-d/source-scope/**"
+      - "scripts/slice-d/**"
+      - "docs/development/SLICE_D_*.md"
+      - ".github/workflows/slice-d-source-ingestion.yml"
+      - "workers/slice-c/**"
+      - "workers/multichain-execution/**"
+      - "apps/web/**"
+      - "scripts/slice-b/**"
+      - "contracts/**"
+      - "test/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+  pull_request:
+    branches: [verification/slice-d0-source-scope]
+    paths:
+      - "workers/slice-d/source-ingestion/**"
+      - "workers/slice-d/source-scope/**"
+      - "scripts/slice-d/**"
+      - "docs/development/SLICE_D_*.md"
+      - ".github/workflows/slice-d-source-ingestion.yml"
+      - "workers/slice-c/**"
+      - "workers/multichain-execution/**"
+      - "apps/web/**"
+      - "scripts/slice-b/**"
+      - "contracts/**"
+      - "test/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: slice-d1-source-ingestion-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  d1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.19.0
+
+      - run: corepack enable
+      - run: corepack prepare pnpm@11.24.0 --activate
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1.9.1
+        with:
+          version: v1.7.1
+
+      - name: Validate D0 manifest and D1 TypeScript
+        run: >-
+          pnpm exec tsc --noEmit -p workers/slice-d/source-scope/tsconfig.json
+          --typeRoots workers/multichain-execution/node_modules/@types
+          && pnpm exec tsx --test workers/slice-d/source-scope/test/*.test.ts
+          && pnpm exec tsc --noEmit -p workers/slice-d/source-ingestion/tsconfig.json
+          --typeRoots workers/multichain-execution/node_modules/@types
+          && pnpm exec tsx --test workers/slice-d/source-ingestion/test/*.test.ts
+
+      - name: Run D1 deterministic demo and harnesses
+        run: >-
+          pnpm exec tsx scripts/slice-d/demo.ts
+          && node scripts/slice-d/smoke.mjs
+          && node scripts/slice-d/adversarial.mjs
+
+      - name: Run Slice C tests and compatibility
+        run: >-
+          pnpm exec tsx --test
+          workers/slice-c/durable-storage/test/*.test.ts
+          workers/slice-c/retry-orchestration/test/*.test.ts
+          workers/slice-c/integration/test/*.test.ts
+          && node --import tsx --test workers/multichain-execution/test/slice-b-compatibility.test.ts
+
+      - name: Run Slice B projection and web checks
+        run: pnpm check:projection && pnpm web:check
+
+      - name: Run Slice B demo and adversarial checks
+        run: pnpm slice-b:demo && pnpm slice-b:smoke && pnpm slice-b:adversarial
+
+      - name: Run Forge gates
+        run: forge fmt --check && forge build --sizes && forge test -vvv
+
+      - name: Verify D1 scope, protected paths, and secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import re
+          import subprocess
+
+          base = "8a78ebc33f221cd852d922c9c0df839b49d21950"
+          names = subprocess.check_output(["git", "diff", "--name-only", f"{base}..HEAD"], text=True).splitlines()
+          allowed = (
+              "workers/slice-d/source-ingestion/",
+              "workers/slice-d/source-scope/",
+              "workers/slice-c/",
+              "workers/multichain-execution/",
+              "scripts/slice-d/",
+              "docs/development/SLICE_D_",
+              ".github/workflows/slice-d-source-ingestion.yml",
+          )
+          bad_scope = [name for name in names if not name.startswith(allowed)]
+          protected = [name for name in names if name.startswith(("contracts/", "test/", "evidence/runtime/", "docs/canonical/GROUND_TRUTH.md"))]
+          if bad_scope or protected:
+              raise SystemExit(f"scope failure: bad={bad_scope!r} protected={protected!r}")
+
+          diff = subprocess.check_output(["git", "diff", f"{base}..HEAD", "--"], text=True)
+          additions = "\n".join(line for line in diff.splitlines() if line.startswith("+") and not line.startswith("+++"))
+          secret_patterns = [
+              r"-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----",
+              "(" + "gh" + "p_|github_" + "pat_|sk-" + r"[A-Za-z0-9])",
+              r"[A-Za-z0-9_]+_SECRET\\s*[:=]\\s*[^\\s\\[\\]`]+",
+          ]
+          matches = [pattern for pattern in secret_patterns if re.search(pattern, additions, re.I)]
+          if matches:
+              raise SystemExit(f"secret-like addition detected: {matches!r}")
+          print("D1 scope/protected/secret scan PASS")
+          PY
+
+      - name: Verify diff formatting
+        run: git diff --check
