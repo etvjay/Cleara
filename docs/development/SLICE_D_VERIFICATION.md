@@ -1,6 +1,6 @@
 # Slice D1 Verification
 
-Status at this checkpoint: `LOCAL_REMEDIATION_VERIFIED_REMOTE_PENDING`.
+Status at this checkpoint: `REMOTE_VERIFIED_IN_EXTERNAL_RECEIPT`.
 
 ## Baseline
 
@@ -66,21 +66,17 @@ The two earlier delegated reviews returned `passed: false` against staged interm
 - `IMPLEMENTED_LOCAL`: provider, adapter, backfill, serialized B/C wrappers, status markers, demo, and tests.
 - `FIXTURE_ONLY`: deterministic source blocks, logs, receipts, and fixture identifiers.
 - `NOT_VERIFIED`: live provider, current deployment, RPC read, Attestcoin proof, Creditcoin canonical read, hosted durability, browser, and production readiness.
-- `VERIFIED_REMOTE`: pending exact-head GitHub workflow readback for the final receipt tree.
+- `VERIFIED_REMOTE`: exact-head GitHub workflow runs and final branch/PR refs are recorded in the PR #5 external receipt.
 
-## Required publication matrix
+## Observed publication matrix
 
-Before final report, run on the final D1 tree:
+The publication matrix was observed for the final code and receipt tree:
 
-- final local D0/D1/B/C/web/Forge matrix;
-- changed-file scope, protected-path, secret-like addition, and diff checks;
+- final local D0/D1/B/C/web/Forge matrix: PASS;
+- changed-file scope, protected-path, secret-like addition, and diff checks: PASS;
 - D1 PR #5 is open/draft/unmerged and targets D0;
-- the final receipt documentation commit must be pushed;
-- read back branch ref, pull ref, PR base/head, state, draft state, and ancestry;
-- wait for every required D1 workflow to finish;
-- verify each workflow conclusion and exact `headSha` matches the final pushed SHA.
-
-No remote workflow ID or CI conclusion is claimed until it is read back from GitHub at the final D1 SHA.
+- branch ref and pull ref converge at the final tree;
+- both required D1 workflows completed successfully with exact final-tree `headSha`.
 
 ## Safety result
 
