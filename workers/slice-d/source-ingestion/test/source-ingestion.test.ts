@@ -152,6 +152,14 @@ test("adapter rejects hidden, symbol, sparse, extended, and custom-array provide
   Object.defineProperty(hidden, "hidden", { value: "poison", enumerable: false });
   expectCode(() => new CapitalCommittedAdapter(manifest).adapt({ ...base, log: hidden }), "UNSAFE_INPUT");
 
+  const hiddenTarget = { ...base.log! } as Record<string, unknown>;
+  Object.defineProperty(hiddenTarget, "hidden", { value: "poison", enumerable: false, configurable: true });
+  const hidingProxy = new Proxy(hiddenTarget, {
+    ownKeys: (target) => Reflect.ownKeys(target).filter((key) => key !== "hidden"),
+    getOwnPropertyDescriptor: (target, key) => key === "hidden" ? undefined : Reflect.getOwnPropertyDescriptor(target, key),
+  });
+  expectCode(() => new CapitalCommittedAdapter(manifest).adapt({ ...base, log: hidingProxy }), "UNSAFE_INPUT");
+
   const symbol = { ...base.log! } as Record<string | symbol, unknown>;
   Object.defineProperty(symbol, Symbol("poison"), { value: "poison", enumerable: true });
   expectCode(() => new CapitalCommittedAdapter(manifest).adapt({ ...base, log: symbol }), "UNSAFE_INPUT");

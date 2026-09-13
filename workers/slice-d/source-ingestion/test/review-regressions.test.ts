@@ -53,15 +53,20 @@ class FailingCheckpointBoundary extends SliceCSerializedBoundary {
   }
 }
 
-test("review regression: an exact duplicate rerun is a serialized D1 no-op", async (t) => {
+test("review regression: an exact duplicate rerun preserves serialized duplicate history", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "cleara-d1-review-idempotence-"));
   t.after(async () => rm(root, { recursive: true, force: true }));
   const runner = new SourceBackfill({ manifest, provider: new DeterministicFixtureProvider(fixtureDataset()), c: boundary(root) });
   await runner.run(request());
-  const before = runner.serializeState();
+  const before = JSON.parse(runner.serializeState()) as { acceptedEvents: unknown[]; snapshot: unknown };
   const duplicate = await runner.run(request());
   assert.equal(duplicate.duplicateEvents.length, 2);
-  assert.equal(runner.serializeState(), before);
+  const after = JSON.parse(runner.serializeState()) as { acceptedEvents: unknown[]; snapshot: unknown; duplicateEvents: unknown[] };
+  assert.deepEqual(after.acceptedEvents, before.acceptedEvents);
+  assert.deepEqual(after.snapshot, before.snapshot);
+  assert.equal(after.duplicateEvents.length, 2);
+  const restarted = SourceBackfill.fromSerialized({ manifest, provider: new DeterministicFixtureProvider(fixtureDataset()), c: boundary(join(root, "restart")) }, runner.serializeState());
+  assert.equal(JSON.parse(restarted.serializeState()).duplicateEvents.length, 2);
 });
 
 test("review regression: accessor-backed requests fail closed before provider reads", async (t) => {

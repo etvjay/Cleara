@@ -596,7 +596,7 @@ function invalidateReorgDependencies(state: SliceBState, affected: readonly Obse
 }
 
 function observationIdentity(input: ObservationEnvelope): Record<string, unknown> {
-  return { observationId: input.observationId, sourceEventId: input.sourceEventId, relationshipId: input.relationshipId, objectId: input.objectId, objectType: input.objectType, eventType: input.eventType, sourceDomain: input.sourceDomain, chainKey: input.chainKey, chainId: input.chainId, contractAddress: input.contractAddress, transactionHash: input.transactionHash, eventIndex: input.eventIndex, blockNumber: input.blockNumber, blockHash: input.blockHash, parentBlockHash: input.parentBlockHash, normalizedPayload: input.normalizedPayload, payloadSchemaVersion: input.payloadSchemaVersion, evidenceMode: input.evidenceMode, adapterVersion: input.adapterVersion };
+  return { observationId: input.observationId, sourceEventId: input.sourceEventId, relationshipId: input.relationshipId, objectId: input.objectId, objectType: input.objectType, eventType: input.eventType, sourceDomain: input.sourceDomain, chainKey: input.chainKey, chainId: input.chainId, contractAddress: input.contractAddress, transactionHash: input.transactionHash, transactionIndex: input.transactionIndex, eventIndex: input.eventIndex, blockNumber: input.blockNumber, blockHash: input.blockHash, parentBlockHash: input.parentBlockHash, normalizedPayload: input.normalizedPayload, payloadSchemaVersion: input.payloadSchemaVersion, evidenceMode: input.evidenceMode, adapterVersion: input.adapterVersion };
 }
 
 function sameReplayIdentity(left: ObservationEnvelope, right: ObservationEnvelope): boolean {

@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createSliceBApi } from "../../../multichain-execution/src/api.js";
-import { restoreSnapshot } from "../../../multichain-execution/src/slice-b.js";
+import { createSliceBState, ingestObservation, restoreSnapshot } from "../../../multichain-execution/src/slice-b.js";
 import test from "node:test";
 import { parseSourceScopeManifest } from "../../source-scope/src/manifest.js";
 import { DurableSnapshotStore } from "../../../slice-c/durable-storage/src/index.js";
@@ -101,6 +101,33 @@ test("review 2: manifest rejects hidden and symbol root fields", () => {
   const symbol = manifestCopy() as unknown as Record<string | symbol, unknown>;
   Object.defineProperty(symbol, Symbol("symbolPoison"), { value: "poison", enumerable: true });
   expectManifestCode(() => parseSourceScopeManifest(symbol), "UNSAFE_INPUT");
+});
+
+test("review 2: the public Slice B boundary rejects a noncanonical D0 manifest", () => {
+  const changed = manifestCopy();
+  (changed.finalityPolicy as { depth: number }).depth += 1;
+  expectCode(() => new SliceBSerializedBoundary(changed), "UNSUPPORTED_SCOPE");
+});
+
+test("review 2: Slice B treats transaction-index drift as a conflict", async () => {
+  const bundle = await validBundle();
+  const adapted = new CapitalCommittedAdapter(manifest).adapt(bundle);
+  const scope = {
+    chainKey: manifest.chainKey,
+    chainId: manifest.evmChainId,
+    sourceDomain: manifest.sourceDomain,
+    adapterVersion: manifest.adapterVersion,
+    observationSchemaVersion: manifest.eventFamily.schemaVersion,
+    finalityPolicyVersion: manifest.finalityPolicy.version,
+    cursorMode: manifest.cursor.mode,
+    anchorBlockNumber: 9n,
+    anchorBlockHash: blockHash(9),
+  } as const;
+  const first = { ...adapted.observation, transactionIndex: 0 };
+  const second = { ...adapted.observation, transactionIndex: 1 };
+  let state = ingestObservation(createSliceBState([scope]), first);
+  state = ingestObservation(state, second);
+  assert.equal(state.observations.get(first.observationId)?.observationState, "CONFLICTING");
 });
 
 test("review 2: polluted Array.prototype is rejected at the adapter boundary", async () => {
@@ -237,6 +264,17 @@ test("review 2: restored accepted records enforce fixed status axes and unique i
   expectCode(() => SourceBackfill.fromSerialized({ manifest, provider: new DeterministicFixtureProvider(fixtureDataset()), c: duplicateBoundary }, JSON.stringify(canonical(duplicate))), "MALFORMED_PROVIDER_RESPONSE");
 });
 
+test("review 2: restored Slice B observations cannot be omitted from D1 accepted state", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "cleara-d1-review-state-completeness-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const runner = new SourceBackfill({ manifest, provider: new DeterministicFixtureProvider(fixtureDataset()), c: await boundary(root) });
+  await runner.run(request());
+  const forged = JSON.parse(runner.serializeState()) as { acceptedEvents: unknown[] };
+  forged.acceptedEvents = [];
+  const restoreBoundary = await boundary(join(root, "restore"));
+  expectCode(() => SourceBackfill.fromSerialized({ manifest, provider: new DeterministicFixtureProvider(fixtureDataset()), c: restoreBoundary }, JSON.stringify(canonical(forged))), "MALFORMED_PROVIDER_RESPONSE");
+});
+
 test("review 2: restored observations cannot be conflicting or cross-scope", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "cleara-d1-review-state-binding-"));
   t.after(async () => rm(root, { recursive: true, force: true }));
@@ -259,7 +297,7 @@ test("review 2: restored observations cannot be conflicting or cross-scope", asy
     checkpoint.sourceDomain = "other-domain";
   });
   const crossScopeBoundary = await boundary(join(root, "cross-scope"));
-  expectCode(() => SourceBackfill.fromSerialized({ manifest, provider: new DeterministicFixtureProvider(fixtureDataset()), c: crossScopeBoundary }, crossScope), "MALFORMED_PROVIDER_RESPONSE");
+  expectCode(() => SourceBackfill.fromSerialized({ manifest, provider: new DeterministicFixtureProvider(fixtureDataset()), c: crossScopeBoundary }, crossScope), "UNSUPPORTED_SCOPE");
 });
 
 test("review 2: a finality-only overlap records a cursor state transition", async (t) => {

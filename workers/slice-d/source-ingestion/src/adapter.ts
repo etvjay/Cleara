@@ -69,6 +69,14 @@ function isSafeArray(value: unknown): value is readonly unknown[] {
   }
 }
 
+function assertCloneable(value: object, field: string): void {
+  try {
+    structuredClone(value);
+  } catch {
+    throw new SourceIngestionError("UNSAFE_INPUT", `${field} contains a proxy or non-cloneable object`);
+  }
+}
+
 function assertSafe(value: unknown, field: string, ancestors = new Set<object>()): void {
   if (value === null || typeof value === "string" || typeof value === "boolean") return;
   if (typeof value === "number") {
@@ -77,20 +85,25 @@ function assertSafe(value: unknown, field: string, ancestors = new Set<object>()
   }
   if (typeof value !== "object") throw new SourceIngestionError("UNSAFE_INPUT", `${field} contains an unsupported value`);
   if (ancestors.has(value)) throw new SourceIngestionError("UNSAFE_INPUT", `${field} contains a cycle`);
+  const next = new Set(ancestors).add(value);
   if (Array.isArray(value)) {
     if (!isSafeArray(value)) throw new SourceIngestionError("UNSAFE_INPUT", `${field} contains an unsafe array`);
-    const next = new Set(ancestors).add(value);
-    for (const item of value) assertSafe(item, field, next);
+    for (let index = 0; index < value.length; index += 1) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+      if (!descriptor || !("value" in descriptor)) throw new SourceIngestionError("UNSAFE_INPUT", `${field}[${index}] contains an accessor`);
+      assertSafe(descriptor.value, `${field}[${index}]`, next);
+    }
+    assertCloneable(value, field);
     return;
   }
   if (!isPlainRecord(value)) throw new SourceIngestionError("UNSAFE_INPUT", `${field} contains an unsafe object`);
-  const next = new Set(ancestors).add(value);
   for (const key of Reflect.ownKeys(value)) {
     if (typeof key !== "string") throw new SourceIngestionError("UNSAFE_INPUT", `${field} contains a symbol key`);
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
     if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) throw new SourceIngestionError("UNSAFE_INPUT", `${field} contains a hidden property`);
     assertSafe(descriptor.value, `${field}.${key}`, next);
   }
+  assertCloneable(value, field);
 }
 
 function record(value: unknown, field: string): Record<string, unknown> {

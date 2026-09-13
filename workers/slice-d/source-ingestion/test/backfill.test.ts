@@ -364,7 +364,8 @@ test("backfill preserves multiple events in one replacement block", async (t) =>
 test("missing trusted history remains replay-required instead of self-trusting a replacement", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "cleara-d1-missing-history-"));
   t.after(async () => rm(root, { recursive: true, force: true }));
-  const initial = new SourceBackfill({ manifest, provider: new DeterministicFixtureProvider(fixtureDataset({ events: [makeEvent({ blockNumber: 10 })] })), c: await boundary(root) });
+  const originalEvent = makeEvent({ blockNumber: 10 });
+  const initial = new SourceBackfill({ manifest, provider: new DeterministicFixtureProvider(fixtureDataset({ events: [originalEvent] })), c: await boundary(root) });
   await initial.run(request({ endBlock: 10 }));
   const state = JSON.parse(initial.serializeState()) as { snapshot: { hash: string; body: string }; cursor: unknown; acceptedEvents: unknown[]; rejectedEvents: unknown[]; duplicateEvents: unknown[]; providerErrors: unknown[]; schemaVersion: string; manifestHash: string };
   const body = JSON.parse(state.snapshot.body) as Record<string, unknown>;
@@ -381,6 +382,11 @@ test("missing trusted history remains replay-required instead of self-trusting a
   assert.equal(result.replayTargets[0]?.oldBlockHash, null);
   assert.equal(result.replayRecoveryRole, "projection operator");
   assert.match(result.nextAction, /trusted history/i);
+  const restoredBoundary = await boundary(join(root, "restored"));
+  const serialized = runner.serializeState();
+  assert.doesNotThrow(() => SourceBackfill.fromSerialized({ manifest, provider: new DeterministicFixtureProvider(replacementDataset()), c: restoredBoundary }, serialized));
+  const restoredState = JSON.parse(serialized) as { acceptedEvents: Array<{ blockHash: string; finalityState: string }> };
+  assert.equal(restoredState.acceptedEvents.some((event) => event.blockHash === originalEvent.block.blockHash && event.finalityState === "REORGED"), true);
 });
 
 test("replacement with an untrusted parent cannot advance the cursor or become current", async (t) => {

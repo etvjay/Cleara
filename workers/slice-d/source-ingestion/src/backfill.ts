@@ -332,11 +332,27 @@ function validateSnapshotBinding(snapshot: SerializedSliceBSnapshot, api: Return
     if (!bootstrapCursor && !resumedCursor) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "serialized cursor does not match the public Slice B checkpoint");
   }
 }
-function markReorged(values: Map<string, AcceptedEventRecord>, targets: readonly { readonly blockNumber: bigint; readonly oldBlockHash: string | null }[]): Map<string, AcceptedEventRecord> {
+function publicObservationsFromSnapshot(snapshot: SerializedSliceBSnapshot, api: ReturnType<SliceBSerializedBoundary["read"]>): readonly unknown[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(snapshot.body) as unknown;
+  } catch {
+    throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "serialized Slice B snapshot observations are not valid JSON");
+  }
+  if (!isPlainRecord(parsed) || !isSafeArray(parsed.observations)) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "serialized Slice B snapshot observations are malformed");
+  const relationshipIds = new Set<string>();
+  for (const [index, entry] of parsed.observations.entries()) {
+    if (!isSafeArray(entry) || entry.length !== 2 || !isPlainRecord(entry[1]) || typeof entry[1].relationshipId !== "string") throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", `serialized Slice B observation entry ${index} is malformed`);
+    relationshipIds.add(entry[1].relationshipId);
+  }
+  return [...relationshipIds].flatMap((relationshipId) => api.timeline(relationshipId));
+}
+
+function markReorged(values: Map<string, AcceptedEventRecord>, targets: readonly { readonly blockNumber: bigint; readonly oldBlockHash: string | null }[], excluded = new Set<string>()): Map<string, AcceptedEventRecord> {
   const next = new Map(values);
   for (const [key, record] of values) {
-    if (record.finalityState === "REORGED") continue;
-    if (targets.some((target) => target.oldBlockHash !== null && BigInt(record.blockNumber) === target.blockNumber && record.blockHash === target.oldBlockHash)) next.set(key, Object.freeze({ ...record, finalityState: "REORGED" }));
+    if (excluded.has(key) || record.finalityState === "REORGED") continue;
+    if (targets.some((target) => target.oldBlockHash === null ? BigInt(record.blockNumber) === target.blockNumber : BigInt(record.blockNumber) === target.blockNumber && record.blockHash === target.oldBlockHash)) next.set(key, Object.freeze({ ...record, finalityState: "REORGED" }));
   }
   return next;
 }
@@ -561,7 +577,7 @@ export class SourceBackfill {
       let effectiveFinalityHeight = finalizedHeight(workingBlockSnapshot, this.c, this.manifest);
       const checkpoint = checkpointState(workingBlockSnapshot, this.c, this.manifest);
       if (checkpoint?.replayStatus === "REPLAY_REQUIRED") {
-        workingBlockAccepted = markReorged(workingBlockAccepted, checkpoint.replayTargets);
+        workingBlockAccepted = markReorged(workingBlockAccepted, checkpoint.replayTargets, new Set(blockAccepted));
       }
       if (checkpoint?.replayStatus === "REPLAY_REQUIRED" && this.autoReplay && finalityHeight >= 0) {
         const seen = new Set<string>();
@@ -616,6 +632,7 @@ export class SourceBackfill {
       runRejected.push(...blockRejected);
       runDuplicates.push(...blockDuplicates);
       this.rejected.push(...blockRejected);
+      this.duplicates.push(...blockDuplicates);
       lastCompletedForRun = blockNumber;
       const advancedState = blockNumber >= previousNext || blockAccepted.length > 0 || blockRejected.length > 0 || blockSnapshotChanged;
       currentCursor = Object.freeze({ ...currentCursor, nextBlock: Math.max(currentCursor.nextBlock, blockNumber + 1), lastCompletedBlock: Math.max(currentCursor.lastCompletedBlock ?? -1, blockNumber), sequence: currentCursor.sequence + (advancedState ? 1 : 0) });
@@ -730,6 +747,12 @@ export class SourceBackfill {
       for (const record of state.acceptedEvents) {
         const matches = api.timeline(record.relationshipId).filter((item) => acceptedMatchesObservation(record, item, this.manifest));
         if (matches.length !== 1) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", `accepted event ${record.observationId} does not match the public Slice B snapshot`);
+      }
+      const publicObservations = publicObservationsFromSnapshot(state.snapshot, api);
+      if (publicObservations.length !== state.acceptedEvents.length) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "public Slice B observations and D1 accepted records are not cardinality-consistent");
+      for (const observation of publicObservations) {
+        const matches = state.acceptedEvents.filter((record) => acceptedMatchesObservation(record, observation, this.manifest));
+        if (matches.length !== 1) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "public Slice B observation has no unique D1 accepted record");
       }
     } else if (state.acceptedEvents.length > 0) {
       throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "accepted events require a serialized Slice B snapshot");
