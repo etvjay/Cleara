@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+"$ROOT/scripts/check-foundry"
+
+if [[ "${FOUNDRY_ONLY:-0}" == "1" ]]; then
+  exit 0
+fi
+
+cd "$ROOT"
+git diff --check
+forge test
+pnpm web:check
+pnpm exec tsc --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --skipLibCheck scripts/live/m11-settlement.ts

@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+"""Validate the repository's minimum BUILD_FOUNDRY control plane."""
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+REQUIRED = (
+    "BUILD_FOUNDRY.md",
+    "AGENTS.md",
+    "PRD.md",
+    "foundry/state.json",
+    "foundry/gaps.jsonl",
+    "foundry/claims.jsonl",
+)
+LEGAL_GAP_STATES = {
+    "DISCOVERED",
+    "REPRODUCED",
+    "CLASSIFIED",
+    "CLOSURE_DEFINED",
+    "IMPLEMENTED",
+    "VERIFIED_LOCAL",
+    "VERIFIED_SYSTEM",
+    "VERIFIED_LIVE",
+    "GUARDED",
+    "CLOSED",
+    "BLOCKED_EXTERNAL",
+    "BLOCKED_INTERNAL",
+    "DEFERRED",
+    "REJECTED_NOT_A_GAP",
+    "DUPLICATE",
+}
+LEGAL_CLAIM_STATES = {
+    "PROPOSED",
+    "IMPLEMENTED",
+    "TESTED",
+    "INTEGRATED",
+    "E2E_VERIFIED",
+    "LIVE_DEMONSTRATED",
+    "LIVE",
+    "MONITORED",
+    "PARTIAL",
+    "BLOCKED_EXTERNAL",
+    "BLOCKED_INTERNAL",
+    "DEFERRED",
+    "REJECTED",
+    "FUTURE",
+}
+
+
+def fail(message: str) -> None:
+    print(f"FOUNDry check: FAIL: {message}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+def load_jsonl(path: Path) -> list[dict]:
+    records: list[dict] = []
+    for number, line in enumerate(path.read_text().splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError as exc:
+            fail(f"{path.relative_to(ROOT)} line {number} is not JSON: {exc}")
+        if not isinstance(value, dict):
+            fail(f"{path.relative_to(ROOT)} line {number} is not an object")
+        records.append(value)
+    return records
+
+
+for relative in REQUIRED:
+    if not (ROOT / relative).is_file():
+        fail(f"missing required file {relative}")
+
+try:
+    state = json.loads((ROOT / "foundry/state.json").read_text())
+except json.JSONDecodeError as exc:
+    fail(f"foundry/state.json is not valid JSON: {exc}")
+
+phase = state.get("current_phase")
+if not isinstance(phase, str) or not (ROOT / "foundry/phases" / f"{phase}.md").is_file():
+    fail(f"current phase has no phase file: {phase!r}")
+if not isinstance(state.get("head"), str) or not state["head"]:
+    fail("state.head must be a stable checkpoint label")
+if not isinstance(state.get("head_ref"), str) or not state["head_ref"]:
+    fail("state.head_ref is required")
+
+seen: set[str] = set()
+gaps = load_jsonl(ROOT / "foundry/gaps.jsonl")
+for gap in gaps:
+    gap_id = gap.get("id")
+    if not isinstance(gap_id, str) or gap_id in seen:
+        fail(f"gap IDs must be unique strings: {gap_id!r}")
+    seen.add(gap_id)
+    if gap.get("status") not in LEGAL_GAP_STATES:
+        fail(f"{gap_id} has illegal gap status {gap.get('status')!r}")
+    for key in ("title", "severity", "class", "surface", "expected", "observed", "closure_condition"):
+        if key not in gap:
+            fail(f"{gap_id} is missing {key}")
+    if gap.get("status") == "CLOSED":
+        if not gap.get("evidence") or not gap.get("closed_by_commit"):
+            fail(f"closed gap {gap_id} lacks evidence or closed_by_commit")
+
+seen.clear()
+claims = load_jsonl(ROOT / "foundry/claims.jsonl")
+for claim in claims:
+    claim_id = claim.get("id")
+    if not isinstance(claim_id, str) or claim_id in seen:
+        fail(f"claim IDs must be unique strings: {claim_id!r}")
+    seen.add(claim_id)
+    if claim.get("state") not in LEGAL_CLAIM_STATES:
+        fail(f"{claim_id} has illegal claim state {claim.get('state')!r}")
+    for key in ("claim", "required_state", "evidence", "last_verified_head"):
+        if key not in claim:
+            fail(f"{claim_id} is missing {key}")
+    if claim.get("state") in {"LIVE", "MONITORED", "LIVE_DEMONSTRATED"} and not claim.get("evidence"):
+        fail(f"{claim_id} live claim has no evidence")
+    if claim.get("state") == "PARTIAL" and not claim.get("limitations"):
+        fail(f"{claim_id} partial claim has no limitations")
+    for pointer in claim.get("evidence", []):
+        if not isinstance(pointer, str):
+            fail(f"{claim_id} has a non-string evidence pointer")
+        if not (ROOT / pointer).is_file():
+            fail(f"{claim_id} points to missing evidence file {pointer}")
+
+print(f"FOUNDry check: PASS ({len(gaps)} gaps, {len(claims)} claims, phase {phase})")

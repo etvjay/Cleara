@@ -33,7 +33,11 @@ try {
 
   const home = await requestRaw("/");
   if (home.status !== 200 || !home.body.includes("src/browser.js")) throw new Error("home shell is incomplete");
-  for (const path of ["/src/browser.js", "/src/case.js", "/styles.css"]) {
+  for (const path of ["/try", "/try/replay", "/try/live", "/try/solo", "/try/claim", "/try/multi-party/new"]) {
+    const tryPage = await requestRaw(path);
+    if (tryPage.status !== 200 || !tryPage.body.includes("src/browser.js")) throw new Error(`try shell is incomplete: ${path}`);
+  }
+  for (const path of ["/src/browser.js", "/src/browser.css", "/src/case.js", "/styles.css"]) {
     if ((await requestRaw(path)).status !== 200) throw new Error(`asset unavailable: ${path}`);
   }
   for (const path of ["/missing", "/src/", "/../package.json", "/%2e%2e/package.json", "/%2e%2e%2fpackage.json"]) {
