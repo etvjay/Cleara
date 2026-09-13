@@ -1,6 +1,6 @@
-import { readFileSync } from "node:fs";
 import { Interface } from "ethers";
-import { parseSourceScopeManifest, type SourceScopeManifest } from "../../source-scope/src/manifest.js";
+import type { SourceScopeManifest } from "../../source-scope/src/manifest.js";
+import { loadCanonicalD0Manifest } from "./canonical-manifest.js";
 import type {
   FixtureDataset,
   SourceBlockHeader,
@@ -9,7 +9,7 @@ import type {
   SourceTransactionReceipt,
 } from "./types.js";
 
-export const manifest = parseSourceScopeManifest(JSON.parse(readFileSync("workers/slice-d/source-scope/manifest.json", "utf8")));
+export const manifest = loadCanonicalD0Manifest().manifest;
 
 export const identity: SourceChainIdentity = {
   sourceDomain: manifest.sourceDomain,

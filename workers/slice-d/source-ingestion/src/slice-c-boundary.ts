@@ -2,6 +2,8 @@ import { SliceCIntegrationCoordinator } from "../../../slice-c/integration/src/c
 import { DurableSnapshotStore, type CheckpointOptions, type CheckpointResult, type PersistedSnapshotRecord, type SerializedSliceBSnapshot } from "../../../slice-c/durable-storage/src/index.js";
 import { RetryOrchestrator, type DeliveryResult, type ExecutionResult, type ReadOnlyProvider } from "../../../slice-c/retry-orchestration/src/index.js";
 import type { SourceScopeManifest } from "../../source-scope/src/manifest.js";
+import { parseSourceScopeManifest, serializeSourceScopeManifest } from "../../source-scope/src/manifest.js";
+import { loadCanonicalD0Manifest } from "./canonical-manifest.js";
 import { SourceIngestionError } from "./errors.js";
 import { SliceBSerializedBoundary } from "./slice-b-boundary.js";
 import type { RetryRequestWithoutContract, SerializedSliceCBoundary } from "./types.js";
@@ -22,11 +24,14 @@ export class SliceCSerializedBoundary implements SerializedSliceCBoundary {
   private readonly coordinator: SliceCIntegrationCoordinator;
 
   public constructor(options: SerializedSliceCBoundaryOptions) {
+    const suppliedManifest = parseSourceScopeManifest(options.manifest);
+    const canonicalManifest = loadCanonicalD0Manifest();
+    if (options.scopeId !== suppliedManifest.scopeId || serializeSourceScopeManifest(suppliedManifest).hash !== canonicalManifest.hash) throw new SourceIngestionError("UNSUPPORTED_SCOPE", "serialized C boundary is not bound to the canonical D0 manifest");
     this.scopeId = options.scopeId;
-    this.manifest = options.manifest;
+    this.manifest = suppliedManifest;
     this.store = options.store;
     this.retryOrchestrator = options.retry;
-    this.b = new SliceBSerializedBoundary(options.manifest);
+    this.b = new SliceBSerializedBoundary(suppliedManifest);
     this.coordinator = new SliceCIntegrationCoordinator({ scopeId: options.scopeId, store: options.store, retry: options.retry });
   }
 

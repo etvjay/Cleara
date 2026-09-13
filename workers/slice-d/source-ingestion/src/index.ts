@@ -1,6 +1,7 @@
 export * from "./errors.js";
 export * from "./types.js";
 export * from "./provider.js";
+export * from "./canonical-manifest.js";
 export * from "./fixture-provider.js";
 export * from "./fixture-data.js";
 export * from "./adapter.js";

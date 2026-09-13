@@ -23,11 +23,29 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   try {
     const prototype = Object.getPrototypeOf(value);
     if (prototype !== Object.prototype && prototype !== null) return false;
-    return Object.keys(value).every((key) => {
-      if (["__proto__", "constructor", "prototype"].includes(key)) return false;
+    return Reflect.ownKeys(value).every((key) => {
+      if (typeof key !== "string" || ["__proto__", "constructor", "prototype"].includes(key)) return false;
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
-      return descriptor !== undefined && "value" in descriptor;
+      return descriptor !== undefined && descriptor.enumerable && "value" in descriptor;
     });
+  } catch {
+    return false;
+  }
+}
+
+function isSafeArray(value: unknown): value is readonly unknown[] {
+  if (!Array.isArray(value)) return false;
+  try {
+    if (Object.getPrototypeOf(value) !== Array.prototype) return false;
+    const keys = Reflect.ownKeys(value);
+    for (const key of keys) {
+      if (key === "length") continue;
+      if (typeof key !== "string" || !/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= value.length) return false;
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) return false;
+    }
+    for (let index = 0; index < value.length; index += 1) if (!Object.prototype.hasOwnProperty.call(value, String(index))) return false;
+    return true;
   } catch {
     return false;
   }
@@ -41,13 +59,20 @@ function assertSafe(value: unknown, field: string, ancestors = new Set<object>()
   }
   if (typeof value !== "object") throw new SourceIngestionError("UNSAFE_INPUT", `${field} contains an unsupported value`);
   if (ancestors.has(value)) throw new SourceIngestionError("UNSAFE_INPUT", `${field} contains a cycle`);
-  if (!Array.isArray(value) && !isPlainRecord(value)) throw new SourceIngestionError("UNSAFE_INPUT", `${field} contains an unsafe object`);
-  const next = new Set(ancestors).add(value);
   if (Array.isArray(value)) {
+    if (!isSafeArray(value)) throw new SourceIngestionError("UNSAFE_INPUT", `${field} contains an unsafe array`);
+    const next = new Set(ancestors).add(value);
     for (const item of value) assertSafe(item, field, next);
     return;
   }
-  for (const item of Object.values(value)) assertSafe(item, field, next);
+  if (!isPlainRecord(value)) throw new SourceIngestionError("UNSAFE_INPUT", `${field} contains an unsafe object`);
+  const next = new Set(ancestors).add(value);
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== "string") throw new SourceIngestionError("UNSAFE_INPUT", `${field} contains a symbol key`);
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) throw new SourceIngestionError("UNSAFE_INPUT", `${field} contains a hidden property`);
+    assertSafe(descriptor.value, `${field}.${key}`, next);
+  }
 }
 
 function record(value: unknown, field: string): Record<string, unknown> {

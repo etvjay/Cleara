@@ -13,7 +13,11 @@ import type {
 import type { SourceScopeManifest } from "../../source-scope/src/manifest.js";
 
 function clone<T>(value: T): T {
-  return structuredClone(value);
+  try {
+    return structuredClone(value);
+  } catch {
+    throw new SourceProviderError("UNSAFE_INPUT", "fixture provider received a non-cloneable value");
+  }
 }
 
 function validBlock(value: unknown): value is number {

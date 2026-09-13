@@ -146,6 +146,29 @@ test("adapter fails closed for fixture/live confusion and unsafe provider object
   expectCode(() => new CapitalCommittedAdapter(manifest).adapt({ ...bundle, parent: 1 }), "UNSAFE_INPUT");
 });
 
+test("adapter rejects hidden, symbol, sparse, extended, and custom-array provider shapes", async () => {
+  const base = await validBundle();
+  const hidden = { ...base.log! } as Record<string, unknown>;
+  Object.defineProperty(hidden, "hidden", { value: "poison", enumerable: false });
+  expectCode(() => new CapitalCommittedAdapter(manifest).adapt({ ...base, log: hidden }), "UNSAFE_INPUT");
+
+  const symbol = { ...base.log! } as Record<string | symbol, unknown>;
+  Object.defineProperty(symbol, Symbol("poison"), { value: "poison", enumerable: true });
+  expectCode(() => new CapitalCommittedAdapter(manifest).adapt({ ...base, log: symbol }), "UNSAFE_INPUT");
+
+  const extendedTopics = [...base.log!.topics] as string[] & { extra?: string };
+  extendedTopics.extra = "poison";
+  expectCode(() => new CapitalCommittedAdapter(manifest).adapt({ ...base, log: { ...base.log!, topics: extendedTopics } }), "UNSAFE_INPUT");
+
+  const sparseTopics = [...base.log!.topics] as string[];
+  delete sparseTopics[1];
+  expectCode(() => new CapitalCommittedAdapter(manifest).adapt({ ...base, log: { ...base.log!, topics: sparseTopics } }), "UNSAFE_INPUT");
+
+  const customTopics = [...base.log!.topics] as string[];
+  Object.setPrototypeOf(customTopics, null);
+  expectCode(() => new CapitalCommittedAdapter(manifest).adapt({ ...base, log: { ...base.log!, topics: customTopics } }), "UNSAFE_INPUT");
+});
+
 test("adapter rejects duplicate log identities in one receipt", async () => {
   const bundle = await validBundle();
   const duplicate = { ...bundle, receipt: { ...bundle.receipt!, logs: [bundle.log!, { ...bundle.log!, data: bundle.log!.data }] } };

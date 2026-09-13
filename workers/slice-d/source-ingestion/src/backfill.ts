@@ -5,6 +5,7 @@ import {
   serializeSourceScopeManifest,
   type SourceScopeManifest,
 } from "../../source-scope/src/manifest.js";
+import { loadCanonicalD0Manifest } from "./canonical-manifest.js";
 import type { ObservationEnvelope } from "../../../multichain-execution/src/slice-b.js";
 import type { SerializedSliceBSnapshot } from "../../../slice-c/durable-storage/src/index.js";
 import {
@@ -200,7 +201,10 @@ export class SourceBackfill {
   private lastResult: BackfillResult | null = null;
 
   public constructor(options: SourceBackfillOptions) {
-    this.manifest = parseSourceScopeManifest(options.manifest);
+    const suppliedManifest = parseSourceScopeManifest(options.manifest);
+    const canonicalManifest = loadCanonicalD0Manifest();
+    if (serializeSourceScopeManifest(suppliedManifest).hash !== canonicalManifest.hash) throw new SourceIngestionError("UNSUPPORTED_SCOPE", "runtime manifest does not match the canonical D0 manifest");
+    this.manifest = suppliedManifest;
     this.provider = options.provider;
     this.c = options.c;
     this.b = new SliceBSerializedBoundary(this.manifest);
@@ -375,12 +379,22 @@ export class SourceBackfill {
       }
       const checkpoint = checkpointState(workingBlockSnapshot, this.c, this.manifest);
       if (checkpoint?.replayStatus === "REPLAY_REQUIRED" && this.autoReplay && finalityHeight >= 0) {
-        for (const candidate of replacementCandidates) {
-          const target = checkpointState(workingBlockSnapshot, this.c, this.manifest)?.replayTargets.find((item) => Number(item.blockNumber) === candidate.coordinates.blockNumber);
-          if (!target || target.oldBlockHash === candidate.coordinates.blockHash) continue;
-          const replay = this.b.replay(workingBlockSnapshot, candidate.observation, finalityHeight, block.timestamp);
-          workingBlockSnapshot = replay.snapshot;
-          if (replay.outcome === "REPLAYED") break;
+        const seen = new Set<string>();
+        const targets = checkpoint.replayTargets;
+        for (const target of targets) {
+          const candidates = [
+            ...replacementCandidates.map((candidate) => candidate.observation),
+            ...this.findReplayCandidates(workingBlockSnapshot, target, workingBlockAccepted.values()),
+          ];
+          for (const candidate of candidates) {
+            if (seen.has(candidate.observationId)) continue;
+            seen.add(candidate.observationId);
+            if (candidate.blockNumber !== target.blockNumber || candidate.blockHash === target.oldBlockHash || (target.oldBlockHash !== null && candidate.parentBlockHash !== target.expectedParentBlockHash)) continue;
+            const replay = this.b.replay(workingBlockSnapshot, candidate, finalityHeight, block.timestamp);
+            workingBlockSnapshot = replay.snapshot;
+            if (replay.outcome === "REPLAYED") break;
+          }
+          if (checkpointState(workingBlockSnapshot, this.c, this.manifest)?.replayStatus !== "REPLAY_REQUIRED") break;
         }
       }
 
@@ -422,12 +436,8 @@ export class SourceBackfill {
 
   public status(): BackfillResult | null {
     if (!this.lastResult) return null;
-    const retrySnapshot = this.c.retryOrchestrator.snapshot();
-    const sourceJobs = retrySnapshot.jobs.filter((job) => job.provider === "source-fixture");
-    const deadLetters = retrySnapshot.deadLetters.filter((item) => item.jobId !== null && sourceJobs.some((job) => job.id === item.jobId)).map((item) => ({ ...item }));
-    const latestJob = sourceJobs[sourceJobs.length - 1];
-    const retryStatus: BackfillResult["retryStatus"] = deadLetters.length > 0 ? "DEAD_LETTERED" : latestJob?.status ?? (this.lastResult.retry ? "PENDING" : "NONE");
-    return Object.freeze({ ...this.lastResult, retryStatus, deadLetters: Object.freeze(deadLetters) });
+    const retry = this.retryProjection();
+    return Object.freeze({ ...this.lastResult, retryStatus: retry.retryStatus, deadLetters: retry.deadLetters });
   }
 
   public serializeState(): string {
@@ -570,6 +580,35 @@ export class SourceBackfill {
     }
   }
 
+  private retryProjection(): { readonly retryStatus: BackfillRetryStatus; readonly deadLetters: readonly Record<string, unknown>[] } {
+    const retrySnapshot = this.c.retryOrchestrator.snapshot();
+    const sourceJobs = retrySnapshot.jobs.filter((job) => job.provider === "source-fixture");
+    const sourceDeadLetters = retrySnapshot.deadLetters.filter((item) => item.jobId !== null && sourceJobs.some((job) => job.id === item.jobId)).map((item) => ({ ...item }));
+    const activeDeadLetters = sourceDeadLetters.filter((item) => sourceJobs.some((job) => job.id === item.jobId && job.status === "DEAD_LETTERED"));
+    const latestJob = sourceJobs[sourceJobs.length - 1];
+    const retryStatus: BackfillRetryStatus = activeDeadLetters.length > 0 ? "DEAD_LETTERED" : latestJob?.status === "COMPLETED" ? "COMPLETED" : latestJob?.status ?? "NONE";
+    return { retryStatus, deadLetters: Object.freeze(sourceDeadLetters) };
+  }
+
+  private findReplayCandidates(
+    snapshot: SerializedSliceBSnapshot,
+    target: { readonly blockNumber: bigint; readonly oldBlockHash: string | null; readonly expectedParentBlockHash: string | null },
+    accepted: Iterable<AcceptedEventRecord>,
+  ): ObservationEnvelope[] {
+    const preferred = new Set(parseReplayHistory(snapshot).flatMap((attempt) => typeof attempt.replacementObservationId === "string" ? [attempt.replacementObservationId] : []));
+    const candidates: { readonly preferred: boolean; readonly observation: ObservationEnvelope }[] = [];
+    const api = this.c.read(snapshot);
+    for (const record of accepted) {
+      if (BigInt(record.blockNumber) !== target.blockNumber) continue;
+      for (const value of api.timeline(record.relationshipId)) {
+        if (!isPlainRecord(value) || typeof value.observationId !== "string" || typeof value.blockNumber !== "bigint" || typeof value.blockHash !== "string" || (value.parentBlockHash !== null && typeof value.parentBlockHash !== "string")) continue;
+        if (value.observationId !== record.observationId || value.blockNumber !== target.blockNumber || value.blockHash === target.oldBlockHash || value.parentBlockHash !== target.expectedParentBlockHash || value.observationState !== "OBSERVED" || value.finalityState === "REORGED") continue;
+        candidates.push({ preferred: preferred.has(value.observationId), observation: value as unknown as ObservationEnvelope });
+      }
+    }
+    return candidates.sort((left, right) => Number(right.preferred) - Number(left.preferred) || left.observation.observationId.localeCompare(right.observation.observationId)).map((candidate) => candidate.observation);
+  }
+
   private async checkpoint(snapshot: SerializedSliceBSnapshot): Promise<void> {
     try {
       await this.c.checkpoint(snapshot, { savedAt: this.clock() });
@@ -587,7 +626,7 @@ export class SourceBackfill {
     if (!snapshot || !failure.recoverable || (failure.method !== "getBlockHeader" && failure.method !== "getLogs" && failure.method !== "getTransactionReceipt" && failure.method !== "getChainIdentity" && failure.method !== "getLatestBlockNumber")) return null;
     try {
       const result = this.c.submitRetry(snapshot, {
-        deliveryId: `source-backfill:${this.manifest.scopeId}:${this.cursor?.nextBlock ?? failure.blockNumber ?? "identity"}`,
+        deliveryId: `source-backfill:${this.manifest.scopeId}:${failure.blockNumber ?? this.cursor?.nextBlock ?? "identity"}`,
         selector: { kind: "checkpoint", id: String(this.manifest.chainKey) },
         relationshipId: null,
         provider: "source-fixture",
@@ -639,11 +678,7 @@ export class SourceBackfill {
     if (parseReplayHistory(snapshot).length > 0 || replayStatus === "REPLAY_REQUIRED") markers.push("REORG_DETECTED");
     if (runRejected.length > 0) markers.push("REJECTED");
     if (status === "BLOCKED") markers.push("BLOCKED");
-    const retrySnapshot = this.c.retryOrchestrator.snapshot();
-    const sourceJobs = retrySnapshot.jobs.filter((job) => job.provider === "source-fixture");
-    const sourceDeadLetters = retrySnapshot.deadLetters.filter((item) => item.jobId !== null && sourceJobs.some((job) => job.id === item.jobId)).map((item) => ({ ...item }));
-    const latestJob = sourceJobs[sourceJobs.length - 1];
-    const retryStatus: BackfillRetryStatus = sourceDeadLetters.length > 0 ? "DEAD_LETTERED" : latestJob?.status ?? (retry ? "PENDING" : "NONE");
+    const retryView = this.retryProjection();
     const result: BackfillResult = Object.freeze({
       status,
       statusMarkers: Object.freeze([...new Set(markers)]),
@@ -667,8 +702,8 @@ export class SourceBackfill {
       evidenceStatus: "PENDING_PROOF",
       reconciliationStatus: "RECONCILIATION_PENDING",
       retry,
-      retryStatus,
-      deadLetters: Object.freeze(sourceDeadLetters),
+      retryStatus: retryView.retryStatus,
+      deadLetters: retryView.deadLetters,
       nextAction,
       responsibleRole: "source-ingestion-operator",
       snapshot,

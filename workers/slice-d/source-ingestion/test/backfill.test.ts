@@ -369,6 +369,36 @@ test("provider retry exhausts to a dead letter and requires explicit operator re
   assert.equal(replayed.status, "PENDING");
   const completed = restarted.executeRetry({ read: () => ({ outcome: "success", receipt: { readOnly: true } }) }, 0);
   assert.equal(completed.outcome, "COMPLETED");
+  assert.equal(restarted.status()?.retryStatus, "COMPLETED");
+});
+
+test("a replacement ingested before finality replays when a later overlap reaches finality", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "cleara-d1-replay-liveness-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  let active = new DeterministicFixtureProvider(fixtureDataset());
+  const switchingProvider = {
+    getChainIdentity: async (scope: Parameters<DeterministicFixtureProvider["getChainIdentity"]>[0]) => active.getChainIdentity(scope),
+    getLatestBlockNumber: async (scope: Parameters<DeterministicFixtureProvider["getLatestBlockNumber"]>[0]) => active.getLatestBlockNumber(scope),
+    getBlockHeader: async (scope: Parameters<DeterministicFixtureProvider["getBlockHeader"]>[0], blockNumber: number) => active.getBlockHeader(scope, blockNumber),
+    getLogs: async (scope: Parameters<DeterministicFixtureProvider["getLogs"]>[0], filter: Parameters<DeterministicFixtureProvider["getLogs"]>[1]) => active.getLogs(scope, filter),
+    getTransactionReceipt: async (scope: Parameters<DeterministicFixtureProvider["getTransactionReceipt"]>[0], transactionHash: string) => active.getTransactionReceipt(scope, transactionHash),
+  };
+  const runner = new SourceBackfill({ manifest, provider: switchingProvider, c: await boundary(root) });
+  const initial = await runner.run({ scope: manifest.scopeId, startBlock: 10, endBlock: 10 });
+  assert.equal(initial.replayStatus, "CURRENT");
+
+  active = new DeterministicFixtureProvider({ ...replacementDataset(), latestBlockNumber: 11 });
+  const pending = await runner.run({ scope: manifest.scopeId, startBlock: 10, endBlock: 10 });
+  assert.equal(pending.status, "REPLAY_REQUIRED");
+  assert.equal(pending.acceptedEvents.length, 1);
+
+  active = new DeterministicFixtureProvider(replacementDataset());
+  const completed = await runner.run({ scope: manifest.scopeId, startBlock: 10, endBlock: 10 });
+  assert.equal(completed.status, "COMPLETED");
+  assert.equal(completed.replayStatus, "CURRENT");
+  assert.equal(completed.acceptedEvents.length, 0);
+  assert.equal(completed.duplicateEvents.length, 1);
+  assert.equal(completed.replayHistory.some((attempt) => attempt.status === "SUCCEEDED"), true);
 });
 
 test("stale or cross-scope cursors are rejected before provider reads", async (t) => {

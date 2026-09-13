@@ -9,7 +9,7 @@ import type {
   SourceTransactionReceipt,
 } from "./types.js";
 
-export type SourceProviderErrorCode = "UNSUPPORTED_SCOPE" | "TIMEOUT" | "OUTAGE" | "RATE_LIMIT" | "NOT_FOUND" | "MALFORMED_PROVIDER_RESPONSE";
+export type SourceProviderErrorCode = "UNSUPPORTED_SCOPE" | "TIMEOUT" | "OUTAGE" | "RATE_LIMIT" | "NOT_FOUND" | "MALFORMED_PROVIDER_RESPONSE" | "UNSAFE_INPUT";
 
 export class SourceProviderError extends SourceIngestionError {
   public constructor(code: SourceProviderErrorCode, message: string) {
@@ -34,7 +34,7 @@ export interface ValidatedProviderResponses {
 }
 
 export function isProviderErrorCode(code: SourceIngestionErrorCode): code is SourceProviderErrorCode {
-  return ["UNSUPPORTED_SCOPE", "TIMEOUT", "OUTAGE", "RATE_LIMIT", "NOT_FOUND", "MALFORMED_PROVIDER_RESPONSE"].includes(code);
+  return ["UNSUPPORTED_SCOPE", "TIMEOUT", "OUTAGE", "RATE_LIMIT", "NOT_FOUND", "MALFORMED_PROVIDER_RESPONSE", "UNSAFE_INPUT"].includes(code);
 }
 
 export function providerMethodName(method: ProviderMethod): string {
