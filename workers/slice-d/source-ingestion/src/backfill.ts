@@ -6,6 +6,7 @@ import {
   type SourceScopeManifest,
 } from "../../source-scope/src/manifest.js";
 import { loadCanonicalD0Manifest } from "./canonical-manifest.js";
+import { isPlainRecord, isSafeArray, isStructuredCloneable } from "../../source-scope/src/safety.js";
 import type { ObservationEnvelope } from "../../../multichain-execution/src/slice-b.js";
 import type { SerializedSliceBSnapshot } from "../../../slice-c/durable-storage/src/index.js";
 import {
@@ -48,56 +49,6 @@ type BlockFailure = {
 
 function isSafeBlock(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  try {
-    const prototype = Object.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) return false;
-    return Reflect.ownKeys(value).every((key) => {
-      if (typeof key !== "string" || ["__proto__", "constructor", "prototype"].includes(key)) return false;
-      const descriptor = Object.getOwnPropertyDescriptor(value, key);
-      return descriptor !== undefined && descriptor.enumerable && "value" in descriptor;
-    });
-  } catch {
-    return false;
-  }
-}
-
-const TRUSTED_ARRAY_PROTOTYPE = Array.prototype;
-const TRUSTED_ARRAY_DESCRIPTORS = new Map(Reflect.ownKeys(TRUSTED_ARRAY_PROTOTYPE).map((key) => [key, Object.getOwnPropertyDescriptor(TRUSTED_ARRAY_PROTOTYPE, key)!]));
-
-function sameArrayDescriptor(expected: PropertyDescriptor, actual: PropertyDescriptor | undefined): boolean {
-  if (!actual || expected.enumerable !== actual.enumerable || expected.configurable !== actual.configurable) return false;
-  if ("value" in expected || "value" in actual) return "value" in expected && "value" in actual && expected.writable === actual.writable && expected.value === actual.value;
-  return expected.get === actual.get && expected.set === actual.set;
-}
-
-function trustedArrayPrototype(): boolean {
-  try {
-    const keys = Reflect.ownKeys(TRUSTED_ARRAY_PROTOTYPE);
-    return keys.length === TRUSTED_ARRAY_DESCRIPTORS.size && [...TRUSTED_ARRAY_DESCRIPTORS].every(([key, descriptor]) => sameArrayDescriptor(descriptor, Object.getOwnPropertyDescriptor(TRUSTED_ARRAY_PROTOTYPE, key)));
-  } catch {
-    return false;
-  }
-}
-
-function isSafeArray(value: unknown): value is readonly unknown[] {
-  if (!Array.isArray(value)) return false;
-  try {
-    if (Object.getPrototypeOf(value) !== TRUSTED_ARRAY_PROTOTYPE || !trustedArrayPrototype()) return false;
-    for (const key of Reflect.ownKeys(value)) {
-      if (key === "length") continue;
-      if (typeof key !== "string" || !/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= value.length) return false;
-      const descriptor = Object.getOwnPropertyDescriptor(value, key);
-      if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) return false;
-    }
-    for (let index = 0; index < value.length; index += 1) if (!Object.prototype.hasOwnProperty.call(value, String(index))) return false;
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function stateString(value: unknown, field: string): string {
@@ -284,6 +235,25 @@ function observedHeight(values: Iterable<AcceptedEventRecord>): number | null {
   return numbers.length === 0 ? null : Math.max(...numbers);
 }
 
+function earliestCanonicalHeaderBlock(snapshot: SerializedSliceBSnapshot | null, manifest: SourceScopeManifest): number | null {
+  if (!snapshot) return null;
+  try {
+    const parsed = JSON.parse(snapshot.body) as { blockHistory?: unknown };
+    if (!Array.isArray(parsed.blockHistory)) return null;
+    const blocks: number[] = [];
+    for (const entry of parsed.blockHistory) {
+      if (!Array.isArray(entry) || entry.length !== 2 || entry[0] === undefined || entry[1] === null || typeof entry[1] !== "object") continue;
+      const header = entry[1] as { chainKey?: unknown; status?: unknown; blockNumber?: unknown };
+      if (header.chainKey !== manifest.chainKey || header.status !== "CANONICAL" || typeof header.blockNumber !== "string" || !/^\d+n$/.test(header.blockNumber)) continue;
+      const block = BigInt(header.blockNumber.slice(0, -1));
+      if (block <= BigInt(Number.MAX_SAFE_INTEGER - 1)) blocks.push(Number(block));
+    }
+    return blocks.length === 0 ? null : Math.min(...blocks);
+  } catch {
+    return null;
+  }
+}
+
 function checkpointState(snapshot: SerializedSliceBSnapshot | null, c: SourceBackfillOptions["c"], manifest: SourceScopeManifest) {
   return snapshot ? c.read(snapshot).checkpoint(manifest.chainKey) : null;
 }
@@ -421,7 +391,11 @@ export class SourceBackfill {
     }
 
     const previousNext = this.cursor?.nextBlock ?? request.startBlock;
-    const scanStart = request.startBlock;
+    const lookbackStart = Math.max(0, request.startBlock - this.manifest.finalityPolicy.depth);
+    const trustedHistoryStart = earliestCanonicalHeaderBlock(this.snapshot, this.manifest);
+    const scanStart = this.cursor !== null && request.startBlock === this.cursor.nextBlock
+      ? Math.max(lookbackStart, trustedHistoryStart ?? lookbackStart)
+      : request.startBlock;
     let currentCursor: BackfillCursor = {
       scope: request.scope,
       mode: "SPARSE_EVENT",
@@ -508,7 +482,22 @@ export class SourceBackfill {
       }
 
       const receiptCache = new Map<string, unknown>();
+      const previousBlockCheckpoint = this.b.read(workingSnapshot).checkpoint(this.manifest.chainKey);
       let workingBlockSnapshot = this.b.observeBlockHeader(workingSnapshot, block);
+      const observedHeaderApi = this.b.read(workingBlockSnapshot);
+      const headerObservationId = `block-header:${this.manifest.scopeId}:${block.blockNumber}:${block.blockHash}`;
+      const headerRejected = observedHeaderApi.investigations().some((item) => item !== null && typeof item === "object" && (item as { observationId?: unknown }).observationId === headerObservationId);
+      const headerCheckpoint = observedHeaderApi.checkpoint(this.manifest.chainKey);
+      const headerDidNotAdvance = previousBlockCheckpoint?.replayStatus !== "REPLAY_REQUIRED"
+        && BigInt(block.blockNumber) > (previousBlockCheckpoint?.lastObservedBlock ?? -1n)
+        && (!headerCheckpoint || headerCheckpoint.lastObservedBlock !== BigInt(block.blockNumber) || headerCheckpoint.lastObservedBlockHash !== block.blockHash);
+      if (headerRejected || headerDidNotAdvance) {
+        const failure = this.failure("checkpoint", new SourceIngestionError("MISSING_TRUSTED_HISTORY", headerRejected ? "Slice B rejected the block header" : "Slice B did not advance the canonical block header checkpoint"), blockNumber);
+        runProviderErrors.push(failure);
+        this.providerErrors.push(failure);
+        blockedAt = blockNumber;
+        break;
+      }
       let workingBlockAccepted = new Map(workingAccepted);
       const workingBlockIdentities = new Map(workingIdentities);
       const blockAccepted: string[] = [];
@@ -778,14 +767,17 @@ export class SourceBackfill {
   }
 
   private validateRequest(request: BackfillRequest): void {
+    if (!isStructuredCloneable(request)) throw new SourceIngestionError("INVALID_BACKFILL_REQUEST", "backfill request must be cloneable");
     if (!isPlainRecord(request)) throw new SourceIngestionError("INVALID_BACKFILL_REQUEST", "backfill request must be a safe plain object");
     const allowed = new Set(["cursor", "endBlock", "finalityPolicy", "maxRange", "scope", "startBlock"]);
     const actual = Object.keys(request);
     if (actual.length > allowed.size || actual.some((key) => !allowed.has(key))) throw new SourceIngestionError("INVALID_BACKFILL_REQUEST", "backfill request contains an unsupported field");
     if (request.scope !== this.manifest.scopeId) throw new SourceIngestionError("UNSUPPORTED_SCOPE", "backfill scope does not match the D0 manifest");
-    if (!isSafeBlock(request.startBlock) || !isSafeBlock(request.endBlock) || request.startBlock > request.endBlock) throw new SourceIngestionError("INVALID_BACKFILL_REQUEST", "backfill range must be ordered safe nonnegative integers");
+    if (!isSafeBlock(request.startBlock) || !isSafeBlock(request.endBlock) || request.startBlock > request.endBlock || request.endBlock === Number.MAX_SAFE_INTEGER) throw new SourceIngestionError("INVALID_BACKFILL_REQUEST", "backfill range must leave room for a safe next cursor");
     const range = request.endBlock - request.startBlock + 1;
-    if (range > this.manifest.cursor.maxRange) throw new SourceIngestionError("INVALID_BACKFILL_REQUEST", "backfill range exceeds the D0 maximum");
+    const lookback = this.cursor !== null && request.startBlock === this.cursor.nextBlock ? this.manifest.finalityPolicy.depth : 0;
+    const scanStart = Math.max(0, request.startBlock - lookback);
+    if (request.endBlock - scanStart + 1 > this.manifest.cursor.maxRange) throw new SourceIngestionError("INVALID_BACKFILL_REQUEST", "backfill range plus the bounded reorg look-back exceeds the D0 maximum");
     if (this.cursor && request.startBlock > this.cursor.nextBlock) throw new SourceIngestionError("CURSOR_NOT_ADVANCED", "backfill range skips unprocessed source blocks");
     if (request.maxRange !== undefined && (!isSafeBlock(request.maxRange) || request.maxRange < range || request.maxRange > this.manifest.cursor.maxRange)) throw new SourceIngestionError("INVALID_BACKFILL_REQUEST", "request maxRange must bound the range and not exceed the D0 maximum");
     if (request.finalityPolicy) {

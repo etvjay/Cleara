@@ -41,7 +41,9 @@ export class SliceCSerializedBoundary implements SerializedSliceCBoundary {
 
   public async recover(): Promise<PersistedSnapshotRecord | null> {
     const restarted = await this.coordinator.restartReadModel();
-    return restarted?.record ?? null;
+    if (restarted === null) return null;
+    this.b.read(restarted.record.snapshot);
+    return restarted.record;
   }
 
   public submitRetry(snapshot: SerializedSliceBSnapshot, request: RetryRequestWithoutContract): DeliveryResult {
@@ -59,8 +61,15 @@ export class SliceCSerializedBoundary implements SerializedSliceCBoundary {
   public restartRetry(serialized: string): SerializedSliceCBoundary {
     try {
       const retry = RetryOrchestrator.fromSerialized(serialized);
+      for (const job of retry.snapshot().jobs) {
+        const source = job.source;
+        if (source.cursorMode !== this.manifest.cursor.mode || source.cursor.chainKey !== this.manifest.chainKey || source.sourceDomain !== this.manifest.sourceDomain || source.chainId !== this.manifest.evmChainId || source.adapterVersion !== this.manifest.adapterVersion || source.observationSchemaVersion !== this.manifest.eventFamily.schemaVersion || source.finalityPolicyVersion !== this.manifest.finalityPolicy.version) {
+          throw new SourceIngestionError("UNSUPPORTED_SCOPE", "serialized retry source does not match the canonical D0 manifest");
+        }
+      }
       return new SliceCSerializedBoundary({ scopeId: this.scopeId, manifest: this.manifest, store: this.store, retry });
     } catch (error) {
+      if (error instanceof SourceIngestionError) throw error;
       throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", error instanceof Error ? error.message : "retry snapshot restore failed");
     }
   }

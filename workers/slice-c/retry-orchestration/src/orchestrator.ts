@@ -3,6 +3,7 @@ import {
   parseSerializedSliceBContract,
   requireReplayRequired,
   selectContractRecord,
+  type ParsedSliceBContract,
   type ParsedSliceBRecord,
 } from "./contract.js";
 import { identityHash } from "./canonical.js";
@@ -182,7 +183,41 @@ function cloneCursor(cursor: SourceCursor): SourceCursor {
   return Object.freeze({ ...cursor });
 }
 
-function sourceView(contractHash: string, record: ParsedSliceBRecord): RetrySourceView {
+function sourceDescriptor(contract: ParsedSliceBContract, cursor: SourceCursor): {
+  readonly sourceDomain: string;
+  readonly chainId: number;
+  readonly adapterVersion: string;
+  readonly observationSchemaVersion: string;
+  readonly finalityPolicyVersion: string;
+  readonly cursorMode: "SPARSE_EVENT";
+} {
+  const unbound = {
+    sourceDomain: "UNBOUND_GENERIC_SOURCE",
+    chainId: 0,
+    adapterVersion: "UNBOUND_GENERIC_SOURCE",
+    observationSchemaVersion: "UNBOUND_GENERIC_SOURCE",
+    finalityPolicyVersion: "UNBOUND_GENERIC_SOURCE",
+    cursorMode: "SPARSE_EVENT" as const,
+  };
+  if (cursor.chainKey === null) return unbound;
+  const entries = contract.body.sourceScopes;
+  if (!Array.isArray(entries)) return unbound;
+  const entry = entries.find((value) => Array.isArray(value) && value.length === 2 && value[0] === cursor.chainKey);
+  if (!Array.isArray(entry) || !isPlainRecord(entry[1])) return unbound;
+  const scope = entry[1];
+  if (typeof scope.sourceDomain !== "string" || typeof scope.chainId !== "number" || !Number.isSafeInteger(scope.chainId) || scope.chainId < 1 || typeof scope.adapterVersion !== "string" || typeof scope.observationSchemaVersion !== "string" || typeof scope.finalityPolicyVersion !== "string" || scope.cursorMode !== "SPARSE_EVENT") return unbound;
+  return {
+    sourceDomain: scope.sourceDomain,
+    chainId: scope.chainId,
+    adapterVersion: scope.adapterVersion,
+    observationSchemaVersion: scope.observationSchemaVersion,
+    finalityPolicyVersion: scope.finalityPolicyVersion,
+    cursorMode: "SPARSE_EVENT",
+  };
+}
+
+function sourceView(contract: ParsedSliceBContract, record: ParsedSliceBRecord): RetrySourceView {
+  const descriptor = sourceDescriptor(contract, record.cursor);
   const replay = record.replay === null ? null : Object.freeze({
     replaySequence: record.replay.replaySequence,
     replayFromBlock: record.replay.replayFromBlock,
@@ -191,15 +226,130 @@ function sourceView(contractHash: string, record: ParsedSliceBRecord): RetrySour
     replayTargets: Object.freeze(record.replay.replayTargets.map((target) => Object.freeze({ ...target }))),
   });
   return Object.freeze({
-    snapshotHash: contractHash,
+    snapshotHash: contract.hash,
     schemaVersion: "slice-b-read-model-v1",
     recordKind: record.kind,
     recordId: record.id,
     relationshipId: record.relationshipId,
     cursor: cloneCursor(record.cursor),
+    sourceDomain: descriptor.sourceDomain,
+    chainId: descriptor.chainId,
+    adapterVersion: descriptor.adapterVersion,
+    observationSchemaVersion: descriptor.observationSchemaVersion,
+    finalityPolicyVersion: descriptor.finalityPolicyVersion,
+    cursorMode: descriptor.cursorMode,
     status: cloneStatus(record.status),
     replay,
   });
+}
+
+function exactSnapshotKeys(value: Record<string, unknown>, expected: readonly string[], field: string): void {
+  const actual = Reflect.ownKeys(value);
+  if (actual.some((key) => typeof key !== "string")) throw new RetryOrchestrationError("INVALID_SNAPSHOT", `${field} contains a symbol key`);
+  const names = (actual as string[]).sort();
+  const target = [...expected].sort();
+  if (names.length !== target.length || names.some((key, index) => key !== target[index])) throw new RetryOrchestrationError("INVALID_SNAPSHOT", `${field} has an invalid shape`);
+  for (const key of names) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) throw new RetryOrchestrationError("INVALID_SNAPSHOT", `${field}.${key} is not a data property`);
+  }
+}
+
+function snapshotString(value: unknown, field: string, nullable = false): void {
+  if (nullable && value === null) return;
+  if (typeof value !== "string" || value.length === 0 || value.trim() !== value) throw new RetryOrchestrationError("INVALID_SNAPSHOT", `${field} must be a nonempty trimmed string`);
+}
+
+function snapshotNullableNumber(value: unknown, field: string, integer = false): void {
+  if (value === null) return;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || (integer && !Number.isSafeInteger(value))) throw new RetryOrchestrationError("INVALID_SNAPSHOT", `${field} is invalid`);
+}
+
+function snapshotBigIntText(value: unknown, field: string, nullable = false): void {
+  if (nullable && value === null) return;
+  if (typeof value !== "string" || !/^\d+$/.test(value)) throw new RetryOrchestrationError("INVALID_SNAPSHOT", `${field} must be a nonnegative integer string`);
+}
+
+function validateSourceCursorSnapshot(value: unknown): void {
+  if (!isPlainRecord(value)) throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry job source cursor must be a plain object");
+  exactSnapshotKeys(value, ["chainKey", "blockNumber", "eventIndex", "sequence", "occurredAt"], "retry job source cursor");
+  snapshotNullableNumber(value.chainKey, "retry job source cursor.chainKey", true);
+  snapshotBigIntText(value.blockNumber, "retry job source cursor.blockNumber", true);
+  snapshotNullableNumber(value.eventIndex, "retry job source cursor.eventIndex", true);
+  snapshotNullableNumber(value.sequence, "retry job source cursor.sequence", true);
+  snapshotNullableNumber(value.occurredAt, "retry job source cursor.occurredAt");
+}
+
+function validateSourceStatusSnapshot(value: unknown): void {
+  if (!isPlainRecord(value)) throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry job source status must be a plain object");
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== "string") throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry job source status contains a symbol key");
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor || !descriptor.enumerable || !("value" in descriptor) || (descriptor.value !== null && typeof descriptor.value !== "string")) throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry job source status contains an invalid value");
+  }
+}
+
+function validateReplaySnapshot(value: unknown): void {
+  if (value === null) return;
+  if (!isPlainRecord(value)) throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry job replay metadata must be a plain object or null");
+  exactSnapshotKeys(value, ["replaySequence", "replayFromBlock", "replayOldBlockHash", "replayParentBlockHash", "replayTargets"], "retry job replay metadata");
+  snapshotNullableNumber(value.replaySequence, "retry job replaySequence", true);
+  snapshotBigIntText(value.replayFromBlock, "retry job replayFromBlock", true);
+  snapshotString(value.replayOldBlockHash, "retry job replayOldBlockHash", true);
+  snapshotString(value.replayParentBlockHash, "retry job replayParentBlockHash", true);
+  if (!Array.isArray(value.replayTargets)) throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry job replayTargets must be an array");
+  for (const [index, raw] of value.replayTargets.entries()) {
+    if (!isPlainRecord(raw)) throw new RetryOrchestrationError("INVALID_SNAPSHOT", `retry job replayTargets[${index}] is invalid`);
+    exactSnapshotKeys(raw, ["chainKey", "blockNumber", "oldBlockHash", "oldParentBlockHash", "expectedParentBlockHash"], `retry job replayTargets[${index}]`);
+    snapshotNullableNumber(raw.chainKey, `retry job replayTargets[${index}].chainKey`, true);
+    snapshotBigIntText(raw.blockNumber, `retry job replayTargets[${index}].blockNumber`);
+    snapshotString(raw.oldBlockHash, `retry job replayTargets[${index}].oldBlockHash`, true);
+    snapshotString(raw.oldParentBlockHash, `retry job replayTargets[${index}].oldParentBlockHash`, true);
+    snapshotString(raw.expectedParentBlockHash, `retry job replayTargets[${index}].expectedParentBlockHash`, true);
+  }
+}
+
+function validateRetrySourceSnapshot(value: unknown): void {
+  if (!isPlainRecord(value)) throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry job source must be a plain object");
+  exactSnapshotKeys(value, ["snapshotHash", "schemaVersion", "recordKind", "recordId", "relationshipId", "cursor", "sourceDomain", "chainId", "adapterVersion", "observationSchemaVersion", "finalityPolicyVersion", "cursorMode", "status", "replay"], "retry job source");
+  snapshotString(value.snapshotHash, "retry job source.snapshotHash");
+  if (value.schemaVersion !== "slice-b-read-model-v1") throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry job source schema is unsupported");
+  snapshotString(value.recordKind, "retry job source.recordKind");
+  snapshotString(value.recordId, "retry job source.recordId");
+  if (value.relationshipId !== null) snapshotString(value.relationshipId, "retry job source.relationshipId");
+  validateSourceCursorSnapshot(value.cursor);
+  snapshotString(value.sourceDomain, "retry job source.sourceDomain");
+  snapshotNullableNumber(value.chainId, "retry job source.chainId", true);
+  snapshotString(value.adapterVersion, "retry job source.adapterVersion");
+  snapshotString(value.observationSchemaVersion, "retry job source.observationSchemaVersion");
+  snapshotString(value.finalityPolicyVersion, "retry job source.finalityPolicyVersion");
+  if (value.cursorMode !== "SPARSE_EVENT") throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry job source cursor mode is unsupported");
+  validateSourceStatusSnapshot(value.status);
+  validateReplaySnapshot(value.replay);
+}
+
+function validateRetryJobSnapshot(value: unknown): void {
+  if (!isPlainRecord(value)) throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry snapshot contains an invalid job");
+  exactSnapshotKeys(value, ["id", "provider", "operation", "selector", "relationshipId", "source", "policy", "status", "attempts", "nextAttemptAt", "lastError", "result", "deliveryIds", "handoffId"], "retry job");
+  snapshotString(value.id, "retry job.id");
+  snapshotString(value.provider, "retry job.provider");
+  if (value.operation !== "provider-read" && value.operation !== "replay-required-handoff") throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry job operation is unsupported");
+  if (!isPlainRecord(value.selector)) throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry job selector is invalid");
+  exactSnapshotKeys(value.selector, ["kind", "id"], "retry job selector");
+  snapshotString(value.selector.kind, "retry job selector.kind");
+  snapshotString(value.selector.id, "retry job selector.id");
+  if (value.relationshipId !== null) snapshotString(value.relationshipId, "retry job relationshipId");
+  validateRetrySourceSnapshot(value.source);
+  if (!isPlainRecord(value.policy)) throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry job policy is invalid");
+  exactSnapshotKeys(value.policy, ["maxAttempts", "initialDelayMs", "maxDelayMs", "multiplier"], "retry job policy");
+  normalizePolicy(value.policy as unknown as RetryPolicy);
+  if (!["PENDING", "RETRY_SCHEDULED", "COMPLETED", "DEAD_LETTERED", "HANDOFF_EMITTED"].includes(String(value.status))) throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry job status is unsupported");
+  snapshotNullableNumber(value.attempts, "retry job attempts", true);
+  snapshotNullableNumber(value.nextAttemptAt, "retry job nextAttemptAt");
+  snapshotString(value.lastError, "retry job lastError", true);
+  if (value.result !== null && !isPlainRecord(value.result)) throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry job result is invalid");
+  if (!Array.isArray(value.deliveryIds) || value.deliveryIds.some((item) => typeof item !== "string") || new Set(value.deliveryIds).size !== value.deliveryIds.length) throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry job deliveryIds are invalid");
+  snapshotString(value.handoffId, "retry job handoffId", true);
 }
 
 function ready(job: RetryJob, now: number): boolean {
@@ -280,6 +430,7 @@ export class RetryOrchestrator {
     const restored = new RetryOrchestrator(options);
     const jobIds = new Set<string>();
     for (const raw of jobs) {
+      validateRetryJobSnapshot(raw);
       if (!isPlainRecord(raw) || typeof raw.id !== "string" || jobIds.has(raw.id) || !isPlainRecord(raw.selector) || !isPlainRecord(raw.source) || !isPlainRecord(raw.policy)) {
         throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry snapshot contains an invalid or duplicate job");
       }
@@ -445,7 +596,7 @@ export class RetryOrchestrator {
         operation: deliveryRequest.operation,
         selector: Object.freeze(normalizedRecordSelector),
         relationshipId: deliveryRequest.relationshipId,
-        source: sourceView(parsed.hash, record),
+        source: sourceView(parsed, record),
         policy,
         status: "PENDING",
         attempts: 0,

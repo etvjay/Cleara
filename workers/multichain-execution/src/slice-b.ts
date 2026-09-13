@@ -370,19 +370,65 @@ const reconciliationStates = new Set<ReconciliationState>(["UNKNOWN", "PENDING",
 const authorities = new Set<ReconciliationRecord["authority"]>(["creditcoin", "source-chain", "attestcoin", "projection"]);
 const objectTypes = new Set<ObjectType>(["Claim", "Facility", "Allocation", "Commitment", "Obligation", "ClearingEpoch", "Residual", "Settlement", "Evidence", "ExternalExecution"]);
 
-function requireInputObject(value: unknown, field: string): asserts value is Record<string, unknown> {
+const SAFE_OBJECT_PROTOTYPE_KEYS = new Set(["constructor", "__defineGetter__", "__defineSetter__", "hasOwnProperty", "__lookupGetter__", "__lookupSetter__", "isPrototypeOf", "propertyIsEnumerable", "toString", "valueOf", "__proto__", "toLocaleString"]);
+const SAFE_ARRAY_PROTOTYPE_KEYS = new Set(["length", "constructor", "at", "concat", "copyWithin", "fill", "find", "findIndex", "findLast", "findLastIndex", "lastIndexOf", "pop", "push", "reverse", "shift", "unshift", "slice", "sort", "splice", "includes", "indexOf", "join", "keys", "entries", "values", "forEach", "filter", "flat", "flatMap", "map", "every", "some", "reduce", "reduceRight", "toReversed", "toSorted", "toSpliced", "with", "toLocaleString", "toString"]);
+
+function safeIntrinsicPrototypes(): boolean {
   try {
-    if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error();
-    const prototype = Object.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) throw new Error();
-    for (const key of Object.keys(value)) {
-      if (["__proto__", "constructor", "prototype"].includes(key)) throw new Error();
-      const descriptor = Object.getOwnPropertyDescriptor(value, key);
-      if (!descriptor || !("value" in descriptor)) throw new Error();
-    }
+    const objectKeys = Reflect.ownKeys(Object.prototype);
+    const arrayKeys = Reflect.ownKeys(Array.prototype);
+    const arrayStrings = arrayKeys.filter((key): key is string => typeof key === "string");
+    const arraySymbols = arrayKeys.filter((key): key is symbol => typeof key === "symbol");
+    return objectKeys.length === SAFE_OBJECT_PROTOTYPE_KEYS.size
+      && objectKeys.every((key) => typeof key === "string" && SAFE_OBJECT_PROTOTYPE_KEYS.has(key))
+      && arrayStrings.length === SAFE_ARRAY_PROTOTYPE_KEYS.size
+      && arrayStrings.every((key) => SAFE_ARRAY_PROTOTYPE_KEYS.has(key))
+      && arraySymbols.length === 2
+      && arraySymbols.includes(Symbol.iterator)
+      && arraySymbols.includes(Symbol.unscopables);
   } catch {
-    throw new SliceBValidationError(`${field} must be a safe plain object`);
+    return false;
   }
+}
+
+function assertSafeBoundaryValue(value: unknown, field: string, ancestors = new Set<object>()): void {
+  if (value === null || typeof value === "string" || typeof value === "boolean" || typeof value === "number" || typeof value === "bigint") return;
+  if (typeof value !== "object") throw new SliceBValidationError(`${field} contains an unsupported value`);
+  if (!safeIntrinsicPrototypes()) throw new SliceBValidationError(`${field} uses a polluted intrinsic prototype`);
+  if (ancestors.has(value)) throw new SliceBValidationError(`${field} contains a cycle`);
+  try {
+    structuredClone(value);
+  } catch {
+    throw new SliceBValidationError(`${field} contains a proxy or non-cloneable object`);
+  }
+  const next = new Set(ancestors).add(value);
+  if (Array.isArray(value)) {
+    if (Object.getPrototypeOf(value) !== Array.prototype) throw new SliceBValidationError(`${field} must use the intrinsic array prototype`);
+    for (const key of Reflect.ownKeys(value)) {
+      if (key === "length") continue;
+      if (typeof key !== "string" || !/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= value.length) throw new SliceBValidationError(`${field} contains an unsafe array property`);
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) throw new SliceBValidationError(`${field} contains an accessor or hidden array property`);
+    }
+    for (let index = 0; index < value.length; index += 1) {
+      if (!Object.prototype.hasOwnProperty.call(value, String(index))) throw new SliceBValidationError(`${field} is sparse`);
+      assertSafeBoundaryValue(value[index], `${field}[${index}]`, next);
+    }
+    return;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) throw new SliceBValidationError(`${field} must use a plain object prototype`);
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== "string" || ["__proto__", "constructor", "prototype"].includes(key)) throw new SliceBValidationError(`${field} contains an unsafe key`);
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) throw new SliceBValidationError(`${field} contains an accessor or hidden property`);
+    assertSafeBoundaryValue(descriptor.value, `${field}.${key}`, next);
+  }
+}
+
+function requireInputObject(value: unknown, field: string): asserts value is Record<string, unknown> {
+  assertSafeBoundaryValue(value, field);
+  if (value === null || typeof value !== "object" || Array.isArray(value)) throw new SliceBValidationError(`${field} must be a safe plain object`);
 }
 
 function requireString(value: unknown, field: string, allowEmpty = false): asserts value is string {
@@ -401,11 +447,12 @@ function requireEnum<T>(value: unknown, values: ReadonlySet<T>, field: string): 
   if (!values.has(value as T)) throw new SliceBValidationError(`${field} is not a supported enum value`);
 }
 function requirePlainRecord(value: unknown, field: string): asserts value is Record<string, unknown> {
+  assertSafeBoundaryValue(value, field);
   if (value === null || typeof value !== "object" || Array.isArray(value) || !([Object.prototype, null] as unknown[]).includes(Object.getPrototypeOf(value))) throw new SliceBValidationError(`${field} must be a plain object`);
-  for (const key of Object.keys(value)) {
-    if (["__proto__", "constructor", "prototype"].includes(key)) throw new SliceBValidationError(`${field} contains an unsafe key`);
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== "string" || ["__proto__", "constructor", "prototype"].includes(key)) throw new SliceBValidationError(`${field} contains an unsafe key`);
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    if (!descriptor || !("value" in descriptor)) throw new SliceBValidationError(`${field} contains an accessor`);
+    if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) throw new SliceBValidationError(`${field} contains an accessor or hidden property`);
     if (typeof descriptor.value !== "string") throw new SliceBValidationError(`${field}.${key} must be a string`);
   }
 }
@@ -807,14 +854,12 @@ export function advanceFinality(state: SliceBState, chainKey: number, finalizedB
   const replayRequired = previous?.replayStatus === "REPLAY_REQUIRED";
   const itemFinalityBlock = replayRequired ? finalizedBlock : effectiveFinalizedBlock;
   let changed = false;
-  let latestObserved: { item: ObservationEnvelope; id: string } | null = null;
   let latestFinalized: { item: ObservationEnvelope; id: string } | null = null;
 
   for (const [id, item] of observations) {
     if (item.chainKey !== chainKey || item.finalityState === "REORGED" || ["CONFLICTING", "MALFORMED", "REJECTED", "UNAVAILABLE"].includes(item.observationState)) continue;
     const header = blockHistory.get(blockKey(item.chainKey, item.chainId, item.sourceDomain, item.adapterVersion, item.payloadSchemaVersion, item.blockNumber, item.blockHash));
     const isCanonical = header?.status === "CANONICAL";
-    if (isCanonical && (!latestObserved || item.blockNumber > latestObserved.item.blockNumber || (item.blockNumber === latestObserved.item.blockNumber && id.localeCompare(latestObserved.id) > 0))) latestObserved = { item, id };
     if (item.blockNumber <= itemFinalityBlock) {
       const finalized = item.finalityState === "FINALIZED" ? item : { ...item, finalityState: "FINALIZED" as const, updatedAt: observedAt };
       if (finalized !== item) { observations.set(id, finalized); changed = true; }
@@ -825,15 +870,21 @@ export function advanceFinality(state: SliceBState, chainKey: number, finalizedB
     }
   }
 
+  let latestCanonicalHeader: BlockHeader | null = null;
+  for (const header of blockHistory.values()) {
+    if (header.chainKey !== chainKey || header.chainId !== sourceScope.chainId || header.sourceDomain !== sourceScope.sourceDomain || header.adapterVersion !== sourceScope.adapterVersion || header.payloadSchemaVersion !== sourceScope.observationSchemaVersion || header.status !== "CANONICAL") continue;
+    if (!latestCanonicalHeader || header.blockNumber > latestCanonicalHeader.blockNumber || (header.blockNumber === latestCanonicalHeader.blockNumber && header.blockHash.localeCompare(latestCanonicalHeader.blockHash) > 0)) latestCanonicalHeader = header;
+  }
+
   const checkpoints = new Map(state.checkpoints);
   const checkpoint = checkpointFromPrevious(chainKey, previous, {
-    sourceDomain: replayRequired ? previous!.sourceDomain : (latestFinalized?.item.sourceDomain ?? previous?.sourceDomain ?? null),
-    chainId: replayRequired ? previous!.chainId : (latestFinalized?.item.chainId ?? previous?.chainId ?? null),
-    lastObservedBlock: replayRequired ? previous!.lastObservedBlock : (latestObserved?.item.blockNumber ?? previous?.lastObservedBlock ?? 0n),
-    lastObservedBlockHash: replayRequired ? previous!.lastObservedBlockHash : (latestObserved?.item.blockHash ?? previous?.lastObservedBlockHash ?? ""),
+    sourceDomain: replayRequired ? previous!.sourceDomain : (latestCanonicalHeader?.sourceDomain ?? latestFinalized?.item.sourceDomain ?? previous?.sourceDomain ?? null),
+    chainId: replayRequired ? previous!.chainId : (latestCanonicalHeader?.chainId ?? latestFinalized?.item.chainId ?? previous?.chainId ?? null),
+    lastObservedBlock: replayRequired ? previous!.lastObservedBlock : (latestCanonicalHeader?.blockNumber ?? previous?.lastObservedBlock ?? 0n),
+    lastObservedBlockHash: replayRequired ? previous!.lastObservedBlockHash : (latestCanonicalHeader?.blockHash ?? previous?.lastObservedBlockHash ?? ""),
     lastFinalizedBlock: effectiveFinalizedBlock,
-    adapterVersion: replayRequired ? previous!.adapterVersion : (latestFinalized?.item.adapterVersion ?? previous?.adapterVersion ?? ""),
-    observationSchemaVersion: replayRequired ? previous!.observationSchemaVersion : (latestFinalized?.item.payloadSchemaVersion ?? previous?.observationSchemaVersion ?? ""),
+    adapterVersion: replayRequired ? previous!.adapterVersion : (latestCanonicalHeader?.adapterVersion ?? latestFinalized?.item.adapterVersion ?? previous?.adapterVersion ?? ""),
+    observationSchemaVersion: replayRequired ? previous!.observationSchemaVersion : (latestCanonicalHeader?.payloadSchemaVersion ?? latestFinalized?.item.payloadSchemaVersion ?? previous?.observationSchemaVersion ?? ""),
     updatedAt: changed ? observedAt : (previous?.updatedAt ?? observedAt),
     replayStatus: replayRequired ? "REPLAY_REQUIRED" : "CURRENT",
     replayReason: replayRequired ? previous!.replayReason : null,

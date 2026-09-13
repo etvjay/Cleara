@@ -3,6 +3,7 @@ import { AbiCoder, Interface } from "ethers";
 import { observationId as makeObservationId, sourceEventId as makeSourceEventId, type ObservationEnvelope, type SourceEventIdentity } from "../../../multichain-execution/src/index.js";
 import type { SourceScopeManifest } from "../../source-scope/src/manifest.js";
 import { SourceIngestionError } from "./errors.js";
+import { isPlainRecord, isSafeArray, isStructuredCloneable } from "../../source-scope/src/safety.js";
 import type {
   NormalizedSourceObservation,
   SourceBlockHeader,
@@ -17,57 +18,6 @@ const HASH = /^0x[0-9a-fA-F]{64}$/;
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const HEX = /^0x(?:[0-9a-fA-F]{2})*$/;
 const MAX_SAFE = Number.MAX_SAFE_INTEGER;
-
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  try {
-    const prototype = Object.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) return false;
-    return Reflect.ownKeys(value).every((key) => {
-      if (typeof key !== "string" || ["__proto__", "constructor", "prototype"].includes(key)) return false;
-      const descriptor = Object.getOwnPropertyDescriptor(value, key);
-      return descriptor !== undefined && descriptor.enumerable && "value" in descriptor;
-    });
-  } catch {
-    return false;
-  }
-}
-
-const TRUSTED_ARRAY_PROTOTYPE = Array.prototype;
-const TRUSTED_ARRAY_DESCRIPTORS = new Map(Reflect.ownKeys(TRUSTED_ARRAY_PROTOTYPE).map((key) => [key, Object.getOwnPropertyDescriptor(TRUSTED_ARRAY_PROTOTYPE, key)!]));
-
-function sameDescriptor(expected: PropertyDescriptor, actual: PropertyDescriptor | undefined): boolean {
-  if (!actual || expected.enumerable !== actual.enumerable || expected.configurable !== actual.configurable) return false;
-  if ("value" in expected || "value" in actual) return "value" in expected && "value" in actual && expected.writable === actual.writable && expected.value === actual.value;
-  return expected.get === actual.get && expected.set === actual.set;
-}
-
-function trustedArrayPrototype(): boolean {
-  try {
-    const keys = Reflect.ownKeys(TRUSTED_ARRAY_PROTOTYPE);
-    return keys.length === TRUSTED_ARRAY_DESCRIPTORS.size && [...TRUSTED_ARRAY_DESCRIPTORS].every(([key, descriptor]) => sameDescriptor(descriptor, Object.getOwnPropertyDescriptor(TRUSTED_ARRAY_PROTOTYPE, key)));
-  } catch {
-    return false;
-  }
-}
-
-function isSafeArray(value: unknown): value is readonly unknown[] {
-  if (!Array.isArray(value)) return false;
-  try {
-    if (Object.getPrototypeOf(value) !== TRUSTED_ARRAY_PROTOTYPE || !trustedArrayPrototype()) return false;
-    const keys = Reflect.ownKeys(value);
-    for (const key of keys) {
-      if (key === "length") continue;
-      if (typeof key !== "string" || !/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= value.length) return false;
-      const descriptor = Object.getOwnPropertyDescriptor(value, key);
-      if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) return false;
-    }
-    for (let index = 0; index < value.length; index += 1) if (!Object.prototype.hasOwnProperty.call(value, String(index))) return false;
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 function assertCloneable(value: object, field: string): void {
   try {
@@ -109,6 +59,7 @@ function assertSafe(value: unknown, field: string, ancestors = new Set<object>()
 function record(value: unknown, field: string): Record<string, unknown> {
   if (value === null) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", `${field} must be a plain object value`);
   if (typeof value !== "object") throw new SourceIngestionError("UNSAFE_INPUT", `${field} must be a plain object value`);
+  if (!isStructuredCloneable(value)) throw new SourceIngestionError("UNSAFE_INPUT", `${field} contains a proxy or non-cloneable object`);
   assertSafe(value, field);
   if (!isPlainRecord(value)) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", `${field} must be a plain object`);
   return value;
@@ -269,12 +220,14 @@ export class CapitalCommittedAdapter {
   }
 
   public adapt(bundle: SourceReadBundle): NormalizedSourceObservation {
-    const identity = validateIdentity(bundle.identity, this.manifest);
-    const block = validateBlock(bundle.block, "block");
-    const parent = bundle.parent === null ? null : validateBlock(bundle.parent, "parent", block.blockNumber - 1);
+    const sourceBundle = record(bundle, "source read bundle");
+    exactKeys(sourceBundle, ["identity", "block", "parent", "log", "receipt"], "source read bundle");
+    const identity = validateIdentity(sourceBundle.identity, this.manifest);
+    const block = validateBlock(sourceBundle.block, "block");
+    const parent = sourceBundle.parent === null ? null : validateBlock(sourceBundle.parent, "parent", block.blockNumber - 1);
     if (block.blockNumber > 0 && (parent === null || block.parentHash !== parent.blockHash)) throw new SourceIngestionError("INCONSISTENT_SOURCE_DATA", "block parent does not match the trusted parent header");
-    const log = validateLog(bundle.log, "event log", block);
-    const receipt = validateReceipt(bundle.receipt, block);
+    const log = validateLog(sourceBundle.log, "event log", block);
+    const receipt = validateReceipt(sourceBundle.receipt, block);
     if (receipt.transactionHash !== log.transactionHash || receipt.transactionIndex !== log.transactionIndex) throw new SourceIngestionError("INCONSISTENT_SOURCE_DATA", "receipt and log transaction identity differ");
     if (receipt.status !== 1) throw new SourceIngestionError("INVALID_SOURCE_EVENT", "source transaction receipt did not succeed");
     const matchingReceiptLogs = receipt.logs.filter((candidate) => candidate.logIndex === log.logIndex && candidate.transactionHash === log.transactionHash);

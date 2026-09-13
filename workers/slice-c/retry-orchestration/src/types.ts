@@ -63,7 +63,12 @@ export interface RetrySourceView {
   readonly recordId: string;
   readonly relationshipId: RelationshipId;
   readonly cursor: SourceCursor;
-  /** Slice B markers are copied, never interpreted as orchestration state. */
+  readonly sourceDomain: string;
+  readonly chainId: number;
+  readonly adapterVersion: string;
+  readonly observationSchemaVersion: string;
+  readonly finalityPolicyVersion: string;
+  readonly cursorMode: "SPARSE_EVENT";
   readonly status: Readonly<Record<string, string | null>>;
   readonly replay: ReplayMetadata | null;
 }

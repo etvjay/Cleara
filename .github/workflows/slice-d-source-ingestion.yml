@@ -110,6 +110,9 @@ jobs:
           names = subprocess.check_output(["git", "diff", "--name-only", f"{base}..HEAD"], text=True).splitlines()
           allowed = (
               "workers/slice-d/source-ingestion/",
+              "workers/slice-d/source-scope/",
+              "workers/slice-c/",
+              "workers/multichain-execution/",
               "scripts/slice-d/",
               "docs/development/SLICE_D_",
               ".github/workflows/slice-d-source-ingestion.yml",
