@@ -230,6 +230,7 @@ function sourceView(contract: ParsedSliceBContract, record: ParsedSliceBRecord):
   });
   const sourceWithoutBinding = {
     snapshotHash: contract.hash,
+    snapshotBody: contract.serializedBody,
     schemaVersion: "slice-b-read-model-v1" as const,
     recordKind: record.kind,
     recordId: record.id,
@@ -319,9 +320,15 @@ function validateReplaySnapshot(value: unknown): void {
 
 function validateRetrySourceSnapshot(value: unknown): void {
   if (!isPlainRecord(value)) throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry job source must be a plain object");
-  exactSnapshotKeys(value, ["snapshotHash", "schemaVersion", "recordKind", "recordId", "relationshipId", "cursor", "sourceScopeHash", "snapshotBindingHash", "sourceDomain", "chainId", "adapterVersion", "observationSchemaVersion", "finalityPolicyVersion", "cursorMode", "status", "replay"], "retry job source");
+  exactSnapshotKeys(value, ["snapshotHash", "snapshotBody", "schemaVersion", "recordKind", "recordId", "relationshipId", "cursor", "sourceScopeHash", "snapshotBindingHash", "sourceDomain", "chainId", "adapterVersion", "observationSchemaVersion", "finalityPolicyVersion", "cursorMode", "status", "replay"], "retry job source");
   snapshotString(value.snapshotHash, "retry job source.snapshotHash");
   if (value.schemaVersion !== "slice-b-read-model-v1") throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry job source schema is unsupported");
+  snapshotString(value.snapshotBody, "retry job source.snapshotBody");
+  try {
+    parseSerializedSliceBContract({ hash: value.snapshotHash, body: value.snapshotBody });
+  } catch (error) {
+    throw new RetryOrchestrationError("INVALID_SNAPSHOT", error instanceof Error ? error.message : "retry job source body is invalid");
+  }
   snapshotString(value.recordKind, "retry job source.recordKind");
   snapshotString(value.recordId, "retry job source.recordId");
   if (value.relationshipId !== null) snapshotString(value.relationshipId, "retry job source.relationshipId");

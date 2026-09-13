@@ -136,7 +136,7 @@ test("review 2: polluted Array.prototype is rejected at the adapter boundary", a
   const before = Object.getOwnPropertyDescriptor(Array.prototype, key);
   Object.defineProperty(Array.prototype, key, { value: "poison", enumerable: true, configurable: true });
   try {
-    expectCode(() => new CapitalCommittedAdapter(manifest).adapt(bundle), "UNSAFE_INPUT");
+    expectCode(() => new CapitalCommittedAdapter(manifest).adapt(bundle), "UNSUPPORTED_SCOPE");
   } finally {
     if (before) Object.defineProperty(Array.prototype, key, before);
     else delete (Array.prototype as unknown as Record<string, unknown>)[key];

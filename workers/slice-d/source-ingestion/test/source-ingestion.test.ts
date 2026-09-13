@@ -124,11 +124,11 @@ test("adapter rejects invalid amount, expiry, incomplete mapping, and ambiguous 
 
   const missing = manifestCopy();
   (missing as unknown as { relationshipMappings: unknown[] }).relationshipMappings = [];
-  expectCode(() => new CapitalCommittedAdapter(missing).adapt(bundle), "INVALID_SOURCE_EVENT");
+  expectCode(() => new CapitalCommittedAdapter(missing).adapt(bundle), "UNSUPPORTED_SCOPE");
 
   const ambiguous = manifestCopy();
   (ambiguous as unknown as { relationshipMappings: unknown[] }).relationshipMappings = [...ambiguous.relationshipMappings, ambiguous.relationshipMappings[0]];
-  expectCode(() => new CapitalCommittedAdapter(ambiguous).adapt(bundle), "INVALID_SOURCE_EVENT");
+  expectCode(() => new CapitalCommittedAdapter(ambiguous).adapt(bundle), "UNSUPPORTED_SCOPE");
 });
 
 test("adapter fails closed for fixture/live confusion and unsafe provider objects", async () => {

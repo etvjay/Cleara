@@ -1,8 +1,13 @@
 import { createHash } from "node:crypto";
 import { AbiCoder, Interface } from "ethers";
 import { observationId as makeObservationId, sourceEventId as makeSourceEventId, type ObservationEnvelope, type SourceEventIdentity } from "../../../multichain-execution/src/index.js";
-import type { SourceScopeManifest } from "../../source-scope/src/manifest.js";
+import {
+  parseSourceScopeManifest,
+  serializeSourceScopeManifest,
+  type SourceScopeManifest,
+} from "../../source-scope/src/manifest.js";
 import { SourceIngestionError } from "./errors.js";
+import { loadCanonicalD0Manifest } from "./canonical-manifest.js";
 import { isPlainRecord, isSafeArray } from "../../source-scope/src/safety.js";
 import type {
   NormalizedSourceObservation,
@@ -207,15 +212,25 @@ function sameLog(left: SourceLog, right: SourceLog): boolean {
 }
 
 export class CapitalCommittedAdapter {
+  private readonly manifest: SourceScopeManifest;
   private readonly iface: Interface;
   private readonly coder = AbiCoder.defaultAbiCoder();
   private readonly dataTypes: readonly string[];
 
-  public constructor(private readonly manifest: SourceScopeManifest) {
-    if (manifest.mode !== "FIXTURE_ONLY" && !manifest.liveDeployment) throw new SourceIngestionError("UNSUPPORTED_SCOPE", "LIVE_READ cannot be adapted without verified live deployment fields");
-    if (manifest.eventFamily.name !== "CapitalCommitted") throw new SourceIngestionError("UNSUPPORTED_SCOPE", "only the D0 CapitalCommitted event family is supported");
-    this.iface = new Interface([eventAbi(manifest)]);
-    this.dataTypes = Object.freeze(manifest.eventFamily.dataFields.map((field) => field.type));
+  public constructor(manifest: SourceScopeManifest) {
+    let suppliedManifest: SourceScopeManifest;
+    try {
+      suppliedManifest = parseSourceScopeManifest(manifest);
+    } catch (error) {
+      throw new SourceIngestionError("UNSUPPORTED_SCOPE", error instanceof Error ? error.message : "adapter manifest is invalid");
+    }
+    const canonical = loadCanonicalD0Manifest();
+    if (serializeSourceScopeManifest(suppliedManifest).hash !== canonical.hash) throw new SourceIngestionError("UNSUPPORTED_SCOPE", "adapter manifest does not match the canonical D0 manifest");
+    this.manifest = suppliedManifest;
+    if (suppliedManifest.mode !== "FIXTURE_ONLY" && !suppliedManifest.liveDeployment) throw new SourceIngestionError("UNSUPPORTED_SCOPE", "LIVE_READ cannot be adapted without verified live deployment fields");
+    if (suppliedManifest.eventFamily.name !== "CapitalCommitted") throw new SourceIngestionError("UNSUPPORTED_SCOPE", "only the D0 CapitalCommitted event family is supported");
+    this.iface = new Interface([eventAbi(suppliedManifest)]);
+    this.dataTypes = Object.freeze(suppliedManifest.eventFamily.dataFields.map((field) => field.type));
   }
 
   public adapt(bundle: SourceReadBundle): NormalizedSourceObservation {

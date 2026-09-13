@@ -58,6 +58,7 @@ export interface SourceCursor {
 
 export interface RetrySourceView {
   readonly snapshotHash: string;
+  readonly snapshotBody: string;
   readonly schemaVersion: typeof SLICE_B_SCHEMA_VERSION;
   readonly recordKind: SliceBRecordKind;
   readonly recordId: string;

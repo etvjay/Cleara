@@ -65,6 +65,7 @@ export class SliceCSerializedBoundary implements SerializedSliceCBoundary {
       const retry = RetryOrchestrator.fromSerialized(serialized);
       for (const job of retry.snapshot().jobs) {
         const source = job.source;
+        this.b.read({ hash: source.snapshotHash, body: source.snapshotBody });
         if (source.sourceScopeHash !== this.manifestHash || source.cursorMode !== this.manifest.cursor.mode || source.cursor.chainKey !== this.manifest.chainKey || source.sourceDomain !== this.manifest.sourceDomain || source.chainId !== this.manifest.evmChainId || source.adapterVersion !== this.manifest.adapterVersion || source.observationSchemaVersion !== this.manifest.eventFamily.schemaVersion || source.finalityPolicyVersion !== this.manifest.finalityPolicy.version) {
           throw new SourceIngestionError("UNSUPPORTED_SCOPE", "serialized retry source does not match the canonical D0 manifest");
         }

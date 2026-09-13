@@ -178,6 +178,7 @@ test("review 4: retry restart rejects canonical metadata edited onto a generic s
   source.observationSchemaVersion = manifest.eventFamily.schemaVersion;
   source.finalityPolicyVersion = manifest.finalityPolicy.version;
   source.cursorMode = manifest.cursor.mode;
+  source.sourceScopeHash = serializeSourceScopeManifest(manifest).hash;
   source.cursor = { ...(source.cursor as Record<string, unknown>), chainKey: manifest.chainKey };
   refreshSourceBinding(source);
   const boundary = await d1Boundary(join(root, "boundary"));
@@ -236,4 +237,18 @@ test("review 4: adapter rejects parent headers newer than their child", async ()
   const receipt = await provider.getTransactionReceipt(manifest, logs[0]!.transactionHash);
   const identity = await provider.getChainIdentity(manifest);
   expectSourceCode(() => new CapitalCommittedAdapter(manifest).adapt({ identity, block, parent, log: logs[0], receipt }), "INCONSISTENT_SOURCE_DATA");
+});
+
+test("review 4: adapter constructor rejects a same-scope forged manifest", async () => {
+  const provider = new DeterministicFixtureProvider(fixtureDataset());
+  const forged = manifestCopy() as unknown as { contract: { address: string } };
+  forged.contract.address = "0x000000000000000000000000000000000000d099";
+  const block = await provider.getBlockHeader(manifest, 10);
+  const parent = await provider.getBlockHeader(manifest, 9);
+  const logs = await provider.getLogs(manifest, { address: manifest.contract.address, topic0: manifest.eventFamily.selector, fromBlock: 10, toBlock: 10 });
+  const receipt = await provider.getTransactionReceipt(manifest, logs[0]!.transactionHash);
+  const log = { ...logs[0]!, address: forged.contract.address };
+  const forgedReceipt = { ...receipt, logs: [log] };
+  const identity = await provider.getChainIdentity(manifest);
+  expectSourceCode(() => new CapitalCommittedAdapter(forged as never).adapt({ identity, block, parent, log, receipt: forgedReceipt }), "UNSUPPORTED_SCOPE");
 });
