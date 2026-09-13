@@ -140,7 +140,7 @@ export interface AcceptedEventRecord {
   readonly logIndex: number;
   readonly eventIndex: number;
   readonly payloadHash: string;
-  readonly finalityState: "UNKNOWN" | "FINALITY_PENDING" | "FINALIZED";
+  readonly finalityState: "UNKNOWN" | "FINALITY_PENDING" | "FINALIZED" | "REORGED";
   readonly evidenceStatus: "PENDING_PROOF";
   readonly reconciliationStatus: "RECONCILIATION_PENDING";
 }

@@ -54,35 +54,128 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   try {
     const prototype = Object.getPrototypeOf(value);
-    return (prototype === Object.prototype || prototype === null) && Object.keys(value).every((key) => !["__proto__", "constructor", "prototype"].includes(key));
+    if (prototype !== Object.prototype && prototype !== null) return false;
+    return Reflect.ownKeys(value).every((key) => {
+      if (typeof key !== "string" || ["__proto__", "constructor", "prototype"].includes(key)) return false;
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      return descriptor !== undefined && descriptor.enumerable && "value" in descriptor;
+    });
   } catch {
     return false;
   }
 }
 
+function isSafeArray(value: unknown): value is readonly unknown[] {
+  if (!Array.isArray(value)) return false;
+  try {
+    if (Object.getPrototypeOf(value) !== Array.prototype) return false;
+    for (const key of Reflect.ownKeys(value)) {
+      if (key === "length") continue;
+      if (typeof key !== "string" || !/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= value.length) return false;
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) return false;
+    }
+    for (let index = 0; index < value.length; index += 1) {
+      if (!Object.prototype.hasOwnProperty.call(value, String(index))) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function stateString(value: unknown, field: string): string {
+  if (typeof value !== "string" || value.length === 0 || value.trim() !== value) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", `${field} must be a nonempty trimmed string`);
+  return value;
+}
+
+function stateHash(value: unknown, field: string, withPrefix = true): string {
+  const pattern = withPrefix ? /^0x[0-9a-f]{64}$/ : /^[0-9a-f]{64}$/;
+  if (typeof value !== "string" || !pattern.test(value)) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", `${field} must be a canonical SHA/hash string`);
+  return value;
+}
+
+function stateInteger(value: unknown, field: string): number {
+  if (!isSafeBlock(value)) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", `${field} must be a safe nonnegative integer`);
+  return value;
+}
+
+function exactStateKeys(value: Record<string, unknown>, expected: readonly string[], field: string): void {
+  const actual = Object.keys(value).sort();
+  const target = [...expected].sort();
+  if (actual.length !== target.length || actual.some((key, index) => key !== target[index])) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", `${field} has an unsupported shape`);
+}
+
+function validateAcceptedRecord(value: unknown, field: string): void {
+  if (!isPlainRecord(value)) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", `${field} must be a plain object`);
+  exactStateKeys(value, ["eventId", "sourceEventId", "observationId", "relationshipId", "objectId", "blockNumber", "blockHash", "transactionHash", "transactionIndex", "logIndex", "eventIndex", "payloadHash", "finalityState", "evidenceStatus", "reconciliationStatus"], field);
+  for (const key of ["eventId", "sourceEventId", "observationId", "relationshipId", "objectId", "evidenceStatus", "reconciliationStatus"]) stateString(value[key], `${field}.${key}`);
+  stateInteger(value.blockNumber, `${field}.blockNumber`);
+  stateHash(value.blockHash, `${field}.blockHash`);
+  stateHash(value.transactionHash, `${field}.transactionHash`);
+  for (const key of ["transactionIndex", "logIndex", "eventIndex"]) stateInteger(value[key], `${field}.${key}`);
+  stateHash(value.payloadHash, `${field}.payloadHash`, false);
+  if (!["UNKNOWN", "FINALITY_PENDING", "FINALIZED", "REORGED"].includes(String(value.finalityState))) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", `${field}.finalityState is unsupported`);
+  if (value.eventId !== value.observationId) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", `${field}.eventId must equal observationId`);
+}
+
+function validateRejectedRecord(value: unknown, field: string): void {
+  if (!isPlainRecord(value)) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", `${field} must be a plain object`);
+  exactStateKeys(value, ["eventId", "blockNumber", "transactionHash", "logIndex", "code", "reason"], field);
+  stateString(value.eventId, `${field}.eventId`);
+  stateInteger(value.blockNumber, `${field}.blockNumber`);
+  stateHash(value.transactionHash, `${field}.transactionHash`);
+  stateInteger(value.logIndex, `${field}.logIndex`);
+  stateString(value.code, `${field}.code`);
+  stateString(value.reason, `${field}.reason`);
+}
+
+function validateDuplicateRecord(value: unknown, field: string): void {
+  if (!isPlainRecord(value)) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", `${field} must be a plain object`);
+  exactStateKeys(value, ["eventId", "payloadHash", "disposition"], field);
+  stateString(value.eventId, `${field}.eventId`);
+  stateHash(value.payloadHash, `${field}.payloadHash`, false);
+  if (value.disposition !== "NOOP") throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", `${field}.disposition is unsupported`);
+}
+
+function validateProviderErrorRecord(value: unknown, field: string): void {
+  if (!isPlainRecord(value)) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", `${field} must be a plain object`);
+  exactStateKeys(value, ["method", "code", "reason", "blockNumber", "recoverable"], field);
+  if (!["getChainIdentity", "getLatestBlockNumber", "getBlockHeader", "getLogs", "getTransactionReceipt", "checkpoint", "retry"].includes(String(value.method))) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", `${field}.method is unsupported`);
+  stateString(value.code, `${field}.code`);
+  stateString(value.reason, `${field}.reason`);
+  if (value.blockNumber !== null) stateInteger(value.blockNumber, `${field}.blockNumber`);
+  if (typeof value.recoverable !== "boolean") throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", `${field}.recoverable must be boolean`);
+}
+
 function validateStateEnvelope(value: unknown, manifestHash: string, scopeId: string): asserts value is SerializedBackfillState {
   if (!isPlainRecord(value)) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "backfill state must be a plain object");
-  const expectedKeys = ["acceptedEvents", "cursor", "duplicateEvents", "manifestHash", "providerErrors", "rejectedEvents", "schemaVersion", "snapshot"];
-  const actualKeys = Object.keys(value).sort();
-  if (actualKeys.length !== expectedKeys.length || actualKeys.some((key, index) => key !== expectedKeys.sort()[index])) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "backfill state has an unsupported shape");
-  if (value.schemaVersion !== "slice-d-source-ingestion-v1" || value.manifestHash !== manifestHash || typeof value.manifestHash !== "string" || !/^[0-9a-f]{64}$/.test(value.manifestHash)) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "backfill state schema or manifest binding is invalid");
-  if (!Array.isArray(value.acceptedEvents) || !Array.isArray(value.rejectedEvents) || !Array.isArray(value.duplicateEvents) || !Array.isArray(value.providerErrors)) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "backfill state collections must be arrays");
-  for (const [field, items] of [["acceptedEvents", value.acceptedEvents], ["rejectedEvents", value.rejectedEvents], ["duplicateEvents", value.duplicateEvents], ["providerErrors", value.providerErrors]] as const) {
-    if (!items.every((item) => isPlainRecord(item))) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", `${field} contains a non-plain record`);
-  }
+  exactStateKeys(value, ["acceptedEvents", "cursor", "duplicateEvents", "manifestHash", "providerErrors", "rejectedEvents", "schemaVersion", "snapshot"], "backfill state");
+  if (value.schemaVersion !== "slice-d-source-ingestion-v1" || value.manifestHash !== manifestHash) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "backfill state schema or manifest binding is invalid");
+  stateHash(value.manifestHash, "backfill state manifestHash", false);
+  if (!isSafeArray(value.acceptedEvents) || !isSafeArray(value.rejectedEvents) || !isSafeArray(value.duplicateEvents) || !isSafeArray(value.providerErrors)) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "backfill state collections must be dense safe arrays");
+  value.acceptedEvents.forEach((item, index) => validateAcceptedRecord(item, `acceptedEvents[${index}]`));
+  value.rejectedEvents.forEach((item, index) => validateRejectedRecord(item, `rejectedEvents[${index}]`));
+  value.duplicateEvents.forEach((item, index) => validateDuplicateRecord(item, `duplicateEvents[${index}]`));
+  value.providerErrors.forEach((item, index) => validateProviderErrorRecord(item, `providerErrors[${index}]`));
   if (value.snapshot !== null) {
-    if (!isPlainRecord(value.snapshot) || Object.keys(value.snapshot).sort().join(",") !== "body,hash" || typeof value.snapshot.body !== "string" || typeof value.snapshot.hash !== "string" || !/^[0-9a-f]{64}$/.test(value.snapshot.hash)) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "backfill state snapshot envelope is invalid");
+    if (!isPlainRecord(value.snapshot)) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "backfill state snapshot envelope is invalid");
+    exactStateKeys(value.snapshot, ["body", "hash"], "backfill state snapshot");
+    stateString(value.snapshot.body, "backfill state snapshot.body");
+    stateHash(value.snapshot.hash, "backfill state snapshot.hash", false);
   }
   if (value.cursor !== null) {
     if (!isPlainRecord(value.cursor)) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "backfill state cursor is invalid");
-    const keys = Object.keys(value.cursor).sort();
-    if (keys.join(",") !== "lastCompletedBlock,nextBlock,requestedEnd,requestedStart,scope,sequence,mode".split(",").sort().join(",")) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "backfill state cursor shape is invalid");
-    if (value.cursor.scope !== scopeId) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "backfill state cursor scope does not match the manifest");
-    for (const field of ["requestedStart", "requestedEnd", "nextBlock", "sequence"]) if (!isSafeBlock(value.cursor[field])) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", `backfill state cursor ${field} is invalid`);
-    if (value.cursor.lastCompletedBlock !== null && !isSafeBlock(value.cursor.lastCompletedBlock)) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "backfill state cursor lastCompletedBlock is invalid");
-    if (value.cursor.mode !== "SPARSE_EVENT") throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "backfill state cursor mode is invalid");
+    exactStateKeys(value.cursor, ["lastCompletedBlock", "nextBlock", "requestedEnd", "requestedStart", "scope", "sequence", "mode"], "backfill state cursor");
+    if (value.cursor.scope !== scopeId || value.cursor.mode !== "SPARSE_EVENT") throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "backfill state cursor scope or mode is invalid");
+    stateInteger(value.cursor.requestedStart, "backfill state cursor requestedStart");
+    stateInteger(value.cursor.requestedEnd, "backfill state cursor requestedEnd");
+    stateInteger(value.cursor.nextBlock, "backfill state cursor nextBlock");
+    stateInteger(value.cursor.sequence, "backfill state cursor sequence");
+    if (value.cursor.lastCompletedBlock !== null) stateInteger(value.cursor.lastCompletedBlock, "backfill state cursor lastCompletedBlock");
   }
 }
+
 
 function canonicalJson(value: unknown, ancestors = new Set<object>()): string {
   if (value === null || typeof value !== "object") {
@@ -181,6 +274,26 @@ function replayDetails(snapshot: SerializedSliceBSnapshot | null, c: SourceBackf
 
 function rejectionId(log: SourceLog): string {
   return `source-coordinate:${log.transactionHash}:${log.logIndex}`;
+}
+
+function acceptedMatchesObservation(record: AcceptedEventRecord, value: unknown): boolean {
+  if (!isPlainRecord(value)) return false;
+  if (value.observationId !== record.observationId || value.sourceEventId !== record.sourceEventId || value.relationshipId !== record.relationshipId || value.objectId !== record.objectId || value.blockHash !== record.blockHash || value.transactionHash !== record.transactionHash || value.eventIndex !== record.eventIndex) return false;
+  if (typeof value.blockNumber !== "bigint" || value.blockNumber !== BigInt(record.blockNumber)) return false;
+  if (!isPlainRecord(value.normalizedPayload)) return false;
+  const observedPayloadHash = createHash("sha256").update(canonicalJson(value.normalizedPayload), "utf8").digest("hex");
+  if (observedPayloadHash !== record.payloadHash) return false;
+  if (record.finalityState === "REORGED") return value.finalityState === "REORGED";
+  return value.finalityState === record.finalityState;
+}
+
+function markReorged(values: Map<string, AcceptedEventRecord>, targets: readonly { readonly blockNumber: bigint; readonly oldBlockHash: string | null }[]): Map<string, AcceptedEventRecord> {
+  const next = new Map(values);
+  for (const [key, record] of values) {
+    if (record.finalityState === "REORGED") continue;
+    if (targets.some((target) => target.oldBlockHash !== null && BigInt(record.blockNumber) === target.blockNumber && record.blockHash === target.oldBlockHash)) next.set(key, Object.freeze({ ...record, finalityState: "REORGED" }));
+  }
+  return next;
 }
 
 export class SourceBackfill {
@@ -318,7 +431,7 @@ export class SourceBackfill {
 
       const receiptCache = new Map<string, unknown>();
       let workingBlockSnapshot = workingSnapshot;
-      const workingBlockAccepted = new Map(workingAccepted);
+      let workingBlockAccepted = new Map(workingAccepted);
       const workingBlockIdentities = new Map(workingIdentities);
       const blockAccepted: string[] = [];
       const blockRejected: RejectedEventRecord[] = [];
@@ -376,10 +489,15 @@ export class SourceBackfill {
           runProviderErrors.push(failure);
           this.providerErrors.push(failure);
           blockedAt = blockNumber;
+          retry = this.maybeScheduleRetry(failure, this.snapshot);
           break;
         }
       }
+      let effectiveFinalityHeight = finalizedHeight(workingBlockSnapshot, this.c, this.manifest);
       const checkpoint = checkpointState(workingBlockSnapshot, this.c, this.manifest);
+      if (checkpoint?.replayStatus === "REPLAY_REQUIRED") {
+        workingBlockAccepted = markReorged(workingBlockAccepted, checkpoint.replayTargets);
+      }
       if (checkpoint?.replayStatus === "REPLAY_REQUIRED" && this.autoReplay && finalityHeight >= 0) {
         const seen = new Set<string>();
         let progress = true;
@@ -399,12 +517,15 @@ export class SourceBackfill {
               const replay = this.b.replay(workingBlockSnapshot, candidate, finalityHeight, block.timestamp);
               workingBlockSnapshot = replay.snapshot;
               if (replay.outcome === "REPLAYED") {
+                workingBlockAccepted = markReorged(workingBlockAccepted, [target]);
                 progress = true;
                 break;
               }
             }
             if (progress) break;
           }
+          effectiveFinalityHeight = finalizedHeight(workingBlockSnapshot, this.c, this.manifest);
+          if (effectiveFinalityHeight === null) break;
         }
       }
 
@@ -415,10 +536,11 @@ export class SourceBackfill {
         runProviderErrors.push(failure);
         this.providerErrors.push(failure);
         blockedAt = blockNumber;
+        retry = this.maybeScheduleRetry(failure, this.snapshot);
         break;
       }
 
-      workingAccepted = this.updateFinality(workingBlockAccepted, finalityHeight);
+      workingAccepted = this.updateFinality(workingBlockAccepted, effectiveFinalityHeight ?? -1);
       workingIdentities = workingBlockIdentities;
       workingSnapshot = workingBlockSnapshot;
       this.snapshot = workingSnapshot;
@@ -428,9 +550,10 @@ export class SourceBackfill {
       runRejected.push(...blockRejected);
       runDuplicates.push(...blockDuplicates);
       this.rejected.push(...blockRejected);
-      this.duplicates.push(...blockDuplicates);
       lastCompletedForRun = blockNumber;
-      currentCursor = Object.freeze({ ...currentCursor, nextBlock: Math.max(currentCursor.nextBlock, blockNumber + 1), lastCompletedBlock: Math.max(currentCursor.lastCompletedBlock ?? -1, blockNumber), sequence: currentCursor.sequence + 1 });
+      const blockSnapshotChanged = workingBlockSnapshot.hash !== workingSnapshot.hash;
+      const advancedState = blockNumber >= previousNext || blockAccepted.length > 0 || blockRejected.length > 0 || blockSnapshotChanged;
+      currentCursor = Object.freeze({ ...currentCursor, nextBlock: Math.max(currentCursor.nextBlock, blockNumber + 1), lastCompletedBlock: Math.max(currentCursor.lastCompletedBlock ?? -1, blockNumber), sequence: currentCursor.sequence + (advancedState ? 1 : 0) });
       this.cursor = currentCursor;
     }
 
@@ -535,7 +658,16 @@ export class SourceBackfill {
 
   private loadState(state: SerializedBackfillState): void {
     validateStateEnvelope(state, this.manifestHash(), this.manifest.scopeId);
-    if (state.snapshot) this.c.read(state.snapshot);
+    if (state.snapshot) {
+      this.c.read(state.snapshot);
+      const api = this.b.read(state.snapshot);
+      for (const record of state.acceptedEvents) {
+        const matches = api.timeline(record.relationshipId).filter((item) => acceptedMatchesObservation(record, item));
+        if (matches.length !== 1) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", `accepted event ${record.observationId} does not match the public Slice B snapshot`);
+      }
+    } else if (state.acceptedEvents.length > 0) {
+      throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "accepted events require a serialized Slice B snapshot");
+    }
     this.snapshot = state.snapshot;
     this.cursor = state.cursor;
     this.rejected = [...state.rejectedEvents];
@@ -575,9 +707,10 @@ export class SourceBackfill {
       if (cursor === null) {
         if (this.cursor !== null) throw new SourceIngestionError("CURSOR_NOT_ADVANCED", "null cursor cannot replace an existing safe cursor");
       } else {
+        if (this.cursor === null) throw new SourceIngestionError("CURSOR_NOT_ADVANCED", "a supplied cursor requires a matching restored backfill state");
         if (!isPlainRecord(cursor) || Object.keys(cursor).sort().join(",") !== "lastCompletedBlock,nextBlock,requestedEnd,requestedStart,scope,sequence,mode".split(",").sort().join(",")) throw new SourceIngestionError("INVALID_BACKFILL_REQUEST", "cursor shape is invalid");
-        if (cursor.scope !== this.manifest.scopeId || cursor.mode !== "SPARSE_EVENT" || !isSafeBlock(cursor.nextBlock) || (cursor.lastCompletedBlock !== null && !isSafeBlock(cursor.lastCompletedBlock)) || !isSafeBlock(cursor.sequence)) throw new SourceIngestionError("INVALID_BACKFILL_REQUEST", "cursor does not match the bounded sparse-event cursor schema");
-        if (this.cursor && (cursor.nextBlock !== this.cursor.nextBlock || cursor.lastCompletedBlock !== this.cursor.lastCompletedBlock || cursor.sequence !== this.cursor.sequence)) throw new SourceIngestionError("CURSOR_NOT_ADVANCED", "submitted cursor is not the last safe cursor");
+        if (cursor.scope !== this.manifest.scopeId || cursor.mode !== "SPARSE_EVENT" || !isSafeBlock(cursor.requestedStart) || !isSafeBlock(cursor.requestedEnd) || !isSafeBlock(cursor.nextBlock) || (cursor.lastCompletedBlock !== null && !isSafeBlock(cursor.lastCompletedBlock)) || !isSafeBlock(cursor.sequence)) throw new SourceIngestionError("INVALID_BACKFILL_REQUEST", "cursor does not match the bounded sparse-event cursor schema");
+        if (cursor.scope !== this.cursor.scope || cursor.mode !== this.cursor.mode || cursor.requestedStart !== this.cursor.requestedStart || cursor.requestedEnd !== this.cursor.requestedEnd || cursor.nextBlock !== this.cursor.nextBlock || cursor.lastCompletedBlock !== this.cursor.lastCompletedBlock || cursor.sequence !== this.cursor.sequence) throw new SourceIngestionError("CURSOR_NOT_ADVANCED", "submitted cursor is not the last safe cursor");
       }
     }
   }
@@ -612,7 +745,7 @@ export class SourceBackfill {
       if (BigInt(record.blockNumber) !== target.blockNumber) continue;
       for (const value of api.timeline(record.relationshipId)) {
         if (!isPlainRecord(value) || typeof value.observationId !== "string" || typeof value.blockNumber !== "bigint" || typeof value.blockHash !== "string" || (value.parentBlockHash !== null && typeof value.parentBlockHash !== "string")) continue;
-        if (value.observationId !== record.observationId || value.blockNumber !== target.blockNumber || value.blockHash === target.oldBlockHash || value.parentBlockHash !== target.expectedParentBlockHash || value.observationState !== "OBSERVED" || value.finalityState === "REORGED") continue;
+        if (value.observationId !== record.observationId || value.blockNumber !== target.blockNumber || value.blockHash === target.oldBlockHash || value.parentBlockHash !== target.expectedParentBlockHash || !["OBSERVED", "DUPLICATE"].includes(String(value.observationState)) || value.finalityState === "REORGED") continue;
         candidates.push({ preferred: preferred.has(value.observationId), observation: value as unknown as ObservationEnvelope });
       }
     }
@@ -633,7 +766,7 @@ export class SourceBackfill {
   }
 
   private maybeScheduleRetry(failure: ProviderErrorRecord, snapshot: SerializedSliceBSnapshot | null): RetrySummary | null {
-    if (!snapshot || !failure.recoverable || (failure.method !== "getBlockHeader" && failure.method !== "getLogs" && failure.method !== "getTransactionReceipt" && failure.method !== "getChainIdentity" && failure.method !== "getLatestBlockNumber")) return null;
+    if (!snapshot || !failure.recoverable || (failure.method !== "getBlockHeader" && failure.method !== "getLogs" && failure.method !== "getTransactionReceipt" && failure.method !== "getChainIdentity" && failure.method !== "getLatestBlockNumber" && failure.method !== "checkpoint")) return null;
     try {
       const result = this.c.submitRetry(snapshot, {
         deliveryId: `source-backfill:${this.manifest.scopeId}:${failure.blockNumber ?? this.cursor?.nextBlock ?? "identity"}`,
@@ -650,7 +783,7 @@ export class SourceBackfill {
 
   private updateFinality(values: Map<string, AcceptedEventRecord>, finality: number): Map<string, AcceptedEventRecord> {
     const next = new Map<string, AcceptedEventRecord>();
-    for (const [key, value] of values) next.set(key, withFinality(value, finality));
+    for (const [key, value] of values) next.set(key, value.finalityState === "REORGED" ? value : withFinality(value, finality));
     return next;
   }
 
@@ -671,7 +804,7 @@ export class SourceBackfill {
     const acceptedEvents = sortedAccepted(runAcceptedKeys.map((key) => this.accepted.get(key)).filter((item): item is AcceptedEventRecord => item !== undefined));
     const replayStatus = cp?.replayStatus ?? "CURRENT";
     const replay = replayDetails(snapshot, this.c, this.manifest);
-    const pending = acceptedEvents.some((item) => item.finalityState !== "FINALIZED") || [...this.accepted.values()].some((item) => finalized === null || item.blockNumber > finalized);
+    const pending = acceptedEvents.some((item) => item.finalityState !== "FINALIZED" && item.finalityState !== "REORGED") || [...this.accepted.values()].some((item) => item.finalityState !== "REORGED" && (finalized === null || item.blockNumber > finalized));
     let status: BackfillResult["status"];
     if (runProviderErrors.length > 0 || !complete) status = "BLOCKED";
     else if (replayStatus === "REPLAY_REQUIRED") status = "REPLAY_REQUIRED";
@@ -724,7 +857,7 @@ export class SourceBackfill {
 }
 
 function isEventRejection(error: unknown): boolean {
-  return error instanceof SourceIngestionError && (error.code === "INVALID_SOURCE_EVENT" || error.code === "INCONSISTENT_SOURCE_DATA" || error.code === "CONFLICTING_IDENTITY");
+  return error instanceof SourceIngestionError && (error.code === "INVALID_SOURCE_EVENT" || error.code === "CONFLICTING_IDENTITY");
 }
 
 function errorMethod(error: unknown, fallback: ProviderErrorRecord["method"]): ProviderErrorRecord["method"] {
