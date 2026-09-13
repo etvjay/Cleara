@@ -90,7 +90,31 @@ export function trustedIntrinsicPrototypes(): boolean {
   }
 }
 
+function inspectSafeData(value: unknown, ancestors = new Set<object>()): boolean {
+  if (value === null || (typeof value !== "object" && typeof value !== "function")) return true;
+  if (typeof value === "function" || ancestors.has(value)) return false;
+  const next = new Set(ancestors).add(value);
+  if (Array.isArray(value)) {
+    if (!isSafeArray(value)) return false;
+    const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
+    if (!lengthDescriptor || !("value" in lengthDescriptor) || typeof lengthDescriptor.value !== "number" || !Number.isSafeInteger(lengthDescriptor.value) || lengthDescriptor.value < 0) return false;
+    for (let index = 0; index < lengthDescriptor.value; index += 1) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+      if (!descriptor || !("value" in descriptor) || !inspectSafeData(descriptor.value, next)) return false;
+    }
+    return true;
+  }
+  if (!isPlainRecord(value)) return false;
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== "string") return false;
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor || !descriptor.enumerable || !("value" in descriptor) || !inspectSafeData(descriptor.value, next)) return false;
+  }
+  return true;
+}
+
 export function isStructuredCloneable(value: unknown): boolean {
+  if (!inspectSafeData(value)) return false;
   if (value === null || (typeof value !== "object" && typeof value !== "function")) return true;
   try {
     structuredClone(value);
@@ -119,14 +143,17 @@ export function isSafeArray(value: unknown): value is readonly unknown[] {
   if (!Array.isArray(value) || !trustedIntrinsicPrototypes()) return false;
   try {
     if (Object.getPrototypeOf(value) !== Array.prototype) return false;
+    const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
+    if (!lengthDescriptor || !("value" in lengthDescriptor) || typeof lengthDescriptor.value !== "number" || !Number.isSafeInteger(lengthDescriptor.value) || lengthDescriptor.value < 0) return false;
+    const length = lengthDescriptor.value;
     const keys = Reflect.ownKeys(value);
     for (const key of keys) {
       if (key === "length") continue;
-      if (typeof key !== "string" || !/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= value.length) return false;
+      if (typeof key !== "string" || !/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= length) return false;
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
       if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) return false;
     }
-    for (let index = 0; index < value.length; index += 1) {
+    for (let index = 0; index < length; index += 1) {
       if (!Object.prototype.hasOwnProperty.call(value, String(index))) return false;
     }
     return true;

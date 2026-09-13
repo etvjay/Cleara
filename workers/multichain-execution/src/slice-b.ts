@@ -228,6 +228,7 @@ export interface SourceScopeDescriptor {
   readonly cursorMode: "SPARSE_EVENT";
   readonly anchorBlockNumber: bigint;
   readonly anchorBlockHash: string;
+  readonly sourceScopeHash?: string;
 }
 
 export const DEFAULT_SOURCE_SCOPE: SourceScopeDescriptor = {
@@ -396,24 +397,25 @@ function assertSafeBoundaryValue(value: unknown, field: string, ancestors = new 
   if (typeof value !== "object") throw new SliceBValidationError(`${field} contains an unsupported value`);
   if (!safeIntrinsicPrototypes()) throw new SliceBValidationError(`${field} uses a polluted intrinsic prototype`);
   if (ancestors.has(value)) throw new SliceBValidationError(`${field} contains a cycle`);
-  try {
-    structuredClone(value);
-  } catch {
-    throw new SliceBValidationError(`${field} contains a proxy or non-cloneable object`);
-  }
   const next = new Set(ancestors).add(value);
   if (Array.isArray(value)) {
     if (Object.getPrototypeOf(value) !== Array.prototype) throw new SliceBValidationError(`${field} must use the intrinsic array prototype`);
+    const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
+    if (!lengthDescriptor || !("value" in lengthDescriptor) || typeof lengthDescriptor.value !== "number" || !Number.isSafeInteger(lengthDescriptor.value) || lengthDescriptor.value < 0) throw new SliceBValidationError(`${field} has an invalid array length`);
+    const length = lengthDescriptor.value;
     for (const key of Reflect.ownKeys(value)) {
       if (key === "length") continue;
-      if (typeof key !== "string" || !/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= value.length) throw new SliceBValidationError(`${field} contains an unsafe array property`);
+      if (typeof key !== "string" || !/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= length) throw new SliceBValidationError(`${field} contains an unsafe array property`);
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
       if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) throw new SliceBValidationError(`${field} contains an accessor or hidden array property`);
     }
-    for (let index = 0; index < value.length; index += 1) {
+    for (let index = 0; index < length; index += 1) {
       if (!Object.prototype.hasOwnProperty.call(value, String(index))) throw new SliceBValidationError(`${field} is sparse`);
-      assertSafeBoundaryValue(value[index], `${field}[${index}]`, next);
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+      if (!descriptor || !("value" in descriptor)) throw new SliceBValidationError(`${field}[${index}] contains an accessor`);
+      assertSafeBoundaryValue(descriptor.value, `${field}[${index}]`, next);
     }
+    try { structuredClone(value); } catch { throw new SliceBValidationError(`${field} contains a proxy or non-cloneable object`); }
     return;
   }
   const prototype = Object.getPrototypeOf(value);
@@ -424,6 +426,7 @@ function assertSafeBoundaryValue(value: unknown, field: string, ancestors = new 
     if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) throw new SliceBValidationError(`${field} contains an accessor or hidden property`);
     assertSafeBoundaryValue(descriptor.value, `${field}.${key}`, next);
   }
+  try { structuredClone(value); } catch { throw new SliceBValidationError(`${field} contains a proxy or non-cloneable object`); }
 }
 
 function requireInputObject(value: unknown, field: string): asserts value is Record<string, unknown> {
@@ -516,6 +519,7 @@ function validateSourceScope(scope: SourceScopeDescriptor): void {
   if (scope.cursorMode !== "SPARSE_EVENT") throw new SliceBValidationError("sourceScope.cursorMode is not supported");
   requireBigInt(scope.anchorBlockNumber, "sourceScope.anchorBlockNumber");
   requireString(scope.anchorBlockHash, "sourceScope.anchorBlockHash");
+  if (scope.sourceScopeHash !== undefined && !/^[0-9a-f]{64}$/.test(scope.sourceScopeHash)) throw new SliceBValidationError("sourceScope.sourceScopeHash must be a SHA-256 hex digest");
 }
 
 function checkpointFromPrevious(chainKey: number, previous: Checkpoint | undefined, overrides: Partial<Checkpoint>): Checkpoint {

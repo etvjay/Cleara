@@ -190,6 +190,7 @@ function sourceDescriptor(contract: ParsedSliceBContract, cursor: SourceCursor):
   readonly observationSchemaVersion: string;
   readonly finalityPolicyVersion: string;
   readonly cursorMode: "SPARSE_EVENT";
+  readonly sourceScopeHash: string | null;
 } {
   const unbound = {
     sourceDomain: "UNBOUND_GENERIC_SOURCE",
@@ -198,6 +199,7 @@ function sourceDescriptor(contract: ParsedSliceBContract, cursor: SourceCursor):
     observationSchemaVersion: "UNBOUND_GENERIC_SOURCE",
     finalityPolicyVersion: "UNBOUND_GENERIC_SOURCE",
     cursorMode: "SPARSE_EVENT" as const,
+    sourceScopeHash: null,
   };
   if (cursor.chainKey === null) return unbound;
   const entries = contract.body.sourceScopes;
@@ -213,6 +215,7 @@ function sourceDescriptor(contract: ParsedSliceBContract, cursor: SourceCursor):
     observationSchemaVersion: scope.observationSchemaVersion,
     finalityPolicyVersion: scope.finalityPolicyVersion,
     cursorMode: "SPARSE_EVENT",
+    sourceScopeHash: typeof scope.sourceScopeHash === "string" ? scope.sourceScopeHash : null,
   };
 }
 
@@ -225,13 +228,14 @@ function sourceView(contract: ParsedSliceBContract, record: ParsedSliceBRecord):
     replayParentBlockHash: record.replay.replayParentBlockHash,
     replayTargets: Object.freeze(record.replay.replayTargets.map((target) => Object.freeze({ ...target }))),
   });
-  return Object.freeze({
+  const sourceWithoutBinding = {
     snapshotHash: contract.hash,
-    schemaVersion: "slice-b-read-model-v1",
+    schemaVersion: "slice-b-read-model-v1" as const,
     recordKind: record.kind,
     recordId: record.id,
     relationshipId: record.relationshipId,
     cursor: cloneCursor(record.cursor),
+    sourceScopeHash: descriptor.sourceScopeHash,
     sourceDomain: descriptor.sourceDomain,
     chainId: descriptor.chainId,
     adapterVersion: descriptor.adapterVersion,
@@ -240,6 +244,10 @@ function sourceView(contract: ParsedSliceBContract, record: ParsedSliceBRecord):
     cursorMode: descriptor.cursorMode,
     status: cloneStatus(record.status),
     replay,
+  };
+  return Object.freeze({
+    ...sourceWithoutBinding,
+    snapshotBindingHash: identityHash({ version: "slice-c-source-binding-v1", source: sourceWithoutBinding }),
   });
 }
 
@@ -267,7 +275,7 @@ function snapshotNullableNumber(value: unknown, field: string, integer = false):
 
 function snapshotBigIntText(value: unknown, field: string, nullable = false): void {
   if (nullable && value === null) return;
-  if (typeof value !== "string" || !/^\d+$/.test(value)) throw new RetryOrchestrationError("INVALID_SNAPSHOT", `${field} must be a nonnegative integer string`);
+  if (typeof value !== "string" || !/^\d+n$/.test(value)) throw new RetryOrchestrationError("INVALID_SNAPSHOT", `${field} must be a nonnegative bigint string`);
 }
 
 function validateSourceCursorSnapshot(value: unknown): void {
@@ -311,13 +319,16 @@ function validateReplaySnapshot(value: unknown): void {
 
 function validateRetrySourceSnapshot(value: unknown): void {
   if (!isPlainRecord(value)) throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry job source must be a plain object");
-  exactSnapshotKeys(value, ["snapshotHash", "schemaVersion", "recordKind", "recordId", "relationshipId", "cursor", "sourceDomain", "chainId", "adapterVersion", "observationSchemaVersion", "finalityPolicyVersion", "cursorMode", "status", "replay"], "retry job source");
+  exactSnapshotKeys(value, ["snapshotHash", "schemaVersion", "recordKind", "recordId", "relationshipId", "cursor", "sourceScopeHash", "snapshotBindingHash", "sourceDomain", "chainId", "adapterVersion", "observationSchemaVersion", "finalityPolicyVersion", "cursorMode", "status", "replay"], "retry job source");
   snapshotString(value.snapshotHash, "retry job source.snapshotHash");
   if (value.schemaVersion !== "slice-b-read-model-v1") throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry job source schema is unsupported");
   snapshotString(value.recordKind, "retry job source.recordKind");
   snapshotString(value.recordId, "retry job source.recordId");
   if (value.relationshipId !== null) snapshotString(value.relationshipId, "retry job source.relationshipId");
   validateSourceCursorSnapshot(value.cursor);
+  snapshotString(value.sourceScopeHash, "retry job source.sourceScopeHash", true);
+  if (value.sourceScopeHash !== null && (typeof value.sourceScopeHash !== "string" || !/^[0-9a-f]{64}$/.test(value.sourceScopeHash))) throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry job source.sourceScopeHash must be a SHA-256 hex digest");
+  snapshotString(value.snapshotBindingHash, "retry job source.snapshotBindingHash");
   snapshotString(value.sourceDomain, "retry job source.sourceDomain");
   snapshotNullableNumber(value.chainId, "retry job source.chainId", true);
   snapshotString(value.adapterVersion, "retry job source.adapterVersion");
@@ -326,6 +337,8 @@ function validateRetrySourceSnapshot(value: unknown): void {
   if (value.cursorMode !== "SPARSE_EVENT") throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry job source cursor mode is unsupported");
   validateSourceStatusSnapshot(value.status);
   validateReplaySnapshot(value.replay);
+  const { snapshotBindingHash, ...source } = value;
+  if (identityHash({ version: "slice-c-source-binding-v1", source }) !== snapshotBindingHash) throw new RetryOrchestrationError("INVALID_SNAPSHOT", "retry job source binding does not match its serialized source metadata");
 }
 
 function validateRetryJobSnapshot(value: unknown): void {

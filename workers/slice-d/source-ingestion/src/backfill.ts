@@ -208,8 +208,10 @@ function observationSummary(event: NormalizedSourceObservation, finalizedHeight:
   });
 }
 
-function withFinality(record: AcceptedEventRecord, finalizedHeight: number): AcceptedEventRecord {
-  return Object.freeze({ ...record, finalityState: record.blockNumber <= finalizedHeight ? "FINALIZED" : "FINALITY_PENDING" });
+function publicFinalityState(snapshot: SerializedSliceBSnapshot, c: SourceBackfillOptions["c"], record: AcceptedEventRecord): AcceptedEventRecord["finalityState"] | null {
+  const publicRecord = c.read(snapshot).timeline(record.relationshipId).find((item) => isPlainRecord(item) && item.observationId === record.observationId);
+  if (!isPlainRecord(publicRecord) || typeof publicRecord.finalityState !== "string" || !["UNKNOWN", "FINALITY_PENDING", "FINALIZED", "REORGED"].includes(publicRecord.finalityState)) return null;
+  return publicRecord.finalityState as AcceptedEventRecord["finalityState"];
 }
 
 function parseReplayHistory(snapshot: SerializedSliceBSnapshot | null): readonly Record<string, unknown>[] {
@@ -611,7 +613,7 @@ export class SourceBackfill {
       }
 
       const blockSnapshotChanged = workingBlockSnapshot.hash !== workingSnapshot.hash;
-      workingAccepted = this.updateFinality(workingBlockAccepted, effectiveFinalityHeight ?? -1, new Set(blockAccepted), finalityHeight);
+      workingAccepted = this.updateFinality(workingBlockAccepted, workingBlockSnapshot);
       workingIdentities = workingBlockIdentities;
       workingSnapshot = workingBlockSnapshot;
       this.snapshot = workingSnapshot;
@@ -863,9 +865,16 @@ export class SourceBackfill {
     }
   }
 
-  private updateFinality(values: Map<string, AcceptedEventRecord>, finality: number, newlyAccepted = new Set<string>(), observedFinality = finality): Map<string, AcceptedEventRecord> {
+  private updateFinality(values: Map<string, AcceptedEventRecord>, snapshot: SerializedSliceBSnapshot): Map<string, AcceptedEventRecord> {
     const next = new Map<string, AcceptedEventRecord>();
-    for (const [key, value] of values) next.set(key, value.finalityState === "REORGED" ? value : withFinality(value, newlyAccepted.has(key) ? observedFinality : finality));
+    for (const [key, value] of values) {
+      if (value.finalityState === "REORGED") {
+        next.set(key, value);
+        continue;
+      }
+      const finalityState = publicFinalityState(snapshot, this.c, value);
+      next.set(key, finalityState === null ? value : Object.freeze({ ...value, finalityState }));
+    }
     return next;
   }
 

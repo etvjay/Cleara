@@ -15,6 +15,7 @@ import {
 } from "../../../multichain-execution/src/slice-b.js";
 import {
   serializeSourceScopeManifest,
+  parseSourceScopeManifest,
   type SourceScopeManifest,
 } from "../../source-scope/src/manifest.js";
 import { loadCanonicalD0Manifest } from "./canonical-manifest.js";
@@ -37,10 +38,16 @@ function blockHeaderInput(manifest: SourceScopeManifest, header: SourceBlockHead
 }
 
 export class SliceBSerializedBoundary implements SerializedSliceBBoundary {
-  public constructor(private readonly manifest: SourceScopeManifest) {
-    if (manifest.mode !== "FIXTURE_ONLY" && !manifest.liveDeployment) throw new SourceIngestionError("UNSUPPORTED_SCOPE", "Slice B boundary cannot be configured for unverified LIVE_READ");
+  private readonly manifest: SourceScopeManifest;
+  private readonly sourceScopeHash: string;
+
+  public constructor(manifest: SourceScopeManifest) {
+    const suppliedManifest = parseSourceScopeManifest(manifest);
+    if (suppliedManifest.mode !== "FIXTURE_ONLY" && !suppliedManifest.liveDeployment) throw new SourceIngestionError("UNSUPPORTED_SCOPE", "Slice B boundary cannot be configured for unverified LIVE_READ");
     const canonical = loadCanonicalD0Manifest();
-    if (serializeSourceScopeManifest(manifest).hash !== canonical.hash) throw new SourceIngestionError("UNSUPPORTED_SCOPE", "Slice B boundary manifest does not match the canonical D0 manifest");
+    if (serializeSourceScopeManifest(suppliedManifest).hash !== canonical.hash) throw new SourceIngestionError("UNSUPPORTED_SCOPE", "Slice B boundary manifest does not match the canonical D0 manifest");
+    this.manifest = suppliedManifest;
+    this.sourceScopeHash = canonical.hash;
   }
 
   public initialize(anchor: SourceBlockHeader): SerializedSliceBSnapshot {
@@ -54,6 +61,7 @@ export class SliceBSerializedBoundary implements SerializedSliceBBoundary {
       cursorMode: this.manifest.cursor.mode,
       anchorBlockNumber: BigInt(anchor.blockNumber),
       anchorBlockHash: anchor.blockHash,
+      sourceScopeHash: this.sourceScopeHash,
     }]);
     return createSliceBApi(observeBlockHeaderState(state, blockHeaderInput(this.manifest, anchor))).serializeSnapshot();
   }
@@ -95,7 +103,9 @@ export class SliceBSerializedBoundary implements SerializedSliceBBoundary {
     try {
       const state = restoreSnapshot(snapshot.body);
       const sourceScope = state.sourceScopes.get(this.manifest.chainKey);
-      if (state.sourceScopes.size !== 1 || !sourceScope || sourceScope.chainKey !== this.manifest.chainKey || sourceScope.chainId !== this.manifest.evmChainId || sourceScope.sourceDomain !== this.manifest.sourceDomain || sourceScope.adapterVersion !== this.manifest.adapterVersion || sourceScope.observationSchemaVersion !== this.manifest.eventFamily.schemaVersion || sourceScope.finalityPolicyVersion !== this.manifest.finalityPolicy.version || sourceScope.cursorMode !== this.manifest.cursor.mode) throw new SourceIngestionError("UNSUPPORTED_SCOPE", "Slice B snapshot source descriptor does not match the canonical D0 manifest");
+      if (state.sourceScopes.size !== 1 || !sourceScope || sourceScope.chainKey !== this.manifest.chainKey || sourceScope.chainId !== this.manifest.evmChainId || sourceScope.sourceDomain !== this.manifest.sourceDomain || sourceScope.adapterVersion !== this.manifest.adapterVersion || sourceScope.observationSchemaVersion !== this.manifest.eventFamily.schemaVersion || sourceScope.finalityPolicyVersion !== this.manifest.finalityPolicy.version || sourceScope.cursorMode !== this.manifest.cursor.mode || sourceScope.sourceScopeHash !== this.sourceScopeHash) throw new SourceIngestionError("UNSUPPORTED_SCOPE", "Slice B snapshot source descriptor does not match the canonical D0 manifest");
+      const checkpoint = state.checkpoints.get(this.manifest.chainKey);
+      if (checkpoint && checkpoint.lastFinalizedBlock !== null && checkpoint.lastFinalizedBlock > checkpoint.lastObservedBlock + BigInt(this.manifest.finalityPolicy.depth)) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "Slice B checkpoint finality exceeds the bounded D0 finality window");
       const roundTrip = createSliceBApi(state).serializeSnapshot();
       if (roundTrip.hash !== snapshot.hash || roundTrip.body !== snapshot.body) throw new SourceIngestionError("INCONSISTENT_SOURCE_DATA", "Slice B snapshot changed across strict restore");
       return state;

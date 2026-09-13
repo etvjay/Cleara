@@ -19,6 +19,7 @@ export class SliceCSerializedBoundary implements SerializedSliceCBoundary {
   public readonly retryOrchestrator: RetryOrchestrator;
   private readonly scopeId: string;
   private readonly manifest: SourceScopeManifest;
+  private readonly manifestHash: string;
   private readonly store: DurableSnapshotStore;
   private readonly b: SliceBSerializedBoundary;
   private readonly coordinator: SliceCIntegrationCoordinator;
@@ -29,6 +30,7 @@ export class SliceCSerializedBoundary implements SerializedSliceCBoundary {
     if (options.scopeId !== suppliedManifest.scopeId || serializeSourceScopeManifest(suppliedManifest).hash !== canonicalManifest.hash) throw new SourceIngestionError("UNSUPPORTED_SCOPE", "serialized C boundary is not bound to the canonical D0 manifest");
     this.scopeId = options.scopeId;
     this.manifest = suppliedManifest;
+    this.manifestHash = canonicalManifest.hash;
     this.store = options.store;
     this.retryOrchestrator = options.retry;
     this.b = new SliceBSerializedBoundary(suppliedManifest);
@@ -63,7 +65,7 @@ export class SliceCSerializedBoundary implements SerializedSliceCBoundary {
       const retry = RetryOrchestrator.fromSerialized(serialized);
       for (const job of retry.snapshot().jobs) {
         const source = job.source;
-        if (source.cursorMode !== this.manifest.cursor.mode || source.cursor.chainKey !== this.manifest.chainKey || source.sourceDomain !== this.manifest.sourceDomain || source.chainId !== this.manifest.evmChainId || source.adapterVersion !== this.manifest.adapterVersion || source.observationSchemaVersion !== this.manifest.eventFamily.schemaVersion || source.finalityPolicyVersion !== this.manifest.finalityPolicy.version) {
+        if (source.sourceScopeHash !== this.manifestHash || source.cursorMode !== this.manifest.cursor.mode || source.cursor.chainKey !== this.manifest.chainKey || source.sourceDomain !== this.manifest.sourceDomain || source.chainId !== this.manifest.evmChainId || source.adapterVersion !== this.manifest.adapterVersion || source.observationSchemaVersion !== this.manifest.eventFamily.schemaVersion || source.finalityPolicyVersion !== this.manifest.finalityPolicy.version) {
           throw new SourceIngestionError("UNSUPPORTED_SCOPE", "serialized retry source does not match the canonical D0 manifest");
         }
       }

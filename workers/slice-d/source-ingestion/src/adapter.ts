@@ -3,7 +3,7 @@ import { AbiCoder, Interface } from "ethers";
 import { observationId as makeObservationId, sourceEventId as makeSourceEventId, type ObservationEnvelope, type SourceEventIdentity } from "../../../multichain-execution/src/index.js";
 import type { SourceScopeManifest } from "../../source-scope/src/manifest.js";
 import { SourceIngestionError } from "./errors.js";
-import { isPlainRecord, isSafeArray, isStructuredCloneable } from "../../source-scope/src/safety.js";
+import { isPlainRecord, isSafeArray } from "../../source-scope/src/safety.js";
 import type {
   NormalizedSourceObservation,
   SourceBlockHeader,
@@ -59,7 +59,6 @@ function assertSafe(value: unknown, field: string, ancestors = new Set<object>()
 function record(value: unknown, field: string): Record<string, unknown> {
   if (value === null) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", `${field} must be a plain object value`);
   if (typeof value !== "object") throw new SourceIngestionError("UNSAFE_INPUT", `${field} must be a plain object value`);
-  if (!isStructuredCloneable(value)) throw new SourceIngestionError("UNSAFE_INPUT", `${field} contains a proxy or non-cloneable object`);
   assertSafe(value, field);
   if (!isPlainRecord(value)) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", `${field} must be a plain object`);
   return value;
@@ -226,6 +225,7 @@ export class CapitalCommittedAdapter {
     const block = validateBlock(sourceBundle.block, "block");
     const parent = sourceBundle.parent === null ? null : validateBlock(sourceBundle.parent, "parent", block.blockNumber - 1);
     if (block.blockNumber > 0 && (parent === null || block.parentHash !== parent.blockHash)) throw new SourceIngestionError("INCONSISTENT_SOURCE_DATA", "block parent does not match the trusted parent header");
+    if (parent !== null && parent.timestamp > block.timestamp) throw new SourceIngestionError("INCONSISTENT_SOURCE_DATA", "parent header timestamp is later than the child block timestamp");
     const log = validateLog(sourceBundle.log, "event log", block);
     const receipt = validateReceipt(sourceBundle.receipt, block);
     if (receipt.transactionHash !== log.transactionHash || receipt.transactionIndex !== log.transactionIndex) throw new SourceIngestionError("INCONSISTENT_SOURCE_DATA", "receipt and log transaction identity differ");

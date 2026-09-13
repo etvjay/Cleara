@@ -261,6 +261,17 @@ function expectedFields(value: unknown, expected: readonly EventField[], field: 
   return actual;
 }
 
+function deepFreeze<T>(value: T, seen = new Set<object>()): T {
+  if (value === null || typeof value !== "object" || seen.has(value)) return value;
+  seen.add(value);
+  for (const key of Reflect.ownKeys(value)) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor && "value" in descriptor) deepFreeze(descriptor.value, seen);
+  }
+  Object.freeze(value);
+  return value;
+}
+
 function parseManifest(input: unknown): SourceScopeManifest {
   let normalized: unknown;
   try {
@@ -392,7 +403,7 @@ function parseManifest(input: unknown): SourceScopeManifest {
     if (liveDeployment.contractAddress !== contractAddress || liveDeployment.tokenAddress !== tokenAddress) fail("LIVE_CONFIG_MISSING", "live deployment fields must match contract and token identities");
   }
 
-  return Object.freeze({
+  return deepFreeze({
     manifestVersion: SOURCE_SCOPE_MANIFEST_VERSION,
     scopeId,
     sourceDomain: SOURCE_DOMAIN,

@@ -63,6 +63,8 @@ export interface RetrySourceView {
   readonly recordId: string;
   readonly relationshipId: RelationshipId;
   readonly cursor: SourceCursor;
+  readonly sourceScopeHash: string | null;
+  readonly snapshotBindingHash: string;
   readonly sourceDomain: string;
   readonly chainId: number;
   readonly adapterVersion: string;
