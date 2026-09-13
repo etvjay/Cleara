@@ -11,9 +11,10 @@ Status at this checkpoint: `REMOTE_CHECKS_PENDING_FOR_FINAL_RECEIPT`.
 - D0 mode: `FIXTURE_ONLY`
 - D0 live-read: `NOT_VERIFIED`
 - D1 branch: `verification/slice-d-source-ingestion`
-- D1 implementation SHA: `6bbd782aa8d75e8500675d4d034134fe67bda879`
-- D1 pre-receipt closure SHA: `61f8b73f7bab3cb389620dc46859e38973998e8e`
-- D1 final receipt tree SHA: pending this documentation checkpoint
+- D1 implementation SHA: `8d2e839b3bd81ba9be865e164ce1a69a76a64cb5`
+- D1 earlier implementation checkpoint: `6bbd782aa8d75e8500675d4d034134fe67bda879`
+- D1 prior exact-head remote tree: `41a5856f53944e67b9852ea5cbc15f9c83d363f5`
+- D1 final receipt tree SHA: recorded by the final branch/PR API readback, not self-referenced in this file
 - D1 PR: [#5](https://github.com/etvjay/Cleara/pull/5), open/draft/unmerged
 
 ## Focused D1 commands
@@ -23,10 +24,10 @@ Executed against the D1 worktree:
 ```text
 corepack pnpm install --frozen-lockfile                         PASS
 pnpm exec tsc --noEmit -p workers/slice-d/source-ingestion/tsconfig.json --typeRoots workers/multichain-execution/node_modules/@types  PASS
-pnpm exec tsx --test workers/slice-d/source-ingestion/test/*.test.ts  PASS, 34 tests
+pnpm exec tsx --test workers/slice-d/source-ingestion/test/*.test.ts  PASS, 38 tests
 pnpm exec tsx scripts/slice-d/demo.ts                          PASS
 node scripts/slice-d/smoke.mjs                                PASS
-node scripts/slice-d/adversarial.mjs                           PASS, 34 tests
+node scripts/slice-d/adversarial.mjs                           PASS, 38 tests
 ```
 
 The D1 tests cover provider identity and isolation, ABI/log/receipt validation, mapping, unsafe values, bounded ranges, sparse cursor behavior, overlap idempotence, finality monotonicity, missing history, conflicting identity, multiple replacement events, retry/backoff, dead letter, operator replay, serialized restart, and read-only status.
@@ -36,7 +37,7 @@ The D1 tests cover provider identity and isolation, ABI/log/receipt validation, 
 The final local matrix observed before the pre-receipt documentation update includes:
 
 - D0 manifest typecheck/tests: PASS, 11 tests;
-- D1 provider/adapter/backfill/integration typecheck/tests: PASS, 34 tests;
+- D1 provider/adapter/backfill/integration typecheck/tests: PASS, 38 tests;
 - Slice C durable-storage/retry/integration tests: PASS, 19 tests;
 - Slice B compatibility fixture: PASS, 1 test;
 - Slice B projection suite: PASS, 66 tests;

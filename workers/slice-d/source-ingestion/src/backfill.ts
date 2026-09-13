@@ -286,6 +286,7 @@ export class SourceBackfill {
       let block: SourceBlockHeader;
       let parent: SourceBlockHeader | null;
       let logs: SourceLog[];
+      let readMethod: ProviderErrorRecord["method"] = "getBlockHeader";
       try {
         const rawBlock = await this.readProvider("getBlockHeader", () => this.provider.getBlockHeader(this.manifest, blockNumber), blockNumber);
         block = validateBlock(rawBlock, "block header", blockNumber);
@@ -296,6 +297,7 @@ export class SourceBackfill {
         } else {
           parent = null;
         }
+        readMethod = "getLogs";
         const rawLogs = await this.readProvider("getLogs", () => this.provider.getLogs(this.manifest, {
           address: this.manifest.contract.address,
           topic0: this.manifest.eventFamily.selector,
@@ -305,7 +307,7 @@ export class SourceBackfill {
         if (!Array.isArray(rawLogs)) throw new SourceIngestionError("MALFORMED_PROVIDER_RESPONSE", "getLogs must return an array");
         logs = rawLogs.map((raw, index) => validateLog(raw, `logs[${index}]`, block)).sort((left, right) => left.transactionIndex - right.transactionIndex || left.logIndex - right.logIndex || left.transactionHash.localeCompare(right.transactionHash));
       } catch (error) {
-        const method: ProviderErrorRecord["method"] = error instanceof SourceIngestionError && error.code === "MISSING_TRUSTED_HISTORY" ? "getBlockHeader" : errorMethod(error, "getBlockHeader");
+        const method: ProviderErrorRecord["method"] = error instanceof SourceIngestionError && error.code === "MISSING_TRUSTED_HISTORY" ? "getBlockHeader" : errorMethod(error, readMethod);
         const failure = this.failure(method, error, blockNumber);
         runProviderErrors.push(failure);
         this.providerErrors.push(failure);

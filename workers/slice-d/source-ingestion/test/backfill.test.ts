@@ -134,6 +134,32 @@ test("provider outage leaves the cursor at the last safe block and submits a bou
   assert.equal(completed.outcome, "COMPLETED");
 });
 
+test("a later-block outage keeps the prior checkpoint and targets the failed block", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "cleara-d1-atomic-cursor-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const base = new DeterministicFixtureProvider(fixtureDataset());
+  let logReads = 0;
+  const provider = {
+    getChainIdentity: async (scope: Parameters<DeterministicFixtureProvider["getChainIdentity"]>[0]) => base.getChainIdentity(scope),
+    getLatestBlockNumber: async (scope: Parameters<DeterministicFixtureProvider["getLatestBlockNumber"]>[0]) => base.getLatestBlockNumber(scope),
+    getBlockHeader: async (scope: Parameters<DeterministicFixtureProvider["getBlockHeader"]>[0], blockNumber: number) => base.getBlockHeader(scope, blockNumber),
+    getLogs: async (scope: Parameters<DeterministicFixtureProvider["getLogs"]>[0], filter: Parameters<DeterministicFixtureProvider["getLogs"]>[1]) => {
+      logReads += 1;
+      if (logReads === 2) throw new SourceIngestionError("OUTAGE", "second block fixture outage");
+      return base.getLogs(scope, filter);
+    },
+    getTransactionReceipt: async (scope: Parameters<DeterministicFixtureProvider["getTransactionReceipt"]>[0], transactionHash: string) => base.getTransactionReceipt(scope, transactionHash),
+  };
+  const runner = new SourceBackfill({ manifest, provider, c: await boundary(root) });
+  const result = await runner.run(request());
+  assert.equal(result.status, "BLOCKED");
+  assert.equal(result.cursor.nextBlock, 11);
+  assert.equal(result.completedRange?.endBlock, 10);
+  assert.equal(result.acceptedEvents.length, 1);
+  assert.equal(result.providerErrors[0]?.method, "getLogs");
+  assert.match(runner.retrySnapshot().jobs[0]?.deliveryIds[0] ?? "", /:11$/);
+});
+
 test("earlier replacement uses Slice B replay semantics and reaches current only after finality", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "cleara-d1-reorg-"));
   t.after(async () => rm(root, { recursive: true, force: true }));

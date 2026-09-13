@@ -27,6 +27,8 @@ live-read: NOT_VERIFIED
 manifest SHA-256: 4ea1254bd6b60015cfe79bf3c07aacf45464772e1ca6fb33fdbc78bf4ba7e8b8
 ```
 
+The checked-in D0 body is loaded and hashed at runtime. `SourceBackfill` and `SliceCSerializedBoundary` reject any same-scope variant whose canonical hash is not the D0 hash above.
+
 The contract and token addresses in the manifest are deterministic fixture identifiers only. They are not current deployments, historical deployment claims, RPC targets, or testnet evidence.
 
 ## Event and mapping
