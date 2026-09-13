@@ -108,7 +108,7 @@ The normalized observation contains source identity, relationship and object ide
 }
 ```
 
-The request is rejected when the scope, cursor, policy, range, or numeric values do not match D0. The maximum range is 1,000 blocks. The cursor mode is explicit `SPARSE_EVENT` and the unit is `BLOCK`.
+The request cursor is a strict optimistic-concurrency guard: it must equal the last cursor in a restored D1 state, and a non-null cursor is rejected when no matching serialized state is loaded. The maximum range remains 1,000 blocks, and the cursor mode remains explicit `SPARSE_EVENT` with unit `BLOCK`. Exact duplicate scans report their no-op events for that run without mutating the serialized D1 state.
 
 D1 processes blocks in ascending order and logs in deterministic transaction-index, log-index, transaction-hash order. It reads headers, trusted parents, sparse logs, and receipts before committing a block. A current-block provider or checkpoint failure leaves the cursor at the last safe block and discards current-block mutations.
 
@@ -141,7 +141,7 @@ source replacement
 -> serialized Slice B snapshot
 ```
 
-A complete finalized replacement can return the checkpoint to `CURRENT`. Missing trusted history or an unfinalized replacement remains `REPLAY_REQUIRED` with the owner, role, reason, target, and next action preserved by Slice B. A completed replay still exposes `REORG_DETECTED` in D1 status markers. Historical observations remain auditable history and are not silently deleted.
+A complete finalized replacement can return the checkpoint to `CURRENT`. Missing trusted history or an unfinalized replacement remains `REPLAY_REQUIRED` with the owner, role, reason, target, and next action preserved by Slice B. A completed replay still exposes `REORG_DETECTED` in D1 status markers. Historical observations remain auditable history, and accepted D1 records mirror a superseded observation with `finalityState: REORGED` rather than silently demoting or retaining it as current.
 
 The serialized B boundary also exposes Slice B's existing `backfillReplayHeader` operation for an explicit operator recovery step. D1 does not self-trust a replacement as its own predecessor.
 

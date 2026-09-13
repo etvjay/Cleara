@@ -1,6 +1,6 @@
 # Slice D1 Verification
 
-Status at this checkpoint: `REMOTE_CHECKS_PENDING_FOR_FINAL_RECEIPT`.
+Status at this checkpoint: `LOCAL_REMEDIATION_VERIFIED_REMOTE_PENDING`.
 
 ## Baseline
 
@@ -11,7 +11,8 @@ Status at this checkpoint: `REMOTE_CHECKS_PENDING_FOR_FINAL_RECEIPT`.
 - D0 mode: `FIXTURE_ONLY`
 - D0 live-read: `NOT_VERIFIED`
 - D1 branch: `verification/slice-d-source-ingestion`
-- D1 implementation SHA: `1ea46da2ac62abdc1ed8658e82d69d91b4d6d85a`
+- D1 implementation SHA: `2fe5316da65680777f35c73a0c5abcc13e4b5990`
+- D1 prior implementation checkpoint: `1ea46da2ac62abdc1ed8658e82d69d91b4d6d85a`
 - D1 prior hardening checkpoint: `8d2e839b3bd81ba9be865e164ce1a69a76a64cb5`
 - D1 earlier implementation checkpoint: `6bbd782aa8d75e8500675d4d034134fe67bda879`
 - D1 prior exact-head remote tree: `41a5856f53944e67b9852ea5cbc15f9c83d363f5`
@@ -25,20 +26,20 @@ Executed against the D1 worktree:
 ```text
 corepack pnpm install --frozen-lockfile                         PASS
 pnpm exec tsc --noEmit -p workers/slice-d/source-ingestion/tsconfig.json --typeRoots workers/multichain-execution/node_modules/@types  PASS
-pnpm exec tsx --test workers/slice-d/source-ingestion/test/*.test.ts  PASS, 39 tests
+pnpm exec tsx --test workers/slice-d/source-ingestion/test/*.test.ts  PASS, 47 tests
 pnpm exec tsx scripts/slice-d/demo.ts                          PASS
 node scripts/slice-d/smoke.mjs                                PASS
-node scripts/slice-d/adversarial.mjs                           PASS, 39 tests
+node scripts/slice-d/adversarial.mjs                           PASS, 47 tests
 ```
 
-The D1 tests cover provider identity and isolation, ABI/log/receipt validation, mapping, unsafe values, bounded ranges, sparse cursor behavior, overlap idempotence, finality monotonicity, missing history, conflicting identity, multiple replacement events, retry/backoff, dead letter, operator replay, serialized restart, and read-only status.
+The D1 tests cover provider identity and isolation, ABI/log/receipt validation, mapping, unsafe values, bounded ranges, sparse cursor behavior, overlap idempotence, monotonic finality, block-atomic integrity failure, checkpoint retry, missing history, conflicting identity, multiple replacement events, retry/backoff, dead letter, operator replay, serialized restart, restored-state validation, reorged historical records, and read-only status.
 
 ## Full local matrix
 
 The final local matrix observed before the pre-receipt documentation update includes:
 
 - D0 manifest typecheck/tests: PASS, 11 tests;
-- D1 provider/adapter/backfill/integration typecheck/tests: PASS, 39 tests;
+- D1 provider/adapter/backfill/integration typecheck/tests: PASS, 47 tests;
 - Slice C durable-storage/retry/integration tests: PASS, 19 tests;
 - Slice B compatibility fixture: PASS, 1 test;
 - Slice B projection suite: PASS, 66 tests;
@@ -53,6 +54,10 @@ The final local matrix observed before the pre-receipt documentation update incl
 - protected-path, source scope, secret-like addition, and diff checks: PASS.
 
 The local host used Node `22.23.2`; the repository declares Node `>=24.19.0 <25`. The commands passed with the existing engine warning. CI is configured for Node `24.19.0`.
+
+## Review reconciliation
+
+The two earlier delegated reviews returned `passed: false` against staged intermediate snapshots. Their canonical-binding, unsafe-input, retry identity, and ordinary replay-liveness findings were addressed in the later D1 commits. The current code-bearing remediation checkpoint is `2fe5316da65680777f35c73a0c5abcc13e4b5990`, with eight focused review-regression tests. A fresh independent review of that exact code checkpoint is pending; no reviewer approval is claimed here.
 
 ## Evidence classification
 
