@@ -42,9 +42,13 @@ function sortedJson(value: unknown): unknown {
 class FailingCheckpointBoundary extends SliceCSerializedBoundary {
   private checkpointCalls = 0;
 
+  public constructor(options: ConstructorParameters<typeof SliceCSerializedBoundary>[0], private readonly failOn = 2) {
+    super(options);
+  }
+
   public override checkpoint(...args: Parameters<SerializedSliceCBoundary["checkpoint"]>): ReturnType<SerializedSliceCBoundary["checkpoint"]> {
     this.checkpointCalls += 1;
-    if (this.checkpointCalls === 2) return Promise.reject(new SourceIngestionError("OUTAGE", "fixture checkpoint outage"));
+    if (this.checkpointCalls === this.failOn) return Promise.reject(new SourceIngestionError("OUTAGE", "fixture checkpoint outage"));
     return super.checkpoint(...args);
   }
 }
@@ -126,6 +130,20 @@ test("review regression: checkpoint outage creates a durable read-only retry", a
   assert.equal(result.retryStatus, "PENDING");
 });
 
+test("review regression: initial checkpoint outage is attributed to checkpoint and retryable", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "cleara-d1-review-initial-checkpoint-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const c = new FailingCheckpointBoundary({
+    scopeId: manifest.scopeId,
+    manifest,
+    store: new DurableSnapshotStore(root),
+    retry: new RetryOrchestrator(),
+  }, 1);
+  const result = await new SourceBackfill({ manifest, provider: new DeterministicFixtureProvider(fixtureDataset()), c }).run(request({ endBlock: 10 }));
+  assert.equal(result.status, "BLOCKED");
+  assert.equal(result.providerErrors[0]?.method, "checkpoint");
+  assert.equal(result.retry?.disposition, "ACCEPTED");
+});
 test("review regression: a fresh runner cannot silently ignore a supplied cursor", async (t) => {
   const firstRoot = await mkdtemp(join(tmpdir(), "cleara-d1-review-cursor-a-"));
   const secondRoot = await mkdtemp(join(tmpdir(), "cleara-d1-review-cursor-b-"));
@@ -137,6 +155,7 @@ test("review regression: a fresh runner cannot silently ignore a supplied cursor
   const fresh = new SourceBackfill({ manifest, provider: new DeterministicFixtureProvider(fixtureDataset()), c: boundary(secondRoot) });
   await assert.rejects(() => fresh.run(request({ endBlock: 10, cursor: first.cursor })), (error: unknown) => error instanceof SourceIngestionError && error.code === "CURSOR_NOT_ADVANCED");
 });
+
 
 test("review regression: forged accepted state must match the public Slice B snapshot", async (t) => {
   const sourceRoot = await mkdtemp(join(tmpdir(), "cleara-d1-review-state-source-"));

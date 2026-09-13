@@ -372,15 +372,24 @@ export class SourceBackfill {
     };
 
     if (!this.snapshot) {
+      const anchorNumber = scanStart > 0 ? scanStart - 1 : 0;
+      let anchor: SourceBlockHeader;
       try {
-        const anchorNumber = scanStart > 0 ? scanStart - 1 : 0;
         const anchorRaw = await this.readProvider("getBlockHeader", () => this.provider.getBlockHeader(this.manifest, anchorNumber), anchorNumber);
-        const anchor = validateBlock(anchorRaw, "anchor block", anchorNumber);
-        this.snapshot = this.b.initialize(anchor);
+        anchor = validateBlock(anchorRaw, "anchor block", anchorNumber);
+      } catch (error) {
+        const failure = this.failure("getBlockHeader", error, anchorNumber);
+        runProviderErrors.push(failure);
+        this.providerErrors.push(failure);
+        retry = this.maybeScheduleRetry(failure, this.snapshot);
+        return this.finish(request, currentCursor, this.snapshot, runAccepted, runRejected, runDuplicates, runProviderErrors, retry, null, false);
+      }
+      this.snapshot = this.b.initialize(anchor);
+      try {
         await this.checkpoint(this.snapshot);
         this.cursor = currentCursor;
       } catch (error) {
-        const failure = this.failure("getBlockHeader", error, scanStart > 0 ? scanStart - 1 : 0);
+        const failure = this.failure("checkpoint", error, anchorNumber);
         runProviderErrors.push(failure);
         this.providerErrors.push(failure);
         retry = this.maybeScheduleRetry(failure, this.snapshot);
