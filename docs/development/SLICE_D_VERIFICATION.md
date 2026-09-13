@@ -1,6 +1,6 @@
 # Slice D1 Verification
 
-Status at this checkpoint: `IMPLEMENTED_LOCAL`, remote publication not yet performed.
+Status at this checkpoint: `REMOTE_CHECKS_PENDING_FOR_FINAL_RECEIPT`.
 
 ## Baseline
 
@@ -12,7 +12,9 @@ Status at this checkpoint: `IMPLEMENTED_LOCAL`, remote publication not yet perfo
 - D0 live-read: `NOT_VERIFIED`
 - D1 branch: `verification/slice-d-source-ingestion`
 - D1 implementation SHA: `6bbd782aa8d75e8500675d4d034134fe67bda879`
-- D1 PR: pending publication
+- D1 pre-receipt closure SHA: `61f8b73f7bab3cb389620dc46859e38973998e8e`
+- D1 final receipt tree SHA: pending this documentation checkpoint
+- D1 PR: [#5](https://github.com/etvjay/Cleara/pull/5), open/draft/unmerged
 
 ## Focused D1 commands
 
@@ -31,7 +33,7 @@ The D1 tests cover provider identity and isolation, ABI/log/receipt validation, 
 
 ## Full local matrix
 
-The final local matrix observed before publication includes:
+The final local matrix observed before the pre-receipt documentation update includes:
 
 - D0 manifest typecheck/tests: PASS, 11 tests;
 - D1 provider/adapter/backfill/integration typecheck/tests: PASS, 34 tests;
@@ -56,7 +58,7 @@ The local host used Node `22.23.2`; the repository declares Node `>=24.19.0 <25`
 - `IMPLEMENTED_LOCAL`: provider, adapter, backfill, serialized B/C wrappers, status markers, demo, and tests.
 - `FIXTURE_ONLY`: deterministic source blocks, logs, receipts, and fixture identifiers.
 - `NOT_VERIFIED`: live provider, current deployment, RPC read, Attestcoin proof, Creditcoin canonical read, hosted durability, browser, and production readiness.
-- `VERIFIED_REMOTE`: pending exact-head GitHub workflow readback.
+- `VERIFIED_REMOTE`: pending exact-head GitHub workflow readback for the final receipt tree.
 
 ## Required publication matrix
 
@@ -64,8 +66,8 @@ Before final report, run on the final D1 tree:
 
 - final local D0/D1/B/C/web/Forge matrix;
 - changed-file scope, protected-path, secret-like addition, and diff checks;
-- push `verification/slice-d-source-ingestion`;
-- open a separate draft PR targeting `verification/slice-d0-source-scope`;
+- D1 PR #5 is open/draft/unmerged and targets D0;
+- the final receipt documentation commit must be pushed;
 - read back branch ref, pull ref, PR base/head, state, draft state, and ancestry;
 - wait for every required D1 workflow to finish;
 - verify each workflow conclusion and exact `headSha` matches the final pushed SHA.
