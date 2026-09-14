@@ -1,0 +1,21 @@
+{
+  "project": "cleara",
+  "version": 1,
+  "current_phase": "01-judge-path-integration",
+  "status": "IN_PROGRESS",
+  "head": "INTEGRATION_CANDIDATE",
+  "head_ref": "reconcile/cleara-judge-path",
+  "base_head": "c1065cedb2ae62543bb253d0bad9af23ffd99261",
+  "candidate_heads": {
+    "contract_runner": "26ecf9e2062eaa22d5c35932ac2a1b51468a6074",
+    "ui": "f227e5d23494f79e4e5a62a79171f286720a0a28"
+  },
+  "last_verified_head": "INTEGRATION_CANDIDATE",
+  "last_verified_at": "2026-09-13T23:15:20Z",
+  "local_verification_evidence": "foundry/evidence/01-judge-path/LOCAL_VERIFICATION_26ecf9e.md",
+  "critical_open_gaps": 0,
+  "high_open_gaps": 3,
+  "external_blockers": 1,
+  "live_evidence_current": false,
+  "evidence_ceiling": "TESTED"
+}

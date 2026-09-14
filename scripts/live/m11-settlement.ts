@@ -10,6 +10,8 @@ import {
   keccak256,
   parseEther,
   toUtf8Bytes,
+  type TransactionRequest,
+  type TransactionResponse,
 } from 'ethers';
 import { proofProvider } from '@gluwa/usc-sdk';
 
@@ -22,9 +24,110 @@ const sepoliaRpc = process.env.SEPOLIA_RPC_HTTP ?? 'https://ethereum-sepolia-rpc
 const cc3Rpc = process.env.CREDITCOIN_RPC_HTTP ?? 'https://rpc.cc3-testnet.creditcoin.network';
 const proofBuilderUrl =
   process.env.ATTESTCOIN_PROOF_BUILDER_URL ?? 'https://prover.cc3-testnet.creditcoin.network/';
-const sepoliaKey = required('SEPOLIA_DEPLOYER_PRIVATE_KEY');
-const cc3Key = required('CC3_DEPLOYER_PRIVATE_KEY');
+const sepoliaKey = keyFromFileOrEnv('SEPOLIA_DEPLOYER_KEYFILE', 'SEPOLIA_DEPLOYER_PRIVATE_KEY');
+const cc3Key = keyFromFileOrEnv('CC3_DEPLOYER_KEYFILE', 'CC3_DEPLOYER_PRIVATE_KEY');
 const evidencePath = process.env.EVIDENCE_PATH ?? 'evidence/runtime/m11-settlement.json';
+const transactionEvidence: Array<Record<string, unknown>> = [];
+const cumulativeSpendByChain = new Map<string, bigint>();
+const expectedNextNonceByRole = new Map<string, number>();
+const maximumSpendByChain = new Map<string, bigint>([
+  [SEPOLIA_CHAIN_ID.toString(), parseEther('0.020')],
+  [CC3_CHAIN_ID.toString(), parseEther('250')],
+]);
+
+class TrackedWallet extends Wallet {
+  constructor(privateKey: string, provider: JsonRpcProvider, private readonly role: string) {
+    super(privateKey, provider);
+  }
+
+  override async sendTransaction(transaction: TransactionRequest): Promise<TransactionResponse> {
+    const provider = this.provider;
+    if (!provider) throw new Error(`provider unavailable for ${this.role}`);
+    const expectedNonce = expectedNextNonceByRole.get(this.role);
+    const pendingNonce = await provider.getTransactionCount(this.address, 'pending');
+    if (expectedNonce !== undefined && pendingNonce !== expectedNonce) {
+      throw new Error(`nonce changed for ${this.role}: expected ${expectedNonce}, observed ${pendingNonce}`);
+    }
+    const network = await provider.getNetwork();
+    const chainKey = network.chainId.toString();
+    const ceiling = maximumSpendByChain.get(chainKey);
+    if (ceiling === undefined) throw new Error(`unconfigured spend ceiling for chain ${chainKey}`);
+    const estimatedGas = await provider.estimateGas({ ...transaction, from: this.address });
+    const feeData = await provider.getFeeData();
+    const conservativeFeePerGas = feeData.maxFeePerGas ?? feeData.gasPrice;
+    if (conservativeFeePerGas === null) throw new Error(`fee data unavailable for chain ${chainKey}`);
+    const nativeValue = transaction.value === undefined || transaction.value === null ? 0n : BigInt(transaction.value.toString());
+    const estimatedSpend = (cumulativeSpendByChain.get(chainKey) ?? 0n) + estimatedGas * conservativeFeePerGas + nativeValue;
+    if (estimatedSpend > ceiling) throw new Error(`estimated spend ceiling exceeded on chain ${chainKey}`);
+    const response = await super.sendTransaction(transaction);
+    if (expectedNonce !== undefined && response.nonce !== expectedNonce) {
+      throw new Error(`submitted nonce mismatch for ${this.role}: expected ${expectedNonce}, observed ${response.nonce}`);
+    }
+    expectedNextNonceByRole.set(this.role, response.nonce + 1);
+    try {
+      const receipt = await response.wait();
+      const rereadReceipt = await provider.getTransactionReceipt(response.hash);
+      const rereadTransaction = await provider.getTransaction(response.hash);
+      if (
+        !receipt
+          || receipt.status !== 1
+          || !rereadReceipt
+          || rereadReceipt.status !== 1
+          || !rereadTransaction
+          || rereadReceipt.status !== receipt.status
+          || rereadReceipt.blockNumber !== receipt.blockNumber
+          || !sameHex(rereadReceipt.blockHash, receipt.blockHash)
+          || rereadTransaction.from.toLowerCase() !== this.address.toLowerCase()
+      ) {
+        throw new Error(`write receipt identity mismatch for ${this.role}`);
+      }
+      const feePaid = receipt.gasUsed * receipt.gasPrice;
+      const nativeValue = transaction.value === undefined || transaction.value === null ? 0n : BigInt(transaction.value.toString());
+      const chainKey = network.chainId.toString();
+      const cumulativeSpend = (cumulativeSpendByChain.get(chainKey) ?? 0n) + feePaid + nativeValue;
+      const ceiling = maximumSpendByChain.get(chainKey);
+      if (ceiling === undefined) throw new Error(`unconfigured spend ceiling for chain ${chainKey}`);
+      cumulativeSpendByChain.set(chainKey, cumulativeSpend);
+      transactionEvidence.push({
+        role: this.role,
+        chainId: network.chainId,
+        txHash: response.hash,
+        from: this.address,
+        to: transaction.to ?? null,
+        value: nativeValue,
+        dataHash: transaction.data ? keccak256(transaction.data) : null,
+        nonce: response.nonce,
+        receiptStatus: receipt.status,
+        blockNumber: receipt.blockNumber,
+        blockHash: receipt.blockHash,
+        transactionIndex: receipt.index,
+        gasUsed: receipt.gasUsed,
+        estimatedGas,
+        conservativeFeePerGas,
+        estimatedSpend,
+        gasPrice: receipt.gasPrice,
+        feePaid,
+        cumulativeSpend,
+        spendCeiling: ceiling,
+      });
+      if (cumulativeSpend > ceiling) throw new Error(`spend ceiling exceeded on chain ${chainKey}`);
+      return response;
+    } catch (error) {
+      transactionEvidence.push({
+        role: this.role,
+        chainId: (await provider.getNetwork()).chainId,
+        txHash: response.hash,
+        from: this.address,
+        to: transaction.to ?? null,
+        value: transaction.value ?? 0n,
+        dataHash: transaction.data ? keccak256(transaction.data) : null,
+        nonce: response.nonce,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }
+}
 
 function required(name: string): string {
   const value = process.env[name]?.trim();
@@ -32,18 +135,116 @@ function required(name: string): string {
   return value;
 }
 
-function artifact(path: string): { abi: any[]; bytecode: string } {
-  const parsed = JSON.parse(readFileSync(path, 'utf8'));
+function keyFromFileOrEnv(fileVariable: string, environmentVariable: string): string {
+  const keyFile = process.env[fileVariable]?.trim();
+  if (!keyFile) return required(environmentVariable);
+  const parsed = JSON.parse(readFileSync(keyFile, 'utf8')) as unknown;
+  if (!Array.isArray(parsed) || parsed.length !== 1 || typeof parsed[0] !== 'object' || parsed[0] === null) {
+    throw new Error(`invalid wallet keyfile ${fileVariable}`);
+  }
+  const privateKey = (parsed[0] as { private_key?: unknown }).private_key;
+  if (typeof privateKey !== 'string' || privateKey.trim().length === 0) {
+    throw new Error(`wallet keyfile ${fileVariable} has no private key`);
+  }
+  return privateKey.trim();
+}
+
+type BuiltArtifact = {
+  abi: any[];
+  bytecode: string;
+  deployedBytecode: string;
+  immutableReferences: Record<string, Array<{ start: number; length: number }> >;
+};
+
+const deploymentEvidence: Array<Record<string, unknown>> = [];
+
+function artifact(path: string): BuiltArtifact {
+  const parsed = JSON.parse(readFileSync(path, 'utf8')) as {
+    abi: any[];
+    bytecode?: { object?: string };
+    deployedBytecode?: { object?: string; immutableReferences?: Record<string, Array<{ start: number; length: number }>> };
+  };
   const object = parsed.bytecode?.object;
-  if (!object || object === '0x') throw new Error(`artifact ${path} has no creation bytecode`);
-  return { abi: parsed.abi, bytecode: object.startsWith('0x') ? object : `0x${object}` };
+  const deployedObject = parsed.deployedBytecode?.object;
+  if (!object || object === '0x' || !deployedObject || deployedObject === '0x') {
+    throw new Error(`artifact ${path} has incomplete bytecode`);
+  }
+  return {
+    abi: parsed.abi,
+    bytecode: object.startsWith('0x') ? object : `0x${object}`,
+    deployedBytecode: deployedObject.startsWith('0x') ? deployedObject : `0x${deployedObject}`,
+    immutableReferences: parsed.deployedBytecode?.immutableReferences ?? {},
+  };
+}
+
+function maskImmutableRuntime(runtime: string, references: BuiltArtifact['immutableReferences']): string {
+  const bytes = runtime.slice(2).split('');
+  for (const locations of Object.values(references)) {
+    for (const location of locations) {
+      for (let offset = 0; offset < location.length; offset += 1) {
+        const index = (location.start + offset) * 2;
+        bytes[index] = '0';
+        bytes[index + 1] = '0';
+      }
+    }
+  }
+  return `0x${bytes.join('')}`;
 }
 
 async function deploy(wallet: Wallet, path: string, args: unknown[] = []): Promise<Contract> {
   const built = artifact(path);
-  const contract = await new ContractFactory(built.abi, built.bytecode, wallet).deploy(...args);
+  const factory = new ContractFactory(built.abi, built.bytecode, wallet);
+  const contract = await factory.deploy(...args);
   await contract.waitForDeployment();
-  return contract;
+  const deploymentTx = contract.deploymentTransaction();
+  const provider = wallet.provider;
+  if (!deploymentTx || !provider) throw new Error(`deployment transaction unavailable for ${path}`);
+  const receipt = await deploymentTx.wait();
+  if (!receipt || receipt.status !== 1) throw new Error(`deployment receipt failed for ${path}`);
+  const address = await contract.getAddress();
+  const rereadReceipt = await provider.getTransactionReceipt(deploymentTx.hash);
+  const rereadTransaction = await provider.getTransaction(deploymentTx.hash);
+  const code = await provider.getCode(address);
+  const block = await provider.getBlock(receipt.blockNumber);
+  if (
+    !rereadReceipt
+      || rereadReceipt.status !== 1
+      || !rereadTransaction
+      || rereadTransaction.from.toLowerCase() !== wallet.address.toLowerCase()
+      || rereadTransaction.to !== null
+      || !sameHex(rereadTransaction.data, deploymentTx.data)
+      || code === '0x'
+      || !block
+      || !block.hash
+      || !receipt.blockHash
+      || !sameHex(block.hash, receipt.blockHash)
+  ) {
+    throw new Error(`deployment identity readback failed for ${path}`);
+  }
+  const expectedMaskedRuntime = maskImmutableRuntime(built.deployedBytecode, built.immutableReferences);
+  const actualMaskedRuntime = maskImmutableRuntime(code, built.immutableReferences);
+  if (!sameHex(expectedMaskedRuntime, actualMaskedRuntime)) {
+    throw new Error(`deployment runtime identity mismatch for ${path}`);
+  }
+  deploymentEvidence.push({
+    artifact: path,
+    artifactFileHash: keccak256(readFileSync(path)),
+    address,
+    deployer: wallet.address,
+    txHash: deploymentTx.hash,
+    blockNumber: receipt.blockNumber,
+    blockHash: receipt.blockHash,
+    transactionIndex: receipt.index,
+    receiptStatus: receipt.status,
+    gasUsed: receipt.gasUsed,
+    creationBytecodeHash: keccak256(deploymentTx.data),
+    artifactRuntimeCodeHash: keccak256(built.deployedBytecode),
+    deployedRuntimeCodeHash: keccak256(code),
+    immutableAwareRuntimeCodeHash: keccak256(actualMaskedRuntime),
+    immutableReferenceCount: Object.values(built.immutableReferences).flat().length,
+    runtimeIdentityMatches: true,
+  });
+  return contract as unknown as Contract;
 }
 
 async function buildProof(txHash: string, blockNumber: number): Promise<any> {
@@ -75,6 +276,10 @@ async function expectRevert(action: () => Promise<unknown>): Promise<string> {
   throw new Error('expected revert but call succeeded');
 }
 
+function sameHex(left: string, right: string): boolean {
+  return left.toLowerCase() === right.toLowerCase();
+}
+
 function json(value: unknown): string {
   return JSON.stringify(value, (_key, v) => (typeof v === 'bigint' ? v.toString() : v), 2);
 }
@@ -86,37 +291,75 @@ async function main(): Promise<void> {
   if ((await sepoliaProvider.getNetwork()).chainId !== SEPOLIA_CHAIN_ID) throw new Error('Sepolia chain mismatch');
   if ((await cc3Provider.getNetwork()).chainId !== CC3_CHAIN_ID) throw new Error('CC3 chain mismatch');
 
-  const sourceWallet = new Wallet(sepoliaKey, sepoliaProvider);
-  const cc3Wallet = new Wallet(cc3Key, cc3Provider);
-  const debtorWallet = new Wallet(cc3Key, sepoliaProvider);
+  const sourceWallet = new TrackedWallet(sepoliaKey, sepoliaProvider, 'SEPOLIA_DEPLOYER');
+  const cc3Wallet = new TrackedWallet(cc3Key, cc3Provider, 'CC3_COORDINATION');
+  const debtorWallet = new TrackedWallet(cc3Key, sepoliaProvider, 'SEPOLIA_DEBTOR');
   if (debtorWallet.address.toLowerCase() !== cc3Wallet.address.toLowerCase()) {
     throw new Error('cross-chain debtor identity mismatch');
   }
-  if ((await sepoliaProvider.getBalance(sourceWallet.address)) === 0n) throw new Error('Sepolia deployer has zero balance');
-  if ((await cc3Provider.getBalance(cc3Wallet.address)) === 0n) throw new Error('CC3 deployer has zero balance');
+  const sourceBalance = await sepoliaProvider.getBalance(sourceWallet.address);
+  const coordinationBalance = await cc3Provider.getBalance(cc3Wallet.address);
+  const sourcePendingNonce = await sepoliaProvider.getTransactionCount(sourceWallet.address, 'pending');
+  const debtorPendingNonce = await sepoliaProvider.getTransactionCount(debtorWallet.address, 'pending');
+  const coordinationPendingNonce = await cc3Provider.getTransactionCount(cc3Wallet.address, 'pending');
+  expectedNextNonceByRole.set('SEPOLIA_DEPLOYER', sourcePendingNonce);
+  expectedNextNonceByRole.set('SEPOLIA_DEBTOR', debtorPendingNonce);
+  expectedNextNonceByRole.set('CC3_COORDINATION', coordinationPendingNonce);
+  if (sourceBalance < maximumSpendByChain.get(SEPOLIA_CHAIN_ID.toString())!) {
+    throw new Error('Sepolia deployer balance is below the packet ceiling');
+  }
+  if (coordinationBalance < maximumSpendByChain.get(CC3_CHAIN_ID.toString())!) {
+    throw new Error('CC3 coordination balance is below the packet ceiling');
+  }
 
   const debtorGasFloor = parseEther('0.003');
   const debtorBalance = await sepoliaProvider.getBalance(debtorWallet.address);
-  let debtorFundingTxHash: string | null = null;
-  if (debtorBalance < debtorGasFloor && sourceWallet.address.toLowerCase() !== debtorWallet.address.toLowerCase()) {
-    const fundingTx = await sourceWallet.sendTransaction({ to: debtorWallet.address, value: parseEther('0.006') });
-    const fundingReceipt = await fundingTx.wait();
-    if (!fundingReceipt || fundingReceipt.status !== 1) throw new Error('debtor gas funding failed');
-    debtorFundingTxHash = fundingTx.hash;
+  const debtorFundingTxHash: string | null = null;
+  if (debtorBalance < debtorGasFloor) {
+    throw new Error('debtor gas balance below fixed route floor; funding is not part of this packet');
   }
-  if ((await sepoliaProvider.getBalance(debtorWallet.address)) === 0n) throw new Error('Sepolia debtor has zero gas balance');
 
   const sourceBlock = await sepoliaProvider.getBlock('latest');
   const cc3Block = await cc3Provider.getBlock('latest');
   if (!sourceBlock || !cc3Block) throw new Error('latest block unavailable');
   const baseTimestamp = Math.max(sourceBlock.timestamp, cc3Block.timestamp);
+  if (process.env.PREFLIGHT_ONLY === '1') {
+    console.log(json({
+      status: 'PREFLIGHT_PASS',
+      checkedAt,
+      networks: { sepolia: SEPOLIA_CHAIN_ID, cc3: CC3_CHAIN_ID },
+      signers: { source: sourceWallet.address, debtor: debtorWallet.address, cc3: cc3Wallet.address },
+      nonces: { sourcePendingNonce, debtorPendingNonce, coordinationPendingNonce },
+      balances: { sourceBalance, debtorBalance, coordinationBalance },
+      latestBlocks: { sepolia: sourceBlock.number, cc3: cc3Block.number },
+      maximumSpendByChain: Object.fromEntries(maximumSpendByChain),
+      plannedTransactionCount: 70,
+    }));
+    return;
+  }
 
   // Source-side contracts. The mock token is testnet-only evidence infrastructure.
   const token = await deploy(sourceWallet, 'out/MockERC20.sol/MockERC20.json');
   const commitmentVault = await deploy(sourceWallet, 'out/CapitalCommitmentVault.sol/CapitalCommitmentVault.json', [
     sourceWallet.address,
   ]);
-  const settlementAdapter = await deploy(sourceWallet, 'out/SettlementAdapter.sol/SettlementAdapter.json');
+  const tokenAddress = await token.getAddress();
+  const settlementAdapter = await deploy(sourceWallet, 'out/SettlementAdapterV2.sol/SettlementAdapterV2.json', [
+    sourceWallet.address,
+    cc3Wallet.address,
+    tokenAddress,
+  ]);
+  if (
+    (await settlementAdapter.authorizationAdmin()).toLowerCase() !== sourceWallet.address.toLowerCase()
+      || (await settlementAdapter.authorizationSigner()).toLowerCase() !== cc3Wallet.address.toLowerCase()
+      || (await settlementAdapter.supportedToken()).toLowerCase() !== tokenAddress.toLowerCase()
+  ) {
+    throw new Error('source adapter authority or supported-token readback mismatch');
+  }
+  const observedTokenCodeHash = keccak256(await sepoliaProvider.getCode(tokenAddress));
+  if (!sameHex(await settlementAdapter.supportedTokenCodeHash(), observedTokenCodeHash)) {
+    throw new Error('source adapter supported-token code hash mismatch');
+  }
 
   // Fresh CC3 prerequisite stack. The prior M7 capitalization horizon has expired; M11 does not reuse stale capital.
   const domainRegistry = await deploy(cc3Wallet, 'out/DomainRegistry.sol/DomainRegistry.json', [cc3Wallet.address]);
@@ -401,7 +644,7 @@ async function main(): Promise<void> {
     await router.getAddress(),
     await evidenceRegistry.getAddress(),
   ]);
-  const settlementAsc = await deploy(cc3Wallet, 'out/SettlementASC.sol/SettlementASC.json', [
+  const settlementAsc = await deploy(cc3Wallet, 'out/SettlementASCV2.sol/SettlementASCV2.json', [
     BLOCK_PROVER,
     await domainRegistry.getAddress(),
     await assetRegistry.getAddress(),
@@ -536,27 +779,205 @@ async function main(): Promise<void> {
   if (!routeReceipt || routeReceipt.status !== 1) throw new Error('M11 route failed');
   if ((await obligations.getObligation(drawdownId)).settledAmount !== 0n) throw new Error('routing settled value');
 
+  // The CC3 residual is the canonical source obligation. The source-side
+  // authorization is created once from that exact tuple before the debtor acts.
+  const sourceObligationId = residualBeforeRoute.sourceObligationId;
+  const sourceObligation = await obligations.getObligation(sourceObligationId);
+  if (sourceObligation.maturity !== maturity) throw new Error('source expiry does not match canonical obligation maturity');
+  const authorizationDomain = {
+    name: 'Cleara Settlement Adapter',
+    version: '2',
+    chainId: SEPOLIA_CHAIN_ID,
+    verifyingContract: await settlementAdapter.getAddress(),
+  };
+  const authorizationTypes = {
+    SettlementAuthorization: [
+      { name: 'obligationId', type: 'bytes32' },
+      { name: 'settlementId', type: 'bytes32' },
+      { name: 'residualId', type: 'bytes32' },
+      { name: 'debtor', type: 'address' },
+      { name: 'creditor', type: 'address' },
+      { name: 'assetClassId', type: 'bytes32' },
+      { name: 'token', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+      { name: 'expiresAt', type: 'uint64' },
+    ],
+  };
+  const authorizationValue = {
+    obligationId: sourceObligationId,
+    settlementId,
+    residualId,
+    debtor: debtorWallet.address,
+    creditor: PROVIDER_A,
+    assetClassId,
+    token: tokenAddress,
+    amount: residualAmount,
+    expiresAt: maturity,
+  };
+  const authorizationDigest = await settlementAdapter.authorizationDigest(
+    sourceObligationId,
+    settlementId,
+    residualId,
+    debtorWallet.address,
+    PROVIDER_A,
+    assetClassId,
+    tokenAddress,
+    residualAmount,
+    maturity,
+  );
+  const authorizationSignature = await cc3Wallet.signTypedData(
+    authorizationDomain,
+    authorizationTypes,
+    authorizationValue,
+  );
+  await settlementAdapter.authorizeSettlement.staticCall(
+    sourceObligationId,
+    settlementId,
+    residualId,
+    debtorWallet.address,
+    PROVIDER_A,
+    assetClassId,
+    tokenAddress,
+    residualAmount,
+    maturity,
+    authorizationSignature,
+  );
+  const authorizationTx = await settlementAdapter.authorizeSettlement(
+    sourceObligationId,
+    settlementId,
+    residualId,
+    debtorWallet.address,
+    PROVIDER_A,
+    assetClassId,
+    tokenAddress,
+    residualAmount,
+    maturity,
+    authorizationSignature,
+  );
+  const authorizationReceipt = await authorizationTx.wait();
+  if (!authorizationReceipt || authorizationReceipt.status !== 1) {
+    throw new Error('source settlement authorization failed');
+  }
+
+  const sourceAuthorizationBefore = await settlementAdapter.getAuthorization(sourceObligationId);
+  if (
+    sourceAuthorizationBefore.obligationId !== sourceObligationId
+      || sourceAuthorizationBefore.settlementId !== settlementId
+      || sourceAuthorizationBefore.residualId !== residualId
+      || sourceAuthorizationBefore.debtor.toLowerCase() !== debtorWallet.address.toLowerCase()
+      || sourceAuthorizationBefore.creditor.toLowerCase() !== PROVIDER_A.toLowerCase()
+      || sourceAuthorizationBefore.assetClassId !== assetClassId
+      || sourceAuthorizationBefore.token.toLowerCase() !== (await token.getAddress()).toLowerCase()
+      || BigInt(sourceAuthorizationBefore.amount) !== residualAmount
+      || BigInt(sourceAuthorizationBefore.expiresAt) !== maturity
+      || Number(sourceAuthorizationBefore.status) !== 1
+      || !(await settlementAdapter.canExecute(sourceObligationId))
+      || (await settlementAdapter.obligationBySettlementId(settlementId)) !== sourceObligationId
+      || (await settlementAdapter.obligationByResidualId(residualId)) !== sourceObligationId
+  ) {
+    throw new Error('source settlement authorization readback mismatch');
+  }
+
   // Exact source settlement. The CC3 residual debtor is the Sepolia token payer.
   await (await tokenAsDebtor.approve(await settlementAdapter.getAddress(), residualAmount)).wait();
   const adapterAsDebtor = settlementAdapter.connect(debtorWallet) as Contract;
-  const creditorBefore = await token.balanceOf(PROVIDER_A);
-  const debtorBeforeSettlement = await token.balanceOf(debtorWallet.address);
+  const creditorBefore = BigInt(await token.balanceOf(PROVIDER_A));
+  const debtorBeforeSettlement = BigInt(await token.balanceOf(debtorWallet.address));
   if (debtorBeforeSettlement !== residualAmount) throw new Error('debtor source balance is not exact residual');
 
-  const settlementTx = await adapterAsDebtor.executeSettlement(
-    settlementId,
-    residualId,
-    PROVIDER_A,
-    assetClassId,
-    await token.getAddress(),
-    residualAmount,
-  );
+  const settlementTx = await adapterAsDebtor.executeSettlement(sourceObligationId);
   const settlementReceipt = await settlementTx.wait();
   if (!settlementReceipt || settlementReceipt.status !== 1) throw new Error('Sepolia settlement execution failed');
-  const creditorAfter = await token.balanceOf(PROVIDER_A);
-  const debtorAfterSettlement = await token.balanceOf(debtorWallet.address);
+  const rereadSettlementReceipt = await sepoliaProvider.getTransactionReceipt(settlementTx.hash);
+  if (!rereadSettlementReceipt) throw new Error('settlement receipt reread unavailable');
+  if (
+    !sameHex(rereadSettlementReceipt.hash, settlementTx.hash)
+      || rereadSettlementReceipt.status !== settlementReceipt.status
+      || rereadSettlementReceipt.blockNumber !== settlementReceipt.blockNumber
+      || !sameHex(rereadSettlementReceipt.blockHash, settlementReceipt.blockHash)
+      || rereadSettlementReceipt.index !== settlementReceipt.index
+  ) {
+    throw new Error('settlement receipt reread identity mismatch');
+  }
+  const settlementBlock = await sepoliaProvider.getBlock(settlementReceipt.blockNumber);
+  if (!settlementBlock || !settlementBlock.hash || !settlementReceipt.blockHash || !sameHex(settlementBlock.hash, settlementReceipt.blockHash)) {
+    throw new Error('settlement block hash mismatch');
+  }
+  const settlementAdapterAddress = (await settlementAdapter.getAddress()).toLowerCase();
+  const rereadSettlementTransaction = await sepoliaProvider.getTransaction(settlementTx.hash);
+  const expectedSettlementCallData = settlementAdapter.interface.encodeFunctionData('executeSettlement', [sourceObligationId]);
+  if (
+    !rereadSettlementTransaction
+      || rereadSettlementTransaction.from.toLowerCase() !== debtorWallet.address.toLowerCase()
+      || rereadSettlementTransaction.to?.toLowerCase() !== settlementAdapterAddress
+      || rereadSettlementTransaction.value !== 0n
+      || !sameHex(rereadSettlementTransaction.data, expectedSettlementCallData)
+  ) {
+    throw new Error('settlement transaction identity mismatch');
+  }
+  if (rereadSettlementReceipt.logs.length !== 2) throw new Error('settlement receipt must contain exactly two logs');
+  const settlementLogIndexes = new Set(rereadSettlementReceipt.logs.map((log) => log.index));
+  if (settlementLogIndexes.size !== rereadSettlementReceipt.logs.length) {
+    throw new Error('settlement receipt has duplicate log indexes');
+  }
+  const settlementEventSignature = keccak256(
+    toUtf8Bytes('SettlementExecuted(bytes32,bytes32,bytes32,address,address,bytes32,address,uint256,uint64)'),
+  );
+  const settlementTokenAddress = tokenAddress.toLowerCase();
+  const settlementEventLogs = rereadSettlementReceipt.logs.filter(
+    (log) => log.address.toLowerCase() === settlementAdapterAddress
+      && log.topics[0] === settlementEventSignature,
+  );
+  if (settlementEventLogs.length !== 1) throw new Error('expected exactly one V2 SettlementExecuted log');
+  const settlementEventLog = settlementEventLogs[0]!;
+  const settlementEventReceiptIndex = rereadSettlementReceipt.logs.indexOf(settlementEventLog);
+  if (
+    !sameHex(settlementEventLog.transactionHash, settlementTx.hash)
+      || !sameHex(settlementEventLog.blockHash, settlementReceipt.blockHash)
+      || settlementEventLog.blockNumber !== settlementReceipt.blockNumber
+      || settlementEventLog.transactionIndex !== settlementReceipt.index
+      || settlementEventReceiptIndex !== 1
+      || settlementEventLog.topics.length !== 4
+      || !sameHex(settlementEventLog.topics[0]!, settlementEventSignature)
+      || !sameHex(settlementEventLog.topics[1]!, sourceObligationId)
+      || !sameHex(settlementEventLog.topics[2]!, settlementId)
+      || !sameHex(settlementEventLog.topics[3]!, residualId)
+  ) {
+    throw new Error('V2 settlement event identity mismatch');
+  }
+  const expectedSettlementData = AbiCoder.defaultAbiCoder().encode(
+    ['address', 'address', 'bytes32', 'address', 'uint256', 'uint64'],
+    [debtorWallet.address, PROVIDER_A, assetClassId, settlementTokenAddress, residualAmount, maturity],
+  );
+  if (!sameHex(settlementEventLog.data, expectedSettlementData)) throw new Error('V2 settlement event data mismatch');
+  const transferEventSignature = keccak256(toUtf8Bytes('Transfer(address,address,uint256)'));
+  const transferEventLogs = rereadSettlementReceipt.logs.filter(
+    (log) => log.address.toLowerCase() === settlementTokenAddress
+      && log.topics[0] === transferEventSignature,
+  );
+  if (transferEventLogs.length !== 1) throw new Error('expected exactly one settlement Transfer log');
+  const transferEventLog = transferEventLogs[0]!;
+  const transferEventReceiptIndex = rereadSettlementReceipt.logs.indexOf(transferEventLog);
+  if (
+    !sameHex(transferEventLog.transactionHash, settlementTx.hash)
+      || !sameHex(transferEventLog.blockHash, settlementReceipt.blockHash)
+      || transferEventLog.blockNumber !== settlementReceipt.blockNumber
+      || transferEventLog.transactionIndex !== settlementReceipt.index
+      || transferEventReceiptIndex !== 0
+      || transferEventLog.topics.length !== 3
+      || !sameHex(transferEventLog.topics[0]!, transferEventSignature)
+      || !sameHex(transferEventLog.topics[1]!, `0x${debtorWallet.address.slice(2).padStart(64, '0')}`)
+      || !sameHex(transferEventLog.topics[2]!, `0x${PROVIDER_A.slice(2).padStart(64, '0')}`)
+      || !sameHex(transferEventLog.data, AbiCoder.defaultAbiCoder().encode(['uint256'], [residualAmount]))
+  ) {
+    throw new Error('settlement Transfer event identity mismatch');
+  }
+  const creditorAfter = BigInt(await token.balanceOf(PROVIDER_A));
+  const debtorAfterSettlement = BigInt(await token.balanceOf(debtorWallet.address));
   if (creditorAfter - creditorBefore !== residualAmount) throw new Error('creditor did not receive exact residual');
   if (debtorAfterSettlement !== 0n) throw new Error('debtor retained settlement tokens');
+  const sourceAuthorization = await settlementAdapter.getAuthorization(sourceObligationId);
+  if (Number(sourceAuthorization.status) !== 2) throw new Error('source authorization was not consumed');
 
   const rawProof = await buildProof(settlementTx.hash, settlementReceipt.blockNumber);
   const proof = asProof(rawProof);
@@ -587,18 +1008,22 @@ async function main(): Promise<void> {
     throw new Error('extinguished reciprocal fee accounting drifted');
   }
   if (!settlementEvidence.consumed) throw new Error('settlement evidence not consumed');
+  if (settlementEvidence.eventIndex !== 1) throw new Error('settlement evidence event index mismatch');
   if (!(await reconciler.reconciledSettlement(settlementId))) throw new Error('settlement replay lock missing');
 
   const replayRejected = await expectRevert(async () => {
-    const tx = await settlementAsc.acceptAttestedSettlement(proof);
-    await tx.wait();
+    await settlementAsc.acceptAttestedSettlement.staticCall(proof);
   });
   const wrongChainRejected = await expectRevert(async () => {
-    const tx = await settlementAsc.acceptAttestedSettlement({ ...proof, chainKey: 3 });
-    await tx.wait();
+    await settlementAsc.acceptAttestedSettlement.staticCall({ ...proof, chainKey: 3 });
   });
 
   const latestCc3 = await cc3Provider.getBlock('latest');
+  const sepoliaWriteCount = transactionEvidence.filter((entry) => String(entry.chainId) === String(SEPOLIA_CHAIN_ID)).length;
+  const cc3WriteCount = transactionEvidence.filter((entry) => String(entry.chainId) === String(CC3_CHAIN_ID)).length;
+  if (transactionEvidence.length !== 70 || sepoliaWriteCount !== 9 || cc3WriteCount !== 61) {
+    throw new Error(`unexpected bounded write count: total=${transactionEvidence.length}, sepolia=${sepoliaWriteCount}, cc3=${cc3WriteCount}`);
+  }
   const evidence = {
     status: 'PASS',
     checkedAt,
@@ -611,10 +1036,23 @@ async function main(): Promise<void> {
       sepoliaSettlementPayer: debtorWallet.address,
       sameAddress: cc3Wallet.address.toLowerCase() === debtorWallet.address.toLowerCase(),
     },
+    preflight: {
+      sourcePendingNonce,
+      debtorPendingNonce,
+      coordinationPendingNonce,
+      sourceBalance,
+      coordinationBalance,
+      debtorBalance,
+      maximumSepoliaSpend: maximumSpendByChain.get(SEPOLIA_CHAIN_ID.toString()),
+      maximumCc3Spend: maximumSpendByChain.get(CC3_CHAIN_ID.toString()),
+    },
+    deployments: deploymentEvidence,
+    transactions: transactionEvidence,
     sourceContracts: {
       token: await token.getAddress(),
       capitalCommitmentVault: await commitmentVault.getAddress(),
       settlementAdapter: await settlementAdapter.getAddress(),
+      settlementAdapterVersion: 'V2_ONE_SHOT_AUTHORIZATION',
     },
     prerequisiteFixture: {
       note: 'Fresh current-capital prerequisite for M11. The source capital is actually locked on Sepolia, but this commitment registration is not the M11 Attestcoin proof target and does not replace prior M6/M7 evidence.',
@@ -668,12 +1106,20 @@ async function main(): Promise<void> {
       routeTxHash: routeTx.hash,
     },
     sourceSettlement: {
+      obligationId: sourceObligationId,
+      authorizationSigner: cc3Wallet.address,
+      authorizationDigest,
+      supportedTokenCodeHash: observedTokenCodeHash,
+      authorizationTxHash: authorizationTx.hash,
+      authorizationBlockNumber: authorizationReceipt.blockNumber,
+      authorizationStatus: Number(sourceAuthorization.status),
       txHash: settlementTx.hash,
       blockNumber: settlementReceipt.blockNumber,
       debtor: debtorWallet.address,
       creditor: PROVIDER_A,
       token: await token.getAddress(),
       amount: residualAmount,
+      expiresAt: maturity,
       debtorBalanceBefore: debtorBeforeSettlement,
       debtorBalanceAfter: debtorAfterSettlement,
       creditorBalanceBefore: creditorBefore,
@@ -699,7 +1145,7 @@ async function main(): Promise<void> {
     negative: { replayRejected, wrongChainRejected },
     gasFunding: { debtorFundingTxHash },
     semanticBoundary:
-      'M11 proves testnet mock-token settlement execution on Sepolia, Attestcoin verification of that exact successful transaction, route/domain/representation semantic validation on CC3, one-time evidence consumption, and exact full-residual reconciliation. It does not prove production stablecoin settlement, legal finality, or a production settlement rail.',
+      'M11 proves testnet mock-token settlement execution on Sepolia through a V2 source-side one-shot obligation authorization, Attestcoin verification of that exact successful transaction, route/domain/representation semantic validation on CC3, one-time evidence consumption, and exact full-residual reconciliation. It does not prove production stablecoin settlement, legal finality, or a production settlement rail.',
   };
 
   mkdirSync(dirname(evidencePath), { recursive: true });
@@ -712,6 +1158,8 @@ main().catch((error) => {
     status: 'FAIL',
     checkedAt: new Date().toISOString(),
     error: error instanceof Error ? error.message : String(error),
+    deployments: deploymentEvidence,
+    transactions: transactionEvidence,
   };
   mkdirSync(dirname(evidencePath), { recursive: true });
   writeFileSync(evidencePath, `${json(failure)}\n`, 'utf8');

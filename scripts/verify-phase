@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+PHASE=${1:-}
+
+if [[ -z "$PHASE" ]]; then
+  printf 'usage: scripts/verify-phase <phase-id>\n' >&2
+  exit 2
+fi
+
+case "$PHASE" in
+  01-judge-path-integration)
+    exec "$ROOT/scripts/verify"
+    ;;
+  *)
+    printf 'unknown phase: %s\n' "$PHASE" >&2
+    exit 2
+    ;;
+esac
