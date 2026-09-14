@@ -16,13 +16,11 @@ import {ResidualSettlementRoutingTest} from "./ResidualSettlementRouting.t.sol";
 contract MockNativeQueryVerifier is INativeQueryVerifier {
     uint64 public constant TX_INDEX = 7;
 
-    function verifyAndEmit(
-        uint64,
-        uint64,
-        bytes calldata,
-        MerkleProof calldata,
-        ContinuityProof calldata
-    ) external pure returns (bool) {
+    function verifyAndEmit(uint64, uint64, bytes calldata, MerkleProof calldata, ContinuityProof calldata)
+        external
+        pure
+        returns (bool)
+    {
         return true;
     }
 
@@ -136,7 +134,9 @@ contract SettlementASCV2Test is ResidualSettlementRoutingTest {
         (bytes32 acceptedSettlementId, bytes32 evidenceId) = asc.acceptAttestedSettlement(proof);
 
         require(acceptedSettlementId == settlementId, "wrong accepted settlement");
-        require(residuals.getResidual(residualId).status == ResidualLedger.ResidualStatus.SETTLED, "residual not settled");
+        require(
+            residuals.getResidual(residualId).status == ResidualLedger.ResidualStatus.SETTLED, "residual not settled"
+        );
         ObligationLedger.Obligation memory settled = obligations.getObligation(obligationId);
         require(settled.status == ObligationLedger.ObligationStatus.SETTLED, "obligation not settled");
         require(settled.settledAmount == residual.amount, "wrong settled amount");
@@ -174,10 +174,7 @@ contract SettlementASCV2Test is ResidualSettlementRoutingTest {
         (bool ok,) = address(asc).call(abi.encodeCall(asc.acceptAttestedSettlement, (proof)));
         require(!ok, "wrong obligation accepted");
         require(residuals.getResidual(residualId).status == ResidualLedger.ResidualStatus.ROUTED, "residual mutated");
-        require(
-            obligations.getObligation(residual.sourceObligationId).settledAmount == 0,
-            "obligation mutated"
-        );
+        require(obligations.getObligation(residual.sourceObligationId).settledAmount == 0, "obligation mutated");
     }
 
     function testReceiptWithNonCanonicalSettlementDataIsRejected() public {
@@ -208,7 +205,10 @@ contract SettlementASCV2Test is ResidualSettlementRoutingTest {
 
         (bool ok,) = address(asc).call(abi.encodeCall(asc.acceptAttestedSettlement, (proof)));
         require(!ok, "noncanonical data accepted");
-        require(residuals.getResidual(residualId).status == ResidualLedger.ResidualStatus.ROUTED, "noncanonical mutated residual");
+        require(
+            residuals.getResidual(residualId).status == ResidualLedger.ResidualStatus.ROUTED,
+            "noncanonical mutated residual"
+        );
     }
 
     function testReceiptShapeAndSourceCallMustBeExact() public {
@@ -227,18 +227,74 @@ contract SettlementASCV2Test is ResidualSettlementRoutingTest {
             expiresAt: obligation.maturity
         });
 
-        _assertRejected(_encodedTransaction(input, ReceiptOptions({nonCanonicalSettlementData: false, extraLog: true, wrongCaller: false, wrongTarget: false, wrongCalldata: false})), residualId, obligationId);
-        _assertRejected(_encodedTransaction(input, ReceiptOptions({nonCanonicalSettlementData: false, extraLog: false, wrongCaller: true, wrongTarget: false, wrongCalldata: false})), residualId, obligationId);
-        _assertRejected(_encodedTransaction(input, ReceiptOptions({nonCanonicalSettlementData: false, extraLog: false, wrongCaller: false, wrongTarget: true, wrongCalldata: false})), residualId, obligationId);
-        _assertRejected(_encodedTransaction(input, ReceiptOptions({nonCanonicalSettlementData: false, extraLog: false, wrongCaller: false, wrongTarget: false, wrongCalldata: true})), residualId, obligationId);
+        _assertRejected(
+            _encodedTransaction(
+                input,
+                ReceiptOptions({
+                    nonCanonicalSettlementData: false,
+                    extraLog: true,
+                    wrongCaller: false,
+                    wrongTarget: false,
+                    wrongCalldata: false
+                })
+            ),
+            residualId,
+            obligationId
+        );
+        _assertRejected(
+            _encodedTransaction(
+                input,
+                ReceiptOptions({
+                    nonCanonicalSettlementData: false,
+                    extraLog: false,
+                    wrongCaller: true,
+                    wrongTarget: false,
+                    wrongCalldata: false
+                })
+            ),
+            residualId,
+            obligationId
+        );
+        _assertRejected(
+            _encodedTransaction(
+                input,
+                ReceiptOptions({
+                    nonCanonicalSettlementData: false,
+                    extraLog: false,
+                    wrongCaller: false,
+                    wrongTarget: true,
+                    wrongCalldata: false
+                })
+            ),
+            residualId,
+            obligationId
+        );
+        _assertRejected(
+            _encodedTransaction(
+                input,
+                ReceiptOptions({
+                    nonCanonicalSettlementData: false,
+                    extraLog: false,
+                    wrongCaller: false,
+                    wrongTarget: false,
+                    wrongCalldata: true
+                })
+            ),
+            residualId,
+            obligationId
+        );
     }
 
     function _assertRejected(bytes memory encodedTransaction, bytes32 residualId, bytes32 obligationId) internal {
         (bool ok,) = address(asc).call(abi.encodeCall(asc.acceptAttestedSettlement, (_proof(encodedTransaction))));
         require(!ok, "malformed source receipt accepted");
-        require(residuals.getResidual(residualId).status == ResidualLedger.ResidualStatus.ROUTED, "failed receipt mutated residual");
+        require(
+            residuals.getResidual(residualId).status == ResidualLedger.ResidualStatus.ROUTED,
+            "failed receipt mutated residual"
+        );
         require(obligations.getObligation(obligationId).settledAmount == 0, "failed receipt mutated obligation");
     }
+
     function _routed340() internal returns (bytes32 settlementId, bytes32 residualId, bytes32 obligationId, bytes32) {
         (bytes32 epochId,,) = _finalizedEpoch(400_000, 60_000);
         residualId = residuals.createBilateralResidual(epochId);
@@ -272,9 +328,14 @@ contract SettlementASCV2Test is ResidualSettlementRoutingTest {
         });
     }
 
-    function _encodedTransaction(ReceiptInput memory input, ReceiptOptions memory options) internal view returns (bytes memory encodedTransaction) {
+    function _encodedTransaction(ReceiptInput memory input, ReceiptOptions memory options)
+        internal
+        view
+        returns (bytes memory encodedTransaction)
+    {
         bytes32[] memory settlementTopics = new bytes32[](4);
-        settlementTopics[0] = keccak256("SettlementExecuted(bytes32,bytes32,bytes32,address,address,bytes32,address,uint256,uint64)");
+        settlementTopics[0] =
+            keccak256("SettlementExecuted(bytes32,bytes32,bytes32,address,address,bytes32,address,uint256,uint64)");
         settlementTopics[1] = input.obligationId;
         settlementTopics[2] = input.settlementId;
         settlementTopics[3] = input.residualId;
@@ -285,25 +346,17 @@ contract SettlementASCV2Test is ResidualSettlementRoutingTest {
         transferTopics[2] = bytes32(uint256(uint160(input.creditor)));
 
         EvmV1Decoder.LogEntryTuple[] memory logs = new EvmV1Decoder.LogEntryTuple[](options.extraLog ? 3 : 2);
-        bytes memory settlementData = abi.encode(
-            input.debtor, input.creditor, input.assetClassId, input.token, input.amount, input.expiresAt
-        );
+        bytes memory settlementData =
+            abi.encode(input.debtor, input.creditor, input.assetClassId, input.token, input.amount, input.expiresAt);
         if (options.nonCanonicalSettlementData) settlementData = bytes.concat(settlementData, bytes1(0x01));
-        logs[0] = EvmV1Decoder.LogEntryTuple({
-            address_: input.token,
-            topics: transferTopics,
-            data: abi.encode(input.amount)
-        });
+        logs[0] =
+            EvmV1Decoder.LogEntryTuple({address_: input.token, topics: transferTopics, data: abi.encode(input.amount)});
         logs[1] = EvmV1Decoder.LogEntryTuple({
-            address_: address(sourceAdapter),
-            topics: settlementTopics,
-            data: settlementData
+            address_: address(sourceAdapter), topics: settlementTopics, data: settlementData
         });
         if (options.extraLog) {
             logs[2] = EvmV1Decoder.LogEntryTuple({
-                address_: input.token,
-                topics: transferTopics,
-                data: abi.encode(input.amount - 1)
+                address_: input.token, topics: transferTopics, data: abi.encode(input.amount - 1)
             });
         }
 

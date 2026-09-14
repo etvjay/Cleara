@@ -57,7 +57,17 @@ contract SettlementAdapterV2Test {
 
     function testCanonicalAuthorizationExecutesExactlyOncePerObligation() public {
         uint64 expiresAt = uint64(block.timestamp + 1 days);
-        _authorize(obligationId, settlementId, residualId, address(this), creditor, assetClassId, address(token), amount, expiresAt);
+        _authorize(
+            obligationId,
+            settlementId,
+            residualId,
+            address(this),
+            creditor,
+            assetClassId,
+            address(token),
+            amount,
+            expiresAt
+        );
 
         uint256 debtorBefore = token.balanceOf(address(this));
         uint256 creditorBefore = token.balanceOf(creditor);
@@ -79,7 +89,17 @@ contract SettlementAdapterV2Test {
 
     function testOnlyAuthorizedDebtorCanExecute() public {
         uint64 expiresAt = uint64(block.timestamp + 1 days);
-        _authorize(obligationId, settlementId, residualId, address(debtor), creditor, assetClassId, address(token), amount, expiresAt);
+        _authorize(
+            obligationId,
+            settlementId,
+            residualId,
+            address(debtor),
+            creditor,
+            assetClassId,
+            address(token),
+            amount,
+            expiresAt
+        );
 
         (bool unauthorized,) = address(adapter).call(abi.encodeCall(adapter.executeSettlement, (obligationId)));
         require(!unauthorized, "non-debtor executed settlement");
@@ -89,66 +109,181 @@ contract SettlementAdapterV2Test {
 
     function testConflictingObligationSettlementAndResidualAreRejected() public {
         uint64 expiresAt = uint64(block.timestamp + 1 days);
-        _authorize(obligationId, settlementId, residualId, address(this), creditor, assetClassId, address(token), amount, expiresAt);
+        _authorize(
+            obligationId,
+            settlementId,
+            residualId,
+            address(this),
+            creditor,
+            assetClassId,
+            address(token),
+            amount,
+            expiresAt
+        );
 
         bytes32 secondSettlementId = keccak256("settlement-2");
         bytes32 secondResidualId = keccak256("residual-2");
         bytes memory sameObligationSignature = _signature(
-            obligationId, secondSettlementId, secondResidualId, address(this), creditor, assetClassId, address(token), amount, expiresAt, SIGNER_KEY
+            obligationId,
+            secondSettlementId,
+            secondResidualId,
+            address(this),
+            creditor,
+            assetClassId,
+            address(token),
+            amount,
+            expiresAt,
+            SIGNER_KEY
         );
-        (bool sameObligation,) = address(adapter).call(
-            abi.encodeCall(
-                adapter.authorizeSettlement,
-                (obligationId, secondSettlementId, secondResidualId, address(this), creditor, assetClassId, address(token), amount, expiresAt, sameObligationSignature)
-            )
-        );
+        (bool sameObligation,) = address(adapter)
+            .call(
+                abi.encodeCall(
+                    adapter.authorizeSettlement,
+                    (
+                        obligationId,
+                        secondSettlementId,
+                        secondResidualId,
+                        address(this),
+                        creditor,
+                        assetClassId,
+                        address(token),
+                        amount,
+                        expiresAt,
+                        sameObligationSignature
+                    )
+                )
+            );
         require(!sameObligation, "same obligation reauthorized");
 
         bytes memory sameSettlementSignature = _signature(
-            keccak256("obligation-2"), settlementId, keccak256("residual-3"), address(this), creditor, assetClassId, address(token), amount, expiresAt, SIGNER_KEY
+            keccak256("obligation-2"),
+            settlementId,
+            keccak256("residual-3"),
+            address(this),
+            creditor,
+            assetClassId,
+            address(token),
+            amount,
+            expiresAt,
+            SIGNER_KEY
         );
-        (bool sameSettlement,) = address(adapter).call(
-            abi.encodeCall(
-                adapter.authorizeSettlement,
-                (keccak256("obligation-2"), settlementId, keccak256("residual-3"), address(this), creditor, assetClassId, address(token), amount, expiresAt, sameSettlementSignature)
-            )
-        );
+        (bool sameSettlement,) = address(adapter)
+            .call(
+                abi.encodeCall(
+                    adapter.authorizeSettlement,
+                    (
+                        keccak256("obligation-2"),
+                        settlementId,
+                        keccak256("residual-3"),
+                        address(this),
+                        creditor,
+                        assetClassId,
+                        address(token),
+                        amount,
+                        expiresAt,
+                        sameSettlementSignature
+                    )
+                )
+            );
         require(!sameSettlement, "same settlement id reused");
 
         bytes memory sameResidualSignature = _signature(
-            keccak256("obligation-3"), keccak256("settlement-3"), residualId, address(this), creditor, assetClassId, address(token), amount, expiresAt, SIGNER_KEY
+            keccak256("obligation-3"),
+            keccak256("settlement-3"),
+            residualId,
+            address(this),
+            creditor,
+            assetClassId,
+            address(token),
+            amount,
+            expiresAt,
+            SIGNER_KEY
         );
-        (bool sameResidual,) = address(adapter).call(
-            abi.encodeCall(
-                adapter.authorizeSettlement,
-                (keccak256("obligation-3"), keccak256("settlement-3"), residualId, address(this), creditor, assetClassId, address(token), amount, expiresAt, sameResidualSignature)
-            )
-        );
+        (bool sameResidual,) = address(adapter)
+            .call(
+                abi.encodeCall(
+                    adapter.authorizeSettlement,
+                    (
+                        keccak256("obligation-3"),
+                        keccak256("settlement-3"),
+                        residualId,
+                        address(this),
+                        creditor,
+                        assetClassId,
+                        address(token),
+                        amount,
+                        expiresAt,
+                        sameResidualSignature
+                    )
+                )
+            );
         require(!sameResidual, "same residual id reused");
     }
 
     function testInvalidSignerAndMutatedFieldsAreRejected() public {
         uint64 expiresAt = uint64(block.timestamp + 1 days);
         bytes memory wrongSigner = _signature(
-            obligationId, settlementId, residualId, address(this), creditor, assetClassId, address(token), amount, expiresAt, 0xBEEF
+            obligationId,
+            settlementId,
+            residualId,
+            address(this),
+            creditor,
+            assetClassId,
+            address(token),
+            amount,
+            expiresAt,
+            0xBEEF
         );
-        (bool wrongSignerOk,) = address(adapter).call(
-            abi.encodeCall(
-                adapter.authorizeSettlement,
-                (obligationId, settlementId, residualId, address(this), creditor, assetClassId, address(token), amount, expiresAt, wrongSigner)
-            )
-        );
+        (bool wrongSignerOk,) = address(adapter)
+            .call(
+                abi.encodeCall(
+                    adapter.authorizeSettlement,
+                    (
+                        obligationId,
+                        settlementId,
+                        residualId,
+                        address(this),
+                        creditor,
+                        assetClassId,
+                        address(token),
+                        amount,
+                        expiresAt,
+                        wrongSigner
+                    )
+                )
+            );
         require(!wrongSignerOk, "wrong signer authorized");
 
         bytes memory originalAmountSignature = _signature(
-            obligationId, settlementId, residualId, address(this), creditor, assetClassId, address(token), amount, expiresAt, SIGNER_KEY
+            obligationId,
+            settlementId,
+            residualId,
+            address(this),
+            creditor,
+            assetClassId,
+            address(token),
+            amount,
+            expiresAt,
+            SIGNER_KEY
         );
-        (bool mutatedAmountOk,) = address(adapter).call(
-            abi.encodeCall(
-                adapter.authorizeSettlement,
-                (obligationId, settlementId, residualId, address(this), creditor, assetClassId, address(token), amount + 1, expiresAt, originalAmountSignature)
-            )
-        );
+        (bool mutatedAmountOk,) = address(adapter)
+            .call(
+                abi.encodeCall(
+                    adapter.authorizeSettlement,
+                    (
+                        obligationId,
+                        settlementId,
+                        residualId,
+                        address(this),
+                        creditor,
+                        assetClassId,
+                        address(token),
+                        amount + 1,
+                        expiresAt,
+                        originalAmountSignature
+                    )
+                )
+            );
         require(!mutatedAmountOk, "mutated economics authorized");
     }
 
@@ -156,27 +291,79 @@ contract SettlementAdapterV2Test {
         uint64 expiresAt = uint64(block.timestamp + 1 days);
         MockERC20 alternateToken = new MockERC20();
         bytes memory alternateTokenSignature = _signature(
-            obligationId, settlementId, residualId, address(this), creditor, assetClassId, address(alternateToken), amount, expiresAt, SIGNER_KEY
+            obligationId,
+            settlementId,
+            residualId,
+            address(this),
+            creditor,
+            assetClassId,
+            address(alternateToken),
+            amount,
+            expiresAt,
+            SIGNER_KEY
         );
-        (bool alternateTokenOk,) = address(adapter).call(
-            abi.encodeCall(
-                adapter.authorizeSettlement,
-                (obligationId, settlementId, residualId, address(this), creditor, assetClassId, address(alternateToken), amount, expiresAt, alternateTokenSignature)
-            )
-        );
+        (bool alternateTokenOk,) = address(adapter)
+            .call(
+                abi.encodeCall(
+                    adapter.authorizeSettlement,
+                    (
+                        obligationId,
+                        settlementId,
+                        residualId,
+                        address(this),
+                        creditor,
+                        assetClassId,
+                        address(alternateToken),
+                        amount,
+                        expiresAt,
+                        alternateTokenSignature
+                    )
+                )
+            );
         require(!alternateTokenOk, "alternate token authorized");
 
-        _authorize(obligationId, settlementId, residualId, address(this), creditor, assetClassId, address(token), amount, expiresAt);
+        _authorize(
+            obligationId,
+            settlementId,
+            residualId,
+            address(this),
+            creditor,
+            assetClassId,
+            address(token),
+            amount,
+            expiresAt
+        );
         adapter.cancelSettlement(obligationId);
         bytes memory cancelledSignature = _signature(
-            obligationId, settlementId, residualId, address(this), creditor, assetClassId, address(token), amount, expiresAt, SIGNER_KEY
+            obligationId,
+            settlementId,
+            residualId,
+            address(this),
+            creditor,
+            assetClassId,
+            address(token),
+            amount,
+            expiresAt,
+            SIGNER_KEY
         );
-        (bool cancelledReuseOk,) = address(adapter).call(
-            abi.encodeCall(
-                adapter.authorizeSettlement,
-                (obligationId, settlementId, residualId, address(this), creditor, assetClassId, address(token), amount, expiresAt, cancelledSignature)
-            )
-        );
+        (bool cancelledReuseOk,) = address(adapter)
+            .call(
+                abi.encodeCall(
+                    adapter.authorizeSettlement,
+                    (
+                        obligationId,
+                        settlementId,
+                        residualId,
+                        address(this),
+                        creditor,
+                        assetClassId,
+                        address(token),
+                        amount,
+                        expiresAt,
+                        cancelledSignature
+                    )
+                )
+            );
         require(!cancelledReuseOk, "cancelled obligation reauthorized");
     }
 
@@ -219,7 +406,17 @@ contract SettlementAdapterV2Test {
 
     function testExpiredAuthorizationCannotExecute() public {
         uint64 expiresAt = uint64(block.timestamp + 1);
-        _authorize(obligationId, settlementId, residualId, address(this), creditor, assetClassId, address(token), amount, expiresAt);
+        _authorize(
+            obligationId,
+            settlementId,
+            residualId,
+            address(this),
+            creditor,
+            assetClassId,
+            address(token),
+            amount,
+            expiresAt
+        );
         vm.warp(uint256(expiresAt));
 
         (bool ok,) = address(adapter).call(abi.encodeCall(adapter.executeSettlement, (obligationId)));

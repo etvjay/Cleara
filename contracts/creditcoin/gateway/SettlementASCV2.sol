@@ -123,13 +123,7 @@ contract SettlementASCV2 {
         processedQuery[queryId] = true;
         bytes32 payloadHash = keccak256(abi.encode(fact));
         evidenceId = evidenceRegistry.registerEvidence(
-            sourceDomainId,
-            proof.chainKey,
-            proof.blockHeight,
-            txIndex,
-            fact.eventIndex,
-            txBytesHash,
-            payloadHash
+            sourceDomainId, proof.chainKey, proof.blockHeight, txIndex, fact.eventIndex, txBytesHash, payloadHash
         );
         settlementReconciler.reconcile(
             fact.settlementId, evidenceId, fact.debtor, fact.creditor, fact.assetClassId, fact.amount
@@ -217,8 +211,9 @@ contract SettlementASCV2 {
         (fact.debtor, fact.creditor, fact.assetClassId, fact.token, fact.amount, fact.expiresAt) =
             abi.decode(settlementLog.data, (address, address, bytes32, address, uint256, uint64));
         if (
-            keccak256(abi.encode(fact.debtor, fact.creditor, fact.assetClassId, fact.token, fact.amount, fact.expiresAt))
-                != keccak256(settlementLog.data)
+            keccak256(
+                    abi.encode(fact.debtor, fact.creditor, fact.assetClassId, fact.token, fact.amount, fact.expiresAt)
+                ) != keccak256(settlementLog.data)
         ) revert NonCanonicalEventData();
 
         EvmV1Decoder.CommonTxFields memory commonTx = EvmV1Decoder.decodeCommonTxFields(encodedTransaction);

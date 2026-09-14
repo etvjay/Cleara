@@ -140,12 +140,18 @@ contract SettlementAdapterV2 is EIP712 {
         bytes calldata signature
     ) external returns (bytes32) {
         if (
-            obligationId == bytes32(0) || settlementId == bytes32(0) || residualId == bytes32(0)
-                || debtor == address(0) || creditor == address(0) || debtor == creditor
-                || assetClassId == bytes32(0) || token != supportedToken || token.codehash != supportedTokenCodeHash
-                || amount == 0 || expiresAt <= block.timestamp
+            obligationId == bytes32(0) || settlementId == bytes32(0) || residualId == bytes32(0) || debtor == address(0)
+                || creditor == address(0) || debtor == creditor || assetClassId == bytes32(0) || token != supportedToken
+                || token.codehash != supportedTokenCodeHash || amount == 0 || expiresAt <= block.timestamp
         ) revert InvalidAuthorization();
-        if (ECDSA.recover(authorizationDigest(obligationId, settlementId, residualId, debtor, creditor, assetClassId, token, amount, expiresAt), signature) != authorizationSigner) {
+        if (
+            ECDSA.recover(
+                    authorizationDigest(
+                        obligationId, settlementId, residualId, debtor, creditor, assetClassId, token, amount, expiresAt
+                    ),
+                    signature
+                ) != authorizationSigner
+        ) {
             revert InvalidAuthorizationSignature();
         }
         if (_authorizations[obligationId].status != Status.NONE) {
@@ -208,14 +214,11 @@ contract SettlementAdapterV2 is EIP712 {
         authorization.status = Status.CONSUMED;
         uint256 debtorBalanceBefore = IERC20(authorization.token).balanceOf(authorization.debtor);
         uint256 creditorBalanceBefore = IERC20(authorization.token).balanceOf(authorization.creditor);
-        IERC20(authorization.token).safeTransferFrom(
-            authorization.debtor, authorization.creditor, authorization.amount
-        );
+        IERC20(authorization.token).safeTransferFrom(authorization.debtor, authorization.creditor, authorization.amount);
         uint256 debtorBalanceAfter = IERC20(authorization.token).balanceOf(authorization.debtor);
         uint256 creditorBalanceAfter = IERC20(authorization.token).balanceOf(authorization.creditor);
         if (
-            debtorBalanceBefore < debtorBalanceAfter
-                || debtorBalanceBefore - debtorBalanceAfter != authorization.amount
+            debtorBalanceBefore < debtorBalanceAfter || debtorBalanceBefore - debtorBalanceAfter != authorization.amount
                 || creditorBalanceAfter < creditorBalanceBefore
                 || creditorBalanceAfter - creditorBalanceBefore != authorization.amount
         ) revert InvalidTokenTransfer();
